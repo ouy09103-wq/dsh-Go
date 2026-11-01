@@ -1,7 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.background.RootShell
 import java.time.ZoneId
-import java.util.concurrent.TimeUnit
 
 enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
 
@@ -599,7 +599,13 @@ class PhoneCore(
             decision = if (res.ok) "ok" else "failed")
     }
 
-    /** root shell：经 su 执行一条命令。工具集固定，放不放行由聊天页的「启用 root」决定。 */
+    /**
+     * root shell：经 su 执行一条命令。工具集固定，放不放行由聊天页的「启用 root」决定。
+     *
+     * 执行交给 [RootShell]：它把输出写临时文件而不是管道（命令输出超过 64 KiB 时，
+     * 管道会填满、子进程阻塞、waitFor 等到超时再杀掉一个其实已经跑完的命令），
+     * 超时杀整棵进程树，并且认得出 PRoot 里那个答 uid=0 却没有真 root 权限的假 su。
+     */
     private fun shell(a: Args): Out {
         if (!env.rootShellEnabled()) {
             // l10n:keep agent tool result
@@ -611,38 +617,25 @@ class PhoneCore(
             )
         }
         // l10n:keep agent tool result
-        val command = a.str("command") ?: return Out("shell 需要 command：要执行的命令。", error = true)
-        val timeoutMs = (a.int("timeoutMs") ?: 20_000).toLong().coerceIn(1_000L, 120_000L)
-        val process = try {
-            ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
-        } catch (e: Exception) {
-            // l10n:keep agent tool result
-            return Out(
-                "起不了 su（${e.message ?: e.javaClass.simpleName}）。这台手机要么没 root，" +
-                    // l10n:keep agent tool result
-                    "要么 root 管理器没把权限给 DSH Go。",
-                error = true,
-                summary = "shell",
-                decision = "refused:no-su",
-            )
+        val command = a.str("command")?.takeIf { it.isNotBlank() }
+            ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = "shell",
+                decision = "refused:no-command")
+        val timeoutMs = (a.int("timeoutMs") ?: RootShell.DEFAULT_TIMEOUT_MS.toInt()).toLong()
+
+        val output = RootShell.run(command, timeoutMs)
+        val text = RootShell.describe(command, output)
+        val decision = when {
+            output.failure != null -> "refused:no-root"
+            output.timedOut -> "timeout"
+            output.exitCode == 0 -> "ok"
+            else -> "failed"
         }
-        val finished = try {
-            process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
-        } catch (e: InterruptedException) {
-            process.destroyForcibly()
-            Thread.currentThread().interrupt()
-            // l10n:keep agent tool result
-            return Out("命令被中断了。", error = true, summary = "shell", decision = "timeout")
-        }
-        if (!finished) {
-            process.destroyForcibly()
-            // l10n:keep agent tool result
-            return Out("命令超过 ${timeoutMs}ms 没结束，已终止。", error = true, summary = "shell", decision = "timeout")
-        }
-        val output = process.inputStream.bufferedReader().use { it.readText() }.take(MAX_SHELL_CHARS)
-        val code = process.exitValue()
-        val body = if (output.isBlank()) "(没有输出)" else output.trimEnd()
-        return Out("$ $command\n[exit $code]\n$body", error = code != 0, summary = "shell", decision = if (code == 0) "ok" else "failed")
+        return Out(
+            text,
+            error = output.failure != null || output.exitCode != 0,
+            summary = "shell",
+            decision = decision,
+        )
     }
 
     private fun handoff(a: Args, scope: SerialWorker.Scope): Out {
@@ -698,7 +691,6 @@ class PhoneCore(
         const val SETTLE_AFTER_LAUNCH_MS = 1200L
         const val MAX_APPS = 150
         const val MAX_COLLECT_CHARS = 16_000
-        const val MAX_SHELL_CHARS = 8_000
 
         /** The call's own time, not counting waits for the person. */
         fun budgetMs(tool: String): Long = when (tool) {
