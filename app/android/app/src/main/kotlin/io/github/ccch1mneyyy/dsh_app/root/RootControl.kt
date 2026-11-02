@@ -80,6 +80,10 @@ class RootControl private constructor(private val app: Context) {
             val ep = bridge.start(withTcp = false)
             RootGuest.writeConfig(rootfs, ep)
             if (rootEngine) RootEngine.adopt(rootfs)
+            // 上一次 guest 会话可能把别的 App 的私有目录写成了我们（或 root）的名字——proot /
+            // direct 下写入者是本应用的 uid，root 下是 uid 0——那些 App 从此写不动自己的目录
+            // （游戏热更 EACCES 13、QQ 存不了图）。root 在手时顺手还回去，不挡这次启动。
+            if (rootEngine) repairExternalStorage(log)
             emitStatus()
             true
         } catch (e: Exception) {
@@ -104,6 +108,21 @@ class RootControl private constructor(private val app: Context) {
         }
     }
 
+    /**
+     * 后台跑一次外部存储属主修复（见 [ExternalStorage]）。root 引擎启动时调用；不挡启动，
+     * 只在真的修了东西时写一行日志。
+     */
+    private fun repairExternalStorage(log: (String) -> Unit) {
+        Thread {
+            try {
+                val report = ExternalStorage.repair(app)
+                if (report.fixedEntries > 0) log("[dsh-app] 外部存储属主已修复：${report.text()}")
+            } catch (e: Exception) {
+                log("[dsh-app] 外部存储属主检查失败（${e.javaClass.simpleName}）")
+            }
+        }.apply { isDaemon = true; name = "dsh-ext-storage" }.start()
+    }
+
     fun launched(mounted: Boolean) {
         if (mounted) return
         logger("[dsh-app] root tools: this runtime's launch command has no `dsh web` to add the overlay to; tools are off")
@@ -123,6 +142,7 @@ class RootControl private constructor(private val app: Context) {
             RootToolCatalog.STATUS -> ToolOutput(statusText())
             RootToolCatalog.EXEC -> execTool(args)
             RootToolCatalog.GUEST -> guestTool(args)
+            RootToolCatalog.STORAGE_FIX -> storageFixTool()
             RootToolCatalog.FRIDA_SCAN -> ToolOutput(fridaScanText())
             RootToolCatalog.FRIDA_START -> fridaStart(args)
             RootToolCatalog.FRIDA_STOP -> fridaStop()
@@ -186,6 +206,11 @@ class RootControl private constructor(private val app: Context) {
         val script = RootEngine.launchScript(root, listOf("/usr/bin/env", "HOME=/root", "/bin/sh", "-lc", command), emptyList())
         val result = RootExec.run(script, timeoutOf(args, 120_000))
         return ToolOutput(format(result), isError = !result.ok)
+    }
+
+    private fun storageFixTool(): ToolOutput {
+        val report = ExternalStorage.repair(app)
+        return ToolOutput("${report.text()}。只改了属主，没有动内容。")
     }
 
     private fun fridaScanText(): String {

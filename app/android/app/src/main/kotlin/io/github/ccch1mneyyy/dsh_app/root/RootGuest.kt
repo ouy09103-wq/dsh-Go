@@ -74,6 +74,7 @@ object RootGuest {
         |
         |- 这个环境是真 root 起的：`id -u` 是 0，文件权限和 proot 的假 root 不同；不要在 shell 里重复 `su`。
         |- 需要看设备本身的 root 侧（不限于 rootfs）时用 `mcp__root__*`：`status` 看 su/管理器/frida，`exec` 在设备上以 root 跑一条命令，`guest` 在 rootfs 里以 root 跑，`frida_scan` 先看设备上有没有现成二进制，`frida_start`（有 `path` 就用本地文件，不联网）/ `frida_stop` / `frida_status` 管 frida-server，`frida_ps` 列进程。
+        |- 往 `/sdcard/Android/data/<包名>`、`Android/obb/<包名>` 里写东西时记住：那是别的 App 的私有目录，属主必须是那个 App 自己的 uid。proot 引擎下写入者是本应用的 uid、root 下是 0，写进去的文件会让原 App 写不动自己的目录（游戏热更报 EACCES 13 进不去、QQ 存不了图）。真写过了就用 `storage_fix` 把属主还回去。
         |- `exec` 会真的改设备：先读、先 `ls`，需要写入或删除时说明清楚再动；不要 `rm -rf /`、不要动 `/system`、`/vendor` 和别人的 `/data/data`。
         |- frida-server 默认只监听 127.0.0.1:27042；要给电脑上的 frida 用，用 `frida_status` 拿端口，再由用户自己决定是否 `adb forward`。
         |""".trimMargin()

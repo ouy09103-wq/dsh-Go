@@ -241,8 +241,11 @@ class RootChannel {
     return raw?.cast<String, Object?>() ?? const <String, Object?>{};
   }
 
-  /// 清掉上一次异常退出留下的挂载点。
-  Future<void> cleanup() async => channel.invokeMethod<Object?>('cleanup');
+  /// 清掉上一次异常退出留下的挂载点，并把外部存储里写坏的属主收回给各个 App。
+  Future<String> cleanup() async {
+    final raw = await channel.invokeMethod<Object?>('cleanup');
+    return (raw as Map?)?['text'] as String? ?? '';
+  }
 
   Future<int> shellOpen({String? cwd}) async {
     final raw = await channel.invokeMethod<Object?>('shellOpen', {'cwd': cwd});

@@ -333,7 +333,7 @@ class _RootPageState extends ConsumerState<RootPage> {
             SettingsSwitchTile(
               title: 'mcp__root__* 工具',
               subtitle: (status?.enabled ?? true)
-                  ? '开：模型能 status / exec / guest / frida_start / frida_stop / frida_status / frida_ps / frida_script。改完重启引擎。'
+                  ? '开：模型能 status / exec / guest / storage_fix / frida_start / frida_stop / frida_status / frida_ps / frida_script。改完重启引擎。'
                   : '关：模型看不到 exec / frida 这些工具。',
               value: status?.enabled ?? true,
               onChanged: _busy ? null : _toggleTools,
@@ -345,13 +345,13 @@ class _RootPageState extends ConsumerState<RootPage> {
             ),
             SettingsTile(
               icon: AppIcons.refresh,
-              title: '修复 rootfs（挂载 + 属主）',
-              subtitle: '上次异常退出留下挂载点，或 root 跑过之后 proot 写不进去时用',
+              title: '修复 rootfs 与外部存储（挂载 + 属主）',
+              subtitle: '上次异常退出留下挂载点、root 跑过之后 proot 写不进去，或别的 App 突然存不了文件时用',
               onTap: _busy
                   ? null
                   : () async {
-                      await _root.cleanup();
-                      _log('已清理残留挂载，并把 rootfs 属主交还 App');
+                      final text = await _root.cleanup();
+                      _log(text.isEmpty ? '已清理残留挂载，并把 rootfs 属主交还 App' : text);
                     },
             ),
           ],

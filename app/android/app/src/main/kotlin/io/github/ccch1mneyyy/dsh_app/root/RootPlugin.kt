@@ -99,7 +99,17 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     // to write it. This is the one button that recovers from both.
                     RootEngine.releaseTo(rootfs, android.os.Process.myUid(), force = true)
                 }
-                true
+                // 同一颗按钮也把外部存储收干净：别的 App 写不动自己的目录（游戏进不去、
+                // QQ 存不了图），起因正是这里以本应用 / root 的身份往它们目录里写过东西。
+                val storage = runCatching { ExternalStorage.repair(context) }.getOrNull()
+                mapOf(
+                    "ok" to true,
+                    "text" to buildString {
+                        append("已清理残留挂载，并把 rootfs 属主交还 App")
+                        append("；外部存储属主：")
+                        append(storage?.text() ?: "检查失败（没有 root 时无法改属主）")
+                    },
+                )
             }
             "shellOpen" -> {
                 val su = RootEngine.suPath() ?: run {

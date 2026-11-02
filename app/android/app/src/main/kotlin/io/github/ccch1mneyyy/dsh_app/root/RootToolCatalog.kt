@@ -10,6 +10,7 @@ object RootToolCatalog {
     const val STATUS = "status"
     const val EXEC = "exec"
     const val GUEST = "guest"
+    const val STORAGE_FIX = "storage_fix"
     const val FRIDA_START = "frida_start"
     const val FRIDA_SCAN = "frida_scan"
     const val FRIDA_STOP = "frida_stop"
@@ -57,6 +58,12 @@ object RootToolCatalog {
                 "timeoutMs" to int("超时毫秒，默认 120000，最大 600000"),
             ),
             listOf("command"),
+        ),
+        Tool(
+            STORAGE_FIX,
+            "修复外部存储属主：把 Android/data、Android/obb 下不属于对应 App 的文件与目录 chown 回那个 App 的 uid。guest 里以本应用或 root 身份写进去的东西会让原 App 写不动自己的目录（游戏热更报 EACCES 13 进不去、QQ 存不了图），跑一次就能修好。需要 root；只改属主，不动内容和权限位。",
+            emptyMap(),
+            emptyList(),
         ),
         Tool(
             FRIDA_SCAN,
