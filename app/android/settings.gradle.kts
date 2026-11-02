@@ -11,13 +11,15 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-        // China mirrors first; upstream repositories stay as fallback.
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
-        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        // Upstream first: a mirror that answers 502 makes Gradle disable the whole repository
+        // for this build, so a mirror must never be the first thing a resolution touches.
         google()
         mavenCentral()
         gradlePluginPortal()
+        // China mirrors as the fallback (they are fast when they are up).
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
     }
 }
 

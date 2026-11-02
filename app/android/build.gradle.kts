@@ -1,9 +1,10 @@
 allprojects {
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
+        // Upstream first (see settings.gradle.kts): a 502 from a mirror disables the repository.
         google()
         mavenCentral()
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
         // libadb-android (不打扰模式 self-ADB path) is published on JitPack only.
         maven { url = uri("https://jitpack.io") }
     }
