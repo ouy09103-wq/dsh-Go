@@ -1,0 +1,92 @@
+# 构建带真 root 能力的 dsh-go APK。
+#
+# 与官方 tooling/build-apk.sh 的差别：构建前先用 tooling/fetch-runtime.sh 把
+# 预编译运行时（rootfs + proot jniLibs）取到 runtime/out，再走官方构建脚本。
+#
+# 需要的 secrets：
+#   ANDROID_KEYSTORE_BASE64   release keystore（base64），没有则用 debug 签名
+#   ANDROID_KEYSTORE_PASSWORD keystore 口令
+#   ANDROID_KEY_ALIAS         别名
+#   ANDROID_KEY_PASSWORD      密钥口令
+name: Build root APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本名（如 1.0.8-root）
+        required: false
+        default: 1.0.8-root
+
+concurrency:
+  group: build-root-apk
+  cancel-in-progress: false
+
+jobs:
+  arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+
+      - name: Fetch prebuilt runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
+          bash tooling/fetch-runtime.sh arm64-v8a
+          ls -la runtime/out/arm64-v8a/assets/runtime
+
+      - name: Pub get
+        working-directory: app
+        run: |
+          flutter config --no-analytics
+          flutter precache --android
+          flutter pub get
+
+      - name: Signing key
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > app/android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      - name: Build
+        run: |
+          bash tooling/build-apk.sh -f arm64 --build-name "${{ github.event.inputs.version }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-root-arm64
+          path: app/build/app/outputs/flutter-apk/app-arm64-release.apk
+          retention-days: 30
+
+      - name: Release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: root-${{ github.run_number }}
+          name: dsh-go root ${{ github.event.inputs.version }}
+          files: app/build/app/outputs/flutter-apk/app-arm64-release.apk

@@ -58,6 +58,7 @@ import 'notification_settings.dart';
 import 'performance_page.dart';
 import 'personalization_page.dart';
 import 'privacy_page.dart';
+import 'root_page.dart';
 import 'search/settings_search_page.dart';
 import 'settings_widgets.dart';
 import 'system_access_page.dart';
@@ -259,6 +260,13 @@ class SettingsScreen extends ConsumerWidget {
               tint: SettingsHues.general,
               spot: SettingsIndex.entry(SettingsPageId.privacy),
               onTap: () => _push(context, const PrivacyPage()),
+            ),
+            SettingsTile(
+              icon: AppIcons.command,
+              tint: SettingsHues.general,
+              title: 'Root 权限',
+              subtitle: 'su 提权 · root shell · Ubuntu rootfs · frida-server',
+              onTap: () => _push(context, const RootPage()),
             ),
           ],
         ),
