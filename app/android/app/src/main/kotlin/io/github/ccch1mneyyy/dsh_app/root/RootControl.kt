@@ -58,6 +58,10 @@ class RootControl private constructor(private val app: Context) {
         logger = log
         bridge.stop()
         this.rootfs = rootfs
+        // Whatever happens next — safe mode, tools off, proot/direct — this launch runs as the app,
+        // so anything the root engine wrote as uid 0 must go back to the app's uid first. Otherwise
+        // DSH cannot write its own config, sessions and plugins on the next non-root start.
+        if (!rootEngine) handBackToApp(rootfs, log)
         if (!isEnabled() || safe) {
             RootGuest.clearConfig(rootfs)
             if (isEnabled()) log("[dsh-app] root tools stay off in safe mode")
@@ -82,6 +86,21 @@ class RootControl private constructor(private val app: Context) {
             log("[dsh-app] root tools: setup failed (${e.message}); starting without them")
             bridge.stop()
             false
+        }
+    }
+
+    /**
+     * Runs outside the root engine path too (safe mode, or the person switching the engine off), so
+     * a root run never leaves the runtime unwritable. Cheap when the uid already matches.
+     */
+    private fun handBackToApp(rootfs: File, log: (String) -> Unit) {
+        val uid = android.os.Process.myUid()
+        try {
+            if (RootEngine.releaseTo(rootfs, uid)) {
+                log("[dsh-app] rootfs ownership returned to the app (uid $uid) for this launch")
+            }
+        } catch (e: Exception) {
+            log("[dsh-app] rootfs ownership: could not return it to the app (${e.message})")
         }
     }
 

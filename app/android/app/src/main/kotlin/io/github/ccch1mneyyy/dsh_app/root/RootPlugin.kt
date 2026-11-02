@@ -93,7 +93,12 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             }
             "cleanup" -> background(result) {
                 val rootfs = File(context.filesDir, ROOTFS)
-                if (rootfs.isDirectory) RootEngine.cleanupMounts(rootfs)
+                if (rootfs.isDirectory) {
+                    RootEngine.cleanupMounts(rootfs)
+                    // A root run can leave the whole tree owned by uid 0; proot would then be unable
+                    // to write it. This is the one button that recovers from both.
+                    RootEngine.releaseTo(rootfs, android.os.Process.myUid(), force = true)
+                }
                 true
             }
             "shellOpen" -> {

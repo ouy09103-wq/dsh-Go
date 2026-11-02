@@ -224,6 +224,34 @@ object RootEngine {
         RootExec.run("chown -R 0:0 $r/root $r/tmp $r/var/lib/dsh-app 2>/dev/null; true", 120_000)
     }
 
+    /** The uid the rootfs should belong to whenever the engine runs as the app (proot / direct). */
+    fun ownerOf(rootfs: File): Int? = try {
+        RootExec.run("stat -c %u ${quote(rootfs.absolutePath)} 2>/dev/null || echo -1", 20_000)
+            .stdout.trim().toIntOrNull()?.takeIf { it >= 0 }
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Hands the whole rootfs back to [uid].
+     *
+     * The root engine writes as uid 0 (dsh config, packages, session files). proot and direct run
+     * as the app, so without this a proot launch after a root run cannot write its own runtime —
+     * sessions, plugins and the LKG profile would fail. Root ignores ownership, so the app-owned
+     * files keep working under the root engine too.
+     *
+     * Returns whether anything was changed; [wasRootOwned] avoids a pointless 27k-file walk.
+     */
+    fun releaseTo(rootfs: File, uid: Int, force: Boolean = false): Boolean {
+        if (!rootfs.isDirectory) return false
+        if (!force && ownerOf(rootfs) == uid) return false
+        RootExec.run(
+            "chown -R $uid:$uid ${quote(rootfs.absolutePath)} 2>/dev/null; chmod -R u+rwX ${quote(rootfs.absolutePath)} 2>/dev/null; true",
+            600_000,
+        )
+        return true
+    }
+
     internal fun waitFor(process: Process, millis: Long): Boolean = try {
         process.waitFor(millis, TimeUnit.MILLISECONDS)
     } catch (_: InterruptedException) {

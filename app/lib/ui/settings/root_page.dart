@@ -345,13 +345,13 @@ class _RootPageState extends ConsumerState<RootPage> {
             ),
             SettingsTile(
               icon: AppIcons.refresh,
-              title: '清理残留挂载',
-              subtitle: '上次异常退出把 /proc /sys /dev 留在 rootfs 里时用',
+              title: '修复 rootfs（挂载 + 属主）',
+              subtitle: '上次异常退出留下挂载点，或 root 跑过之后 proot 写不进去时用',
               onTap: _busy
                   ? null
                   : () async {
                       await _root.cleanup();
-                      _log('已清理 rootfs 里的挂载点');
+                      _log('已清理残留挂载，并把 rootfs 属主交还 App');
                     },
             ),
           ],
