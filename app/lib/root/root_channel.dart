@@ -1,5 +1,5 @@
-// Real-root channel (app/android/.../root/RootPlugin.kt): the device's su, one命令
-// 执行、打包的 Ubuntu rootfs（以真 root 身份）、frida-server 安装与常驻 root shell。
+// Real-root channel (app/android/.../root/RootPlugin.kt)：设备上的 su、单条命令执行、
+// 打包的 Ubuntu rootfs（以真 root 身份）、frida-server 安装与常驻 root shell。
 //
 // 只有显式点按钮才会 spawn su：管理器的授权弹窗出现在 [probe] / [exec] / [guest] 里。
 

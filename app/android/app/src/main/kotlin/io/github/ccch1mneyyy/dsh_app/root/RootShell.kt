@@ -11,8 +11,12 @@ import kotlin.concurrent.thread
  */
 internal class RootShell private constructor(private val process: Process) {
 
+    /** The su child's PID, or -1 when the platform cannot report it. */
     val pid: Int
-        get() = runCatching { process.pid().toInt() }.getOrDefault(-1)
+        get() = runCatching {
+            val method = Process::class.java.getMethod("pid")
+            (method.invoke(process) as Long).toInt()
+        }.getOrDefault(-1)
 
     private val out = StringBuilder()
     private val err = StringBuilder()

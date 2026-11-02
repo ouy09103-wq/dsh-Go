@@ -172,7 +172,7 @@ internal object Frida {
         val arch = ABI_NAMES[abi] ?: return fail("unsupported ABI: $abi")
         val su = RootExec.suPath() ?: return fail("no su on this device")
         val probe = RootExec.probe()
-        if (!probe.ok || probe.uid != 0) return fail("root not granted", probe.stderr.ifEmpty { "uid=${probe.uid}" })
+        if (!probe.ok || probe.uid != 0) return fail("root not granted: " + probe.stderr.ifEmpty { "uid=${probe.uid}" })
 
         val dir = "/data/local/tmp"
         val remote = "$dir/frida-server"
