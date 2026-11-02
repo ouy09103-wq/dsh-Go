@@ -454,7 +454,7 @@ final _pages = <SettingsPageMeta>[
     SettingsPageId.root,
     title: (l) => 'Root 权限',
     group: _general,
-    keywords: (l) => 'root su chroot frida 破甲 magisk kernelsu apatch',
+    keywords: (l) => 'root su chroot frida magisk kernelsu apatch',
     freq: Freq.medium,
     links: const ['root'],
   ),

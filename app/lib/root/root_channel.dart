@@ -203,9 +203,10 @@ class RootChannel {
       (await channel.invokeMethod<Object?>('setToolsEnabled', {'enabled': enabled})) == true;
 
   /// 一次完整的探针（含管理器授权弹窗），返回 support 映射。
-  Future<Map<String, Object?>> supported() async =>
-      (await channel.invokeMethod<Object?>('supported'))?.cast() ??
-      const <String, Object?>{};
+  Future<Map<String, Object?>> supported() async {
+    final raw = await channel.invokeMapMethod<Object?, Object?>('supported');
+    return raw?.cast<String, Object?>() ?? const <String, Object?>{};
+  }
 
   /// 清掉上一次异常退出留下的挂载点。
   Future<void> cleanup() async => channel.invokeMethod<Object?>('cleanup');

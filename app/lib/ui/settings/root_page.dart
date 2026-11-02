@@ -13,7 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../l10n/l10n.dart';
 import '../../root/root_channel.dart';
 import '../../runtime/runtime_bridge.dart';
 import '../../runtime/runtime_state.dart';
@@ -224,7 +223,6 @@ class _RootPageState extends ConsumerState<RootPage> {
     final status = _status;
     final runtime = ref.watch(localRuntimeProvider);
     final rt = runtime.status;
-    final l10n = context.l10n;
     final stopped = !rt.phase.isBusy && rt.phase != RuntimePhase.running;
     final engineSwitchable = runtime.loaded && stopped && !_savingEngine;
     final support = rt.rootEngineSupport;
