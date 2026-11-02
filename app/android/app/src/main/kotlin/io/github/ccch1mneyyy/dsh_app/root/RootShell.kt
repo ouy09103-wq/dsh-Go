@@ -9,11 +9,33 @@ import kotlin.concurrent.thread
  * One interactive root shell: `su -c 'exec sh'` on private pipes. Output is buffered
  * until the Dart side polls for it, so a burst never blocks the child.
  */
-internal class RootShell private constructor(private val process: Process) {
+internal class RootShell private constructor(
+    private val process: Process,
+    private val pidFile: File,
+) {
 
-    /** Process.pid() needs API 26; minSdk is 26. */
+    /**
+     * The shell's pid. The shell writes it to [pidFile] itself (`echo $$`), which works on every
+     * API level; `Process.pid()` only exists from Android 16, so it is the fallback, not the source.
+     */
     val pid: Int
-        get() = runCatching { process.pid() }.getOrDefault(-1)
+        get() {
+            val fromFile = runCatching { pidFile.readText().trim().toIntOrNull() }.getOrNull()
+            if (fromFile != null && fromFile > 0) return fromFile
+            return runCatching {
+                val method = Process::class.java.getDeclaredMethod("pid")
+                (method.invoke(process) as Number).toInt()
+            }.getOrDefault(-1)
+        }
+
+    /** Waits for `echo $$` to land, so the first status call already has a pid. */
+    fun awaitPid(millis: Long = 2_000) {
+        val deadline = System.nanoTime() + millis * 1_000_000L
+        while (System.nanoTime() < deadline) {
+            if (pid > 0 || !process.isAlive) return
+            Thread.sleep(25)
+        }
+    }
 
     private val out = StringBuilder()
     private val err = StringBuilder()
@@ -54,6 +76,7 @@ internal class RootShell private constructor(private val process: Process) {
         runCatching { process.inputStream.close() }
         runCatching { process.errorStream.close() }
         runCatching { process.outputStream.close() }
+        runCatching { pidFile.delete() }
     }
 
     private fun pump(stream: java.io.InputStream, into: StringBuilder) {
@@ -70,10 +93,21 @@ internal class RootShell private constructor(private val process: Process) {
     }
 
     companion object {
-        fun open(su: String, cwd: String?): RootShell {
-            val builder = ProcessBuilder(su, "-c", "exec /system/bin/sh")
+        /**
+         * Opens one persistent root shell. [dir] must be writable by this app (the plugin passes
+         * `cacheDir`): the shell writes its pid there before replacing itself with `/system/bin/sh`.
+         */
+        fun open(su: String, cwd: String?, dir: File): RootShell {
+            dir.mkdirs()
+            val pidFile = File(dir, "root-shell-${System.nanoTime()}.pid")
+            val script = "echo \$\$ > ${quote(pidFile.absolutePath)}; exec /system/bin/sh"
+            val builder = ProcessBuilder(su, "-c", script)
             if (cwd != null) builder.directory(File(cwd))
-            return RootShell(builder.start())
+            val shell = RootShell(builder.start(), pidFile)
+            shell.awaitPid()
+            return shell
         }
+
+        private fun quote(word: String): String = "'" + word.replace("'", "'\\''") + "'"
     }
 }

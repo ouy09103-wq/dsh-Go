@@ -27,6 +27,7 @@ class RootControl private constructor(private val app: Context) {
     /** The probe result without spawning su (uses the process-wide cache). */
     fun support(): RootEngine.Support = RootEngine.cachedSupport() ?: RootEngine.Support(
         RootEngine.suPath(), -1, false, false, "", Build.SUPPORTED_ABIS.firstOrNull() ?: "", "unprobed",
+        RootEngine.manager(),
     )
 
     fun isEnabled(): Boolean = enabledCache ?: prefs.getBoolean(K_ENABLED, true).also { enabledCache = it }

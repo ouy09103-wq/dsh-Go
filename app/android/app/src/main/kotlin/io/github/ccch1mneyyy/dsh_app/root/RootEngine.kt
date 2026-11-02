@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  *
  * 可用性不猜：真跑一遍 `id -u` 与 `command -v chroot` 才认。
  */
-internal object RootEngine {
+object RootEngine {
 
     private val SU_CANDIDATES = listOf(
         "/system/bin/su",
@@ -48,18 +48,20 @@ internal object RootEngine {
         val kernel: String,
         val abi: String,
         val reason: String?,
+        val manager: String = "",
+        val sdk: Int = Build.VERSION.SDK_INT,
     ) {
         val usable: Boolean get() = su != null && uid == 0 && chroot
 
         fun map(): Map<String, Any?> = linkedMapOf(
             "su" to su,
-            "manager" to manager(),
+            "manager" to manager,
             "uid" to uid,
             "chroot" to chroot,
             "mount" to mount,
             "kernel" to kernel,
             "abi" to abi,
-            "sdk" to Build.VERSION.SDK_INT,
+            "sdk" to sdk,
             "usable" to usable,
             "reason" to reason,
         )
@@ -74,8 +76,9 @@ internal object RootEngine {
         cached?.let { if (!force) return it }
         val su = suPath()
         if (su == null) {
-            return Support(null, -1, false, false, "", Build.SUPPORTED_ABIS.firstOrNull() ?: "", "noSu")
-                .also { cached = it }
+            return Support(
+                null, -1, false, false, "", Build.SUPPORTED_ABIS.firstOrNull() ?: "", "noSu", manager(),
+            ).also { cached = it }
         }
         val out = RootExec.run(
             "id -u; command -v chroot || echo NOCHROOT; command -v mount || echo NOMOUNT; uname -r",
@@ -91,8 +94,9 @@ internal object RootEngine {
             !chroot -> "noChroot"
             else -> null
         }
-        return Support(su, uid, chroot, mount, kernel, Build.SUPPORTED_ABIS.firstOrNull() ?: "", reason)
-            .also { cached = it }
+        return Support(
+            su, uid, chroot, mount, kernel, Build.SUPPORTED_ABIS.firstOrNull() ?: "", reason, manager(),
+        ).also { cached = it }
     }
 
     fun quote(word: String): String =
@@ -106,11 +110,15 @@ internal object RootEngine {
      * [binds] are `src` or `src:dst` mounts to add inside the rootfs (phone storage).
      */
     fun launchScript(rootfs: File, guestArgv: List<String>, binds: List<String>, logFile: String? = null): String {
-        val r = quote(rootfs.absolutePath)
-        val base = linkedMapOf(
-            "-t proc proc" to "$r/proc",
-            "--bind /dev" to "$r/dev",
-            "--bind /sys" to "$r/sys",
+        // Keep the raw path and quote every composed path once: quoting an already-quoted prefix
+        // would nest quotes and hand the shell a literal that no longer names the directory.
+        val root = rootfs.absolutePath
+        fun at(guestPath: String): String = quote(root + guestPath)
+
+        val base = listOf(
+            "mount -t proc proc ${at("/proc")}",
+            "mount --bind /dev ${at("/dev")}",
+            "mount --bind /sys ${at("/sys")}",
         )
         val extra = ArrayList<Pair<String, String>>()
         for (bind in binds) {
@@ -123,7 +131,7 @@ internal object RootEngine {
         }
         val extraLines = extra.joinToString("\n") { (src, dst) ->
             val host = quote(src)
-            val guest = quote("$r$dst")
+            val guest = at(dst)
             buildString {
                 append("if [ -e $host ]; then\n")
                 append("  mkdir -p \$(dirname $guest) 2>/dev/null || true\n")
@@ -132,9 +140,10 @@ internal object RootEngine {
                 append("fi")
             }
         }
-        val unmount = extra.asReversed().joinToString("\n") { (_, dst) ->
-            "umount -l ${quote("$r$dst")} 2>/dev/null || true"
-        }
+        // Unmount deepest-first: a nested bind cannot be released before the mount on top of it.
+        val unmount = extra
+            .sortedByDescending { (_, dst) -> dst.count { it == '/' } }
+            .joinToString("\n") { (_, dst) -> "umount -l ${at(dst)} 2>/dev/null || true" }
         val env = guestArgv.joinToString(" ", transform = ::quote)
         val redirect = if (logFile != null) {
             " 2>&1 | tee -a ${quote(logFile)}; code=\${PIPESTATUS:-0}"
@@ -143,22 +152,24 @@ internal object RootEngine {
         }
         return buildString {
             append("set -u\n")
-            append("R=$r\n")
+            append("R=${quote(root)}\n")
             append("mkdir -p \$R/proc \$R/sys \$R/dev \$R/dev/shm \$R/tmp \$R/root 2>/dev/null || true\n")
             append(": > \$R/.dsh-root-mounts 2>/dev/null || true\n")
             append("cleanup() {\n")
             if (unmount.isNotEmpty()) {
-                append(unmount.replace("\n", "\n  ").let { "  $it" })
-                append("\n")
+                append("  ").append(unmount.replace("\n", "\n  ")).append("\n")
             }
             append("  umount -l \$R/sys 2>/dev/null || true\n")
             append("  umount -l \$R/dev/shm 2>/dev/null || true\n")
             append("  umount -l \$R/dev 2>/dev/null || true\n")
             append("  umount -l \$R/proc 2>/dev/null || true\n")
             append("}\n")
-            append("trap cleanup EXIT INT TERM HUP\n")
-            for ((flags, target) in base) {
-                append("mount $flags ${quote(target)} 2>/dev/null || true\n")
+            // A signal must end the script, not merely run cleanup: only EXIT guarantees the trap
+            // fires exactly once, after the guest is gone.
+            append("trap cleanup EXIT\n")
+            append("trap 'exit 143' INT TERM HUP\n")
+            for (line in base) {
+                append("$line 2>/dev/null || true\n")
             }
             append("mount -t tmpfs tmpfs \$R/dev/shm 2>/dev/null || true\n")
             if (extraLines.isNotEmpty()) {

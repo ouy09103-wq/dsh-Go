@@ -97,7 +97,7 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     return
                 }
                 background(result) {
-                    val shell = RootShell.open(su, call.argument<String>("cwd"))
+                    val shell = RootShell.open(su, call.argument<String>("cwd"), File(context.cacheDir, "root-shell"))
                     val id = shellIds.incrementAndGet()
                     shells[id] = shell
                     mapOf("id" to id, "pid" to shell.pid)
