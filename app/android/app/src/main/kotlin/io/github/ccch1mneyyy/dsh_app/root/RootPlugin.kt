@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * - `supported`    force a re-probe and report whether the chroot engine may be used.
  * - `exec`         one command on the device as root.
  * - `guest`        one command inside the bundled rootfs as root (chroot first, proot as fallback).
- * - `installFrida` / `fridaStatus` / `fridaStop`
+ * - `installFrida` / `fridaStatus` / `fridaStop` / `scanFrida`
  * - `shellOpen` / `shellWrite` / `shellPoll` / `shellClose`   one persistent root shell.
  * - `toolsEnabled` / `setToolsEnabled`   the `mcp__root__*` switch for the model.
  * - `cleanup`      lazy-umount whatever an interrupted launch left in the rootfs.
@@ -70,14 +70,19 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             }
             "installFrida" -> {
                 val version = call.argument<String>("version")
+                val path = call.argument<String>("path")
                 val port = call.argument<Int>("port") ?: RootControl.DEFAULT_PORT
                 background(result) {
-                    val state = Frida.install(context, version, port)
+                    val state = if (!path.isNullOrBlank()) Frida.installLocal(path, port)
+                    else Frida.install(context, version, port)
                     mapOf(
                         "ok" to state.ok, "text" to state.text, "version" to state.version,
                         "path" to state.path, "port" to state.port, "pid" to state.pid,
                     )
                 }
+            }
+            "scanFrida" -> background(result) {
+                mapOf("candidates" to Frida.scan().map { it.map() })
             }
             "fridaStatus" -> background(result) { Frida.statusMap() + mapOf("ok" to true, "text" to Frida.report()) }
             "fridaStop" -> background(result) { mapOf("ok" to true, "text" to Frida.stopText()) }

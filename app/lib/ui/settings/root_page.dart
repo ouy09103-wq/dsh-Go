@@ -37,7 +37,9 @@ class _RootPageState extends ConsumerState<RootPage> {
   final _output = <String>[];
   final _scroll = ScrollController();
 
+  final _fridaPath = TextEditingController();
   RootStatus? _status;
+  List<FridaCandidate> _candidates = const [];
   bool _busy = false;
   bool _savingEngine = false;
   int _shellId = -1;
@@ -56,6 +58,7 @@ class _RootPageState extends ConsumerState<RootPage> {
     if (id > 0) unawaited(_root.shellClose(id));
     _command.dispose();
     _guest.dispose();
+    _fridaPath.dispose();
     _shellInput.dispose();
     _scroll.dispose();
     super.dispose();
@@ -136,6 +139,40 @@ class _RootPageState extends ConsumerState<RootPage> {
       _log('切换 root 工具失败：${error.message ?? error.code}');
     } finally {
       unawaited(_refresh());
+    }
+  }
+
+  Future<void> _scanFrida() async {
+    setState(() => _busy = true);
+    try {
+      final found = await _root.scanFrida();
+      if (!mounted) return;
+      setState(() => _candidates = found);
+      _log(found.isEmpty
+          ? '本机没找到 frida-server；可以用「安装并启动」联网下载'
+          : '本机 frida-server：\n${found.map((c) => '· ${c.path}（${c.sizeMb}${c.compressed ? ' · xz' : ''}）').join('\n')}');
+    } on PlatformException catch (error) {
+      _log('扫描失败：${error.code} ${error.message ?? ''}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _installFridaLocal() async {
+    final path = _fridaPath.text.trim();
+    if (path.isEmpty) {
+      showBriefNotice(context, '先填一个 frida-server 文件路径，或点「扫描本机」');
+      return;
+    }
+    setState(() => _busy = true);
+    _log('从本地文件启动 frida-server：$path');
+    try {
+      final state = await _root.installFrida(path: path);
+      _log('frida-server\n${state.text.isNotEmpty ? state.text : state.report}');
+    } on PlatformException catch (error) {
+      _log('本地安装失败：${error.code} ${error.message ?? ''}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -366,8 +403,48 @@ class _RootPageState extends ConsumerState<RootPage> {
           title: 'Frida',
           children: [
             SettingsTile(
+              icon: AppIcons.refresh,
+              title: '扫描本机 frida-server',
+              subtitle: '在 /sdcard/Download、/data/local/tmp 里找现成的二进制',
+              value: Text(_busy ? '…' : (_candidates.isEmpty ? '未扫描' : '${_candidates.length} 个')),
+              onTap: _busy ? null : _scanFrida,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: TextField(
+                controller: _fridaPath,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: const InputDecoration(
+                  hintText: '/sdcard/Download/DSH-Go/frida-server-17.25.1-arm64',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            SettingsTile(
               icon: AppIcons.plugin,
-              title: '安装并启动 frida-server',
+              title: '用本地文件启动（推荐）',
+              subtitle: '不联网：直接把这个文件装到 /data/local/tmp 并以 root 启动',
+              value: Text(_busy ? '…' : '127.0.0.1:27042'),
+              onTap: _busy ? null : _installFridaLocal,
+            ),
+            if (_candidates.isNotEmpty)
+              for (final c in _candidates)
+                SettingsTile(
+                  icon: AppIcons.command,
+                  title: c.path.split('/').last,
+                  subtitle: c.path,
+                  value: Text('${c.sizeMb}${c.compressed ? ' · xz' : ''}'),
+                  onTap: _busy
+                      ? null
+                      : () {
+                          _fridaPath.text = c.path;
+                          unawaited(_installFridaLocal());
+                        },
+                ),
+            SettingsTile(
+              icon: AppIcons.plugin,
+              title: '联网安装并启动',
+              subtitle: '本机没有现成文件时用这个',
               value: Text(_busy ? '…' : '127.0.0.1:27042'),
               onTap: _busy ? null : _installFrida,
             ),

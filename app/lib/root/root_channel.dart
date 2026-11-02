@@ -151,6 +151,23 @@ class FridaState {
   }
 }
 
+/// 设备上一个可用的本地 frida-server 文件。
+class FridaCandidate {
+  const FridaCandidate({required this.path, required this.bytes, required this.compressed});
+
+  final String path;
+  final int bytes;
+  final bool compressed;
+
+  String get sizeMb => '${(bytes / 1048576).toStringAsFixed(1)} MB';
+
+  static FridaCandidate from(Map<String, Object?> map) => FridaCandidate(
+        path: (map['path'] as String?) ?? '',
+        bytes: (map['bytes'] as num?)?.toInt() ?? 0,
+        compressed: map['compressed'] == true,
+      );
+}
+
 /// 一轮 shell 输出。
 class ShellOutput {
   const ShellOutput({required this.stdout, required this.stderr, required this.closed});
@@ -188,9 +205,25 @@ class RootChannel {
         await channel.invokeMethod<Object?>('guest', {'command': command, 'timeoutMs': timeoutMs}),
       );
 
-  Future<FridaState> installFrida({String? version, int port = 27042}) async => FridaState.from(
-        await channel.invokeMethod<Object?>('installFrida', {'version': version, 'port': port}),
+  /// 装并启动 frida-server。给了 [path] 就用本地文件（设备上已有的），否则按版本联网下载。
+  Future<FridaState> installFrida({String? version, String? path, int port = 27042}) async => FridaState.from(
+        await channel.invokeMethod<Object?>('installFrida', {
+          'version': version,
+          'path': path,
+          'port': port,
+        }),
       );
+
+  /// 扫描设备上已有的 frida-server 二进制：`[{path, bytes, compressed}]`。
+  Future<List<FridaCandidate>> scanFrida() async {
+    final raw = await channel.invokeMethod<Object?>('scanFrida');
+    final map = (raw as Map?)?.cast<String, Object?>() ?? const <String, Object?>{};
+    final list = (map['candidates'] as List?) ?? const [];
+    return [
+      for (final item in list)
+        if (item is Map) FridaCandidate.from(item.cast<String, Object?>()),
+    ];
+  }
 
   Future<FridaState> fridaStatus() async => FridaState.from(await channel.invokeMethod<Object?>('fridaStatus'));
 

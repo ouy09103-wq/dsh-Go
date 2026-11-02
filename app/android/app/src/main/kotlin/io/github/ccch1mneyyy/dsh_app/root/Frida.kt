@@ -7,9 +7,13 @@ import java.io.File
 /**
  * frida-server, installed and started as **root** (real uid 0) at /data/local/tmp.
  *
- * Source order: a bundled copy in `assets/frida/frida-server` (if the build put one there), then
- * the GitHub release for this ABI through a mirror chain. The binary is verified with
- * `--version` before it is started, so a truncated download never replaces a working one.
+ * Source order:
+ *  1. a local file the person names (or one [scan] found) — the usual case; no network at all;
+ *  2. a bundled copy in `assets/frida/frida-server`, if the build put one there;
+ *  3. the GitHub release for this ABI through a mirror chain.
+ *
+ * Every candidate is validated with `--version` before the running server is replaced, so a
+ * truncated download or a wrong-architecture binary never takes out a working one.
  */
 internal object Frida {
 
@@ -20,8 +24,13 @@ internal object Frida {
         "x86" to "x86",
     )
 
-    /** Used when the caller names no version. */
-    private val FALLBACK_VERSIONS = listOf("17.6.2", "17.2.17", "17.2.9", "16.7.19")
+    /** Used when the caller names no version. Newest first; any of them may be gone. */
+    private val FALLBACK_VERSIONS = listOf("17.25.1", "17.6.2", "16.7.19", "15.2.2")
+
+    /** Where a person usually keeps a downloaded frida-server. Scanned shallowly, as root. */
+    private val SCAN_DIRS = listOf(
+        "/sdcard/Download/DSH-Go", "/sdcard/Download", "/sdcard/Documents", "/data/local/tmp",
+    )
 
     private const val DIR = "/data/local/tmp"
     private const val REMOTE = "$DIR/frida-server"
@@ -37,12 +46,64 @@ internal object Frida {
 
     fun arch(): String? = ABI_NAMES[Build.SUPPORTED_ABIS.firstOrNull() ?: ""]
 
+    /** One candidate found on the device. */
+    data class Candidate(val path: String, val bytes: Long, val compressed: Boolean) {
+        fun map(): Map<String, Any?> = linkedMapOf(
+            "path" to path, "bytes" to bytes, "compressed" to compressed,
+        )
+    }
+
+    /** Lists local frida-server binaries, newest-looking first. Read-only; needs root to read /sdcard. */
+    fun scan(): List<Candidate> {
+        val dirs = SCAN_DIRS.joinToString(" ") { RootEngine.quote(it) }
+        // A raw string: the shell needs its own backslashes, and Kotlin rejects \( and \; in a literal.
+        val out = RootExec.run(
+            """find $dirs -maxdepth 2 -type f \( -iname '*frida-server*' -o -iname 'frida-server*' \) -exec stat -c '%s %n' {} \; 2>/dev/null | head -40""",
+            60_000,
+        )
+        return out.stdout.lines().mapNotNull { line ->
+            val at = line.indexOf(' ')
+            if (at <= 0) return@mapNotNull null
+            val bytes = line.substring(0, at).toLongOrNull() ?: return@mapNotNull null
+            val path = line.substring(at + 1).trim()
+            if (path.isEmpty() || bytes < 1_000_000L) return@mapNotNull null
+            Candidate(path, bytes, path.endsWith(".xz"))
+        }.sortedByDescending { it.bytes }
+    }
+
+    /**
+     * Installs from a file already on the device. [port] is where the server ends up listening.
+     * [path] may be a raw binary or an .xz of one.
+     */
+    fun installLocal(path: String, port: Int): State {
+        val arch = arch() ?: return State(false, "这台设备的 ABI 不受支持：${Build.SUPPORTED_ABIS.firstOrNull()}")
+        val probe = RootEngine.cachedSupport() ?: RootEngine.probe()
+        if (!probe.usable) return State(false, "没有可用的 su/chroot：${probe.reason ?: "unknown"}")
+        val src = RootEngine.quote(path)
+        val exists = RootExec.run("test -f $src && stat -c %s $src || echo 0", 30_000).stdout.trim()
+        val bytes = exists.toLongOrNull() ?: 0L
+        if (bytes < 1_000_000L) return State(false, "这个文件不存在或太小：$path")
+        val state = deploy(path, versionOf(path), port)
+        return state ?: State(false, "安装失败：这不是能在这个 ABI（$arch）上运行的 frida-server")
+    }
+
+    private fun versionOf(path: String): String {
+        val m = Regex("""(\d+\.\d+\.\d+)""").find(path.substringAfterLast('/'))
+        return "本地 ${m?.groupValues?.get(1) ?: "文件"}"
+    }
+
     fun install(context: Context, version: String?, port: Int): State {
         val arch = arch() ?: return State(false, "这台设备的 ABI 不受支持：${Build.SUPPORTED_ABIS.firstOrNull()}")
         val probe = RootEngine.cachedSupport() ?: RootEngine.probe()
         if (!probe.usable) return State(false, "没有可用的 su/chroot：${probe.reason ?: "unknown"}")
 
-        // Bundled first: no network, known bytes.
+        // A binary the person already downloaded beats every network path.
+        val local = if (version == null) scan().firstOrNull() else null
+        if (local != null) {
+            deploy(local.path, versionOf(local.path), port)?.let { return it }
+        }
+
+        // Bundled next: no network, known bytes.
         val bundled = File(context.cacheDir, "frida-server-asset")
         runCatching {
             context.assets.open("frida/frida-server").use { input ->
@@ -89,13 +150,17 @@ internal object Frida {
         return State(false, lastError)
     }
 
-    /** Unpacks an .xz (or a raw binary) to /data/local/tmp, checks it, restarts it. */
+    /**
+     * Unpacks an .xz (or copies a raw binary) to /data/local/tmp, checks it with `--version`,
+     * and only then stops the old server and starts this one. Null when the file is not a
+     * runnable frida-server for this device.
+     */
     private fun deploy(local: String, version: String, port: Int): State? {
         val src = RootEngine.quote(local)
         val unpack = RootExec.run(
             "case $src in *.xz) xz -dcf $src > $REMOTE ;; *) cp -f $src $REMOTE ;; esac; " +
                 "chmod 755 $REMOTE; chown 0:0 $REMOTE; $REMOTE --version",
-            180_000,
+            300_000,
         )
         if (!unpack.ok) return null
         val printed = unpack.stdout.trim().lines().firstOrNull().orEmpty()

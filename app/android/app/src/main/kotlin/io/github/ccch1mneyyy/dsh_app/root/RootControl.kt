@@ -104,6 +104,7 @@ class RootControl private constructor(private val app: Context) {
             RootToolCatalog.STATUS -> ToolOutput(statusText())
             RootToolCatalog.EXEC -> execTool(args)
             RootToolCatalog.GUEST -> guestTool(args)
+            RootToolCatalog.FRIDA_SCAN -> ToolOutput(fridaScanText())
             RootToolCatalog.FRIDA_START -> fridaStart(args)
             RootToolCatalog.FRIDA_STOP -> fridaStop()
             RootToolCatalog.FRIDA_STATUS -> ToolOutput(Frida.report())
@@ -168,10 +169,23 @@ class RootControl private constructor(private val app: Context) {
         return ToolOutput(format(result), isError = !result.ok)
     }
 
+    private fun fridaScanText(): String {
+        val found = Frida.scan()
+        if (found.isEmpty()) return "设备上没找到本地 frida-server；可以用 frida_start 的 version 让它联网下载。"
+        return buildString {
+            appendLine("找到 ${found.size} 个本地 frida-server：")
+            for (c in found) {
+                appendLine("· ${c.path}（${c.bytes / 1024 / 1024} MB${if (c.compressed) " · xz" else ""}）")
+            }
+            append("用 frida_start 的 path 参数指定其中一个即可。")
+        }
+    }
+
     private fun fridaStart(args: Map<String, Any?>): ToolOutput {
         val version = args["version"] as? String
+        val path = args["path"] as? String
         val port = (args["port"] as? Number)?.toInt() ?: DEFAULT_PORT
-        val state = Frida.install(app, version, port)
+        val state = if (!path.isNullOrBlank()) Frida.installLocal(path, port) else Frida.install(app, version, port)
         return ToolOutput(state.text, isError = state.ok != true)
     }
 

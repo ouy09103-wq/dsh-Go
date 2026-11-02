@@ -11,6 +11,7 @@ object RootToolCatalog {
     const val EXEC = "exec"
     const val GUEST = "guest"
     const val FRIDA_START = "frida_start"
+    const val FRIDA_SCAN = "frida_scan"
     const val FRIDA_STOP = "frida_stop"
     const val FRIDA_STATUS = "frida_status"
     const val FRIDA_PS = "frida_ps"
@@ -58,10 +59,17 @@ object RootToolCatalog {
             listOf("command"),
         ),
         Tool(
+            FRIDA_SCAN,
+            "扫描设备上已有的 frida-server 二进制（/sdcard/Download、/data/local/tmp 等），列出路径与大小。装之前先看这个。",
+            emptyMap(),
+            emptyList(),
+        ),
+        Tool(
             FRIDA_START,
-            "下载并启动 frida-server（按当前 ABI 选包），默认只监听 127.0.0.1:27042。已存在同版本会直接复用并重启。",
+            "启动 frida-server，默认只监听 127.0.0.1:27042。优先用 path 指定的本地文件（或自动扫描到的），否则按 ABI 联网下载。",
             linkedMapOf(
-                "version" to str("frida 版本号，如 17.2.17；省略则用内置默认"),
+                "path" to str("设备上已有的 frida-server 文件路径（可用 frida_scan 找），.xz 也行"),
+                "version" to str("frida 版本号，如 17.25.1；仅在需要联网下载时用"),
                 "port" to int("监听端口，默认 27042"),
             ),
             emptyList(),
