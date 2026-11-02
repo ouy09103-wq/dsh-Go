@@ -14,6 +14,12 @@ class RootStatus {
     required this.abi,
     required this.guestRootfs,
     required this.shells,
+    this.usable = false,
+    this.chroot = false,
+    this.reason = '',
+    this.kernel = '',
+    this.enabled = false,
+    this.listening = false,
   });
 
   final String? su;
@@ -22,6 +28,14 @@ class RootStatus {
   final String abi;
   final bool guestRootfs;
   final int shells;
+
+  // New in the root build: what the chroot engine needs, and the two switches.
+  final bool usable;
+  final bool chroot;
+  final String reason;
+  final String kernel;
+  final bool enabled;
+  final bool listening;
 
   bool get hasSu => su != null && su!.isNotEmpty;
 
@@ -32,8 +46,14 @@ class RootStatus {
       manager: (map['manager'] as String?) ?? '',
       sdk: (map['sdk'] as int?) ?? 0,
       abi: (map['abi'] as String?) ?? '',
-      guestRootfs: map['guestRootfs'] == true,
+      guestRootfs: map['rootfs'] == true || map['guestRootfs'] == true,
       shells: (map['shells'] as int?) ?? 0,
+      usable: map['usable'] == true,
+      chroot: map['chroot'] == true,
+      reason: (map['reason'] as String?) ?? '',
+      kernel: (map['kernel'] as String?) ?? '',
+      enabled: map['enabled'] != false,
+      listening: map['listening'] == true,
     );
   }
 }
@@ -102,6 +122,9 @@ class FridaState {
   final String pids;
   final bool listening;
 
+  /// The native tool's own sentence when it sent one (install / stop / status all do).
+  String get text => error ?? '';
+
   String get report {
     if (!ok) return '失败：${error ?? '未知原因'}';
     final buffer = StringBuffer(running ? 'frida-server 运行中' : 'frida-server 未运行');
@@ -120,7 +143,7 @@ class FridaState {
       path: map['path'] as String?,
       port: (map['port'] as int?),
       pid: map['pid'] as String?,
-      error: map['error'] as String?,
+      error: (map['error'] as String?) ?? (map['text'] as String?),
       running: map['running'] == true || (map['pid'] as String? ?? '').isNotEmpty,
       pids: (map['pids'] as String?) ?? '',
       listening: map['listening'] == true,
@@ -170,6 +193,22 @@ class RootChannel {
       );
 
   Future<FridaState> fridaStatus() async => FridaState.from(await channel.invokeMethod<Object?>('fridaStatus'));
+
+  Future<FridaState> fridaStop() async => FridaState.from(await channel.invokeMethod<Object?>('fridaStop'));
+
+  /// `mcp__root__*` 给模型用的 root 工具总开关。
+  Future<bool> toolsEnabled() async => (await channel.invokeMethod<Object?>('toolsEnabled')) == true;
+
+  Future<bool> setToolsEnabled(bool enabled) async =>
+      (await channel.invokeMethod<Object?>('setToolsEnabled', {'enabled': enabled})) == true;
+
+  /// 一次完整的探针（含管理器授权弹窗），返回 support 映射。
+  Future<Map<String, Object?>> supported() async =>
+      (await channel.invokeMethod<Object?>('supported'))?.cast() ??
+      const <String, Object?>{};
+
+  /// 清掉上一次异常退出留下的挂载点。
+  Future<void> cleanup() async => channel.invokeMethod<Object?>('cleanup');
 
   Future<int> shellOpen({String? cwd}) async {
     final raw = await channel.invokeMethod<Object?>('shellOpen', {'cwd': cwd});

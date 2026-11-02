@@ -166,6 +166,10 @@ class RuntimeStatus {
     this.directEngineAvailable = false,
     this.directEngineActive = false,
     this.directEngineFallbackReason,
+    this.rootEngineEnabled = false,
+    this.rootEngineAvailable = false,
+    this.rootEngineActive = false,
+    this.rootEngineSupport = const <String, Object?>{},
     this.currentExecutionMode,
     this.launchSelectedMode,
     this.launchSpawned = false,
@@ -223,6 +227,14 @@ class RuntimeStatus {
   final bool directEngineAvailable;
   final bool directEngineActive;
   final String? directEngineFallbackReason;
+
+  /// 真 root 引擎（su + chroot，uid 0）：用户开关、设备是否可用、当前是否在用。
+  final bool rootEngineEnabled;
+  final bool rootEngineAvailable;
+  final bool rootEngineActive;
+
+  /// 探针结果：su 路径、管理器、chroot/mount 是否可用、kernel、reason。
+  final Map<String, Object?> rootEngineSupport;
 
   /// Native process observation, never inferred from the saved direct preference.
   final String? currentExecutionMode;
@@ -293,6 +305,13 @@ class RuntimeStatus {
     directEngineAvailable: map['directEngineAvailable'] == true,
     directEngineActive: map['directEngineActive'] == true,
     directEngineFallbackReason: map['directEngineFallbackReason'] as String?,
+    rootEngineEnabled: map['rootEngineEnabled'] == true,
+    rootEngineAvailable: map['rootEngineAvailable'] == true,
+    rootEngineActive: map['rootEngineActive'] == true,
+    rootEngineSupport: switch (map['rootEngineSupport']) {
+      final Map<Object?, Object?> support => support.cast<String, Object?>(),
+      _ => const <String, Object?>{},
+    },
     currentExecutionMode: map['currentExecutionMode'] as String?,
     launchSelectedMode: map['launchSelectedMode'] as String?,
     launchSpawned: map['launchSpawned'] == true,
@@ -608,6 +627,14 @@ class RuntimeBridge {
 
   /// Takes effect on the next start; native code rejects changes while active.
   Future<void> setDirectEngine(bool enabled) => _methods.invokeMethod<void>('setDirectEngine', {'enabled': enabled});
+
+  /// 真 root 引擎（su + chroot）。开启前 native 会真跑一次探针，不可用时抛 PlatformException。
+  Future<void> setRootEngine(bool enabled) => _methods.invokeMethod<void>('setRootEngine', {'enabled': enabled});
+
+  /// 强制重新探针（授权弹窗在这里出现），返回 support 映射。
+  Future<Map<String, Object?>> probeRootEngine() async =>
+      (await _methods.invokeMapMethod<Object?, Object?>('probeRootEngine'))?.cast<String, Object?>() ??
+      const <String, Object?>{};
 
   /// Output around the last failure, tokens masked.
   Future<List<String>> failureLog() async => (await _methods.invokeListMethod<String>('failureLog')) ?? const [];

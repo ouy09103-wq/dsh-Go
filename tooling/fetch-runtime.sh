@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ABI=${1:-arm64-v8a}
-VERSION=${2:-${DSH_RUNTIME_VERSION:-1.0.8}}
+VERSION=${2:-${DSH_RUNTIME_VERSION:-1.0.9}}
 FORCE=${FORCE:-0}
 
 case "$ABI" in

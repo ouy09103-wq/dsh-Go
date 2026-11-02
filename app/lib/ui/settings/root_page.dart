@@ -1,34 +1,46 @@
-// 设置 › Root 权限: 真 root 通道的入口页——状态、命令、Linux（Ubuntu rootfs）、
-// frida-server、常驻 root shell。每一项都只在点按后 spawn su。
+// 设置 › Root 权限：这个 root 版的控制台。
+//
+// 三块：
+//  1) 引擎——真 root（su + chroot，uid 0）开关、探针结果、现在到底在用什么。
+//  2) root 工具——`mcp__root__*` 总开关（模型能不能 exec / frida）、桥接状态、清挂载。
+//  3) 手动面板——设备上的 root 命令、rootfs 里的 root 命令、frida-server、常驻 root shell。
+//
+// 所有 su 调用都发生在点按之后；只有 `status` 不 spawn 进程。
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../root/root_channel.dart';
+import '../../runtime/runtime_bridge.dart';
+import '../../runtime/runtime_state.dart';
+import '../common/brief_notice.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'settings_widgets.dart';
 
-class RootPage extends StatefulWidget {
+class RootPage extends ConsumerStatefulWidget {
   const RootPage({super.key});
 
   @override
-  State<RootPage> createState() => _RootPageState();
+  ConsumerState<RootPage> createState() => _RootPageState();
 }
 
-class _RootPageState extends State<RootPage> {
+class _RootPageState extends ConsumerState<RootPage> {
   static const _root = RootChannel();
 
   final _command = TextEditingController(text: 'id');
-  final _guest = TextEditingController(text: 'id -u && uname -a');
+  final _guest = TextEditingController(text: 'id -u && uname -a && pwd');
   final _shellInput = TextEditingController();
   final _output = <String>[];
   final _scroll = ScrollController();
 
   RootStatus? _status;
   bool _busy = false;
+  bool _savingEngine = false;
   int _shellId = -1;
   Timer? _poller;
 
@@ -78,16 +90,76 @@ class _RootPageState extends State<RootPage> {
     }
   }
 
+  Future<void> _toggleEngine(bool value) async {
+    final runtime = ref.read(runtimeBridgeProvider);
+    setState(() => _savingEngine = true);
+    try {
+      await runtime.setRootEngine(value);
+      _log(value ? '真 root 引擎已启用，下次启动生效' : '已切回 proot，下次启动生效');
+    } on PlatformException catch (error) {
+      _log('切换引擎失败：${error.code} ${error.message ?? ''}');
+      if (mounted) showBriefNotice(context, '切换失败：${error.message ?? error.code}');
+    } finally {
+      if (mounted) setState(() => _savingEngine = false);
+      unawaited(_refresh());
+    }
+  }
+
+  Future<void> _probe() async {
+    setState(() => _busy = true);
+    _log('申请 root 授权（管理器会弹窗）…');
+    try {
+      final support = await _root.supported();
+      final usable = support['usable'] == true;
+      _log(
+        'root 探针\n'
+        'su：${support['su'] ?? '未找到'}\n'
+        '管理器：${support['manager'] ?? '未知'}\n'
+        'uid：${support['uid'] ?? -1}\n'
+        'chroot：${support['chroot'] == true ? '可用' : '不可用'}\n'
+        'mount：${support['mount'] == true ? '可用' : '不可用'}\n'
+        '内核：${support['kernel'] ?? '?'}\n'
+        '结论：${usable ? '真 root 引擎可用' : '不可用（${support['reason'] ?? 'unknown'}）'}',
+      );
+    } on PlatformException catch (error) {
+      _log('探针失败：${error.code} ${error.message ?? ''}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+      unawaited(_refresh());
+    }
+  }
+
+  Future<void> _toggleTools(bool value) async {
+    try {
+      final now = await _root.setToolsEnabled(value);
+      _log('root 工具（mcp__root__*）：${now ? '开' : '关'} · 重启引擎后生效');
+    } on PlatformException catch (error) {
+      _log('切换 root 工具失败：${error.message ?? error.code}');
+    } finally {
+      unawaited(_refresh());
+    }
+  }
+
   Future<void> _installFrida() async {
     setState(() => _busy = true);
     _log('安装 frida-server…（下载可能较慢）');
     try {
       final state = await _root.installFrida();
-      _log(state.ok
-          ? 'frida-server 已启动：${state.version} · PID ${state.pid} · 127.0.0.1:${state.port}\n${state.path}'
-          : 'frida-server 安装失败：${state.error ?? '未知原因'}');
+      _log('frida-server\n${state.text.isNotEmpty ? state.text : state.report}');
     } on PlatformException catch (error) {
       _log('frida-server 安装失败：${error.code} ${error.message ?? ''}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _stopFrida() async {
+    setState(() => _busy = true);
+    try {
+      final state = await _root.fridaStop();
+      _log('frida 停止\n${state.text.isNotEmpty ? state.text : state.report}');
+    } on PlatformException catch (error) {
+      _log('frida 停止失败：${error.code} ${error.message ?? ''}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -150,38 +222,107 @@ class _RootPageState extends State<RootPage> {
   @override
   Widget build(BuildContext context) {
     final status = _status;
+    final runtime = ref.watch(localRuntimeProvider);
+    final rt = runtime.status;
+    final l10n = context.l10n;
+    final stopped = !rt.phase.isBusy && rt.phase != RuntimePhase.running;
+    final engineSwitchable = runtime.loaded && stopped && !_savingEngine;
+    final support = rt.rootEngineSupport;
+    final reason = (support['reason'] as String?) ?? '';
+    final ready = (status?.usable ?? false) || rt.rootEngineAvailable;
+    final engineHint = !ready
+        ? switch (reason) {
+            'noSu' => '这台设备没有 su：引擎继续用 proot（免 root），root 工具也用不了。',
+            'notGranted' => '管理器还没给你授权：点「重新探针」，在弹窗里允许。',
+            'noChroot' => '这台设备的 su 不给 chroot：引擎继续用 proot。',
+            _ => '还没探针过；点「重新探针」跑一次 su 检查。',
+          }
+        : !stopped
+        ? '先停引擎再切换。'
+        : rt.inSafeMode
+        ? '安全模式下始终用 proot：退出安全模式后再开。'
+        : rt.rootEngineActive
+        ? '当前就是真 root 引擎（uid 0）。'
+        : '开启后：su + chroot 直接跑 rootfs，进程是真 uid 0，glibc 不再受 App 的 seccomp 限制。';
+
     return AppPage.list(
       title: 'Root 权限',
-      subtitle: Text(status == null
-          ? '正在读取…'
-          : status.hasSu
-              ? '${status.manager.isEmpty ? 'su' : status.manager} · ${status.abi} · Android ${status.sdk}'
-              : '未检测到 su'),
+      subtitle: Text(
+        status == null
+            ? '正在读取…'
+            : status.hasSu
+            ? '${status.manager.isEmpty ? 'su' : status.manager} · ${status.abi} · Android ${status.sdk}'
+            : '未检测到 su（继续用 proot）',
+      ),
       children: [
         SettingsSection(
-          title: '状态',
+          title: '真 root 引擎',
           children: [
+            SettingsSwitchTile(
+              title: '用 su + chroot 启动引擎',
+              subtitle: engineHint,
+              value: rt.rootEngineEnabled,
+              onChanged: engineSwitchable && (ready || rt.rootEngineEnabled) ? _toggleEngine : null,
+            ),
             SettingsTile(
               icon: AppIcons.systemAccess,
+              title: '重新探针',
+              subtitle: '真跑一次 su：id -u、chroot、uname',
+              value: Text(_busy ? '…' : 'su'),
+              onTap: _busy ? null : _probe,
+            ),
+            SettingsTile(
+              icon: AppIcons.engine,
               title: 'su 路径',
-              value: Text(status?.su ?? '—'),
-              onTap: _refresh,
+              value: Text(status?.su ?? (support['su'] as String?) ?? '—'),
             ),
             SettingsTile(
               icon: AppIcons.verified,
-              title: '申请 root 授权（id -u）',
-              value: Text(_busy ? '…' : '点按执行'),
-              onTap: _busy ? null : () => _run(_root.probe, 'id -u'),
+              title: '现在用的引擎',
+              value: Text(
+                rt.rootEngineActive
+                    ? '真 root（chroot · uid 0）'
+                    : (rt.currentExecutionMode ?? (rt.directEngineActive ? 'direct' : 'proot')),
+              ),
             ),
             SettingsTile(
-              icon: AppIcons.terminal,
-              title: 'Linux 环境（rootfs）',
-              value: Text((status?.guestRootfs ?? false) ? '已就绪' : '未解压'),
+              icon: AppIcons.info,
+              title: '内核',
+              value: Text((status?.kernel.isNotEmpty ?? false) ? status!.kernel : ((support['kernel'] as String?) ?? '—')),
             ),
           ],
         ),
         SettingsSection(
-          title: '执行 root 命令',
+          title: 'root 工具（给模型用）',
+          children: [
+            SettingsSwitchTile(
+              title: 'mcp__root__* 工具',
+              subtitle: (status?.enabled ?? true)
+                  ? '开：模型能 status / exec / guest / frida_start / frida_stop / frida_status / frida_ps / frida_script。改完重启引擎。'
+                  : '关：模型看不到 exec / frida 这些工具。',
+              value: status?.enabled ?? true,
+              onChanged: _busy ? null : _toggleTools,
+            ),
+            SettingsTile(
+              icon: AppIcons.plugin,
+              title: '桥接',
+              value: Text((status?.listening ?? false) ? '监听中' : '未启动（引擎起来后才有）'),
+            ),
+            SettingsTile(
+              icon: AppIcons.refresh,
+              title: '清理残留挂载',
+              subtitle: '上次异常退出把 /proc /sys /dev 留在 rootfs 里时用',
+              onTap: _busy
+                  ? null
+                  : () async {
+                      await _root.cleanup();
+                      _log('已清理 rootfs 里的挂载点');
+                    },
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: '设备上的 root 命令',
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -190,10 +331,7 @@ class _RootPageState extends State<RootPage> {
                 minLines: 1,
                 maxLines: 4,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  hintText: 'su -c "…"',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(hintText: 'su -c "…"', border: OutlineInputBorder()),
               ),
             ),
             SettingsTile(
@@ -205,7 +343,7 @@ class _RootPageState extends State<RootPage> {
           ],
         ),
         SettingsSection(
-          title: 'Linux（Ubuntu rootfs，真 root）',
+          title: 'rootfs 里的 root 命令',
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -214,15 +352,13 @@ class _RootPageState extends State<RootPage> {
                 minLines: 1,
                 maxLines: 4,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                decoration: const InputDecoration(
-                  hintText: '/bin/sh -lc "…"',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(hintText: '/bin/sh -lc "…"', border: OutlineInputBorder()),
               ),
             ),
             SettingsTile(
               icon: AppIcons.terminal,
               title: '在 rootfs 里执行',
+              subtitle: 'chroot 可用时是真的 uid 0，否则走 proot',
               value: Text(_busy ? '…' : '运行'),
               onTap: _busy ? null : () => _run(() => _root.guest(_guest.text), 'Linux 执行'),
             ),
@@ -241,6 +377,11 @@ class _RootPageState extends State<RootPage> {
               icon: AppIcons.engine,
               title: 'frida-server 状态',
               onTap: _busy ? null : _fridaStatus,
+            ),
+            SettingsTile(
+              icon: AppIcons.privacy,
+              title: '停止 frida-server',
+              onTap: _busy ? null : _stopFrida,
             ),
           ],
         ),

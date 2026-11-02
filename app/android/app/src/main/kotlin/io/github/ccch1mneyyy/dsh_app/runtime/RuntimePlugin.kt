@@ -139,6 +139,18 @@ class RuntimePlugin :
                 controller.setAutoSafe(call.argument<Boolean>("enabled") != false)
                 result.success(null)
             }
+            "setRootEngine" -> {
+                try {
+                    controller.setRootEngine(call.argument<Boolean>("enabled") == true)
+                    result.success(null)
+                } catch (error: IllegalStateException) {
+                    result.error("root_engine_unavailable", error.message, null)
+                }
+            }
+            "probeRootEngine" -> {
+                val support = io.github.ccch1mneyyy.dsh_app.root.RootControl.get(appContext).probe(force = true)
+                result.success(support.map())
+            }
             "setDirectEngine" -> {
                 try {
                     controller.setDirectEngine(call.argument<Boolean>("enabled") == true)

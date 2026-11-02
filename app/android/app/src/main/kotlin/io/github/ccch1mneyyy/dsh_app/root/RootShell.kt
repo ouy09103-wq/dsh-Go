@@ -11,8 +11,9 @@ import kotlin.concurrent.thread
  */
 internal class RootShell private constructor(private val process: Process) {
 
+    /** Process.pid() needs API 26; minSdk is 26. */
     val pid: Int
-        get() = runCatching { process.pid().toInt() }.getOrDefault(-1)
+        get() = runCatching { process.pid() }.getOrDefault(-1)
 
     private val out = StringBuilder()
     private val err = StringBuilder()

@@ -1,33 +1,51 @@
-# 构建带真 root 能力的 dsh-go APK。
+# 构建 root 版 dsh-go APK：真 root 引擎（su + chroot）、mcp__root__* 工具、frida-server。
 #
-# 与官方 tooling/build-apk.sh 的差别：构建前先用 tooling/fetch-runtime.sh 把
-# 预编译运行时（rootfs + proot jniLibs）取到 runtime/out，再走官方构建脚本。
+# 与官方 tooling/build-apk.sh 的差别只有两处：
+#   1. 构建前用 tooling/fetch-runtime.sh 把预编译运行时（rootfs + proot jniLibs）从
+#      上游 release 取到 runtime/out；
+#   2. applicationId 用 io.github.ccch1mneyyy.dsh_root，可以和官方版装在同一台手机上。
 #
-# 需要的 secrets：
-#   ANDROID_KEYSTORE_BASE64   release keystore（base64），没有则用 debug 签名
-#   ANDROID_KEYSTORE_PASSWORD keystore 口令
-#   ANDROID_KEY_ALIAS         别名
-#   ANDROID_KEY_PASSWORD      密钥口令
+# secrets（都可选，缺了就 debug 签名，装之前先卸掉旧 debug 包）：
+#   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
 name: Build root APK
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 版本名（如 1.0.8-root）
+        description: 版本名（如 1.0.9-root.1）
         required: false
-        default: 1.0.8-root
+        default: 1.0.9-root.1
+      abi:
+        description: arm64 或 x64
+        required: false
+        default: arm64
+  push:
+    branches: [root-build]
+    paths:
+      - 'app/**'
+      - 'runtime/**'
+      - 'tooling/**'
+      - '.github/workflows/build-root-apk.yml'
 
 concurrency:
-  group: build-root-apk
-  cancel-in-progress: false
+  group: build-root-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
-  arm64:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
+    env:
+      ABI: ${{ github.event.inputs.abi || 'arm64' }}
+      VERSION: ${{ github.event.inputs.version || '1.0.9-root.1' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Free disk space
         run: |
@@ -51,8 +69,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
-          bash tooling/fetch-runtime.sh arm64-v8a
-          ls -la runtime/out/arm64-v8a/assets/runtime
+          abi_dir=$([[ "$ABI" == "x64" ]] && echo x86_64 || echo arm64-v8a)
+          bash tooling/fetch-runtime.sh "$abi_dir"
+          ls -la "runtime/out/$abi_dir/assets/runtime"
+          python3 -c "import json;print(json.load(open('runtime/out/$abi_dir/assets/runtime/manifest.json'))['runtimeVersion'])"
 
       - name: Pub get
         working-directory: app
@@ -72,21 +92,40 @@ jobs:
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           EOF
 
-      - name: Build
+      - name: Analyse (Dart)
+        working-directory: app
+        run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings lib/root lib/ui/settings/root_page.dart lib/runtime || true
+
+      - name: Build APK
         run: |
-          bash tooling/build-apk.sh -f arm64 --build-name "${{ github.event.inputs.version }}"
+          bash tooling/build-apk.sh -f "$ABI" --build-name "$VERSION" -- --dart-define=DSH_ROOT_BUILD=1
+
+      - name: Name the artifact
+        run: |
+          src=$(ls app/build/app/outputs/flutter-apk/app-*-release.apk | head -1)
+          out="dsh-go-root-$VERSION-$ABI.apk"
+          cp "$src" "$out"
+          sha256sum "$out" | tee "$out.sha256"
+          echo "APK=$out" >> "$GITHUB_ENV"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-go-root-arm64
-          path: app/build/app/outputs/flutter-apk/app-arm64-release.apk
-          retention-days: 30
+          name: dsh-go-root-${{ env.ABI }}
+          path: |
+            dsh-go-root-*.apk
+            dsh-go-root-*.apk.sha256
+          retention-days: 60
 
-      - name: Release
+      - name: Attach to a release
         if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: root-${{ github.run_number }}
-          name: dsh-go root ${{ github.event.inputs.version }}
-          files: app/build/app/outputs/flutter-apk/app-arm64-release.apk
+          tag_name: root-${{ env.VERSION }}
+          name: dsh-go root ${{ env.VERSION }}
+          body: |
+            真 root 版：su + chroot 跑引擎（uid 0）、`mcp__root__*` 工具、frida-server 管理。
+            applicationId 是 `io.github.ccch1mneyyy.dsh_root`，可与官方版共存。
+          files: |
+            dsh-go-root-*.apk
+            dsh-go-root-*.apk.sha256

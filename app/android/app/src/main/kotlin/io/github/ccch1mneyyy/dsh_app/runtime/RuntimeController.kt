@@ -11,6 +11,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+import io.github.ccch1mneyyy.dsh_app.root.RootControl
+import io.github.ccch1mneyyy.dsh_app.root.RootEngine
+import io.github.ccch1mneyyy.dsh_app.root.RootGuest
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -50,7 +53,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     val manifest: RuntimeManifest by lazy { RuntimeManifest.load(app) }
     private val installer by lazy { RuntimeInstaller(app, manifest, ::note) }
-    @Volatile private var process: DshProcess? = null
+    @Volatile private var process: EngineProcess? = null
     @Volatile private var lastLaunch: LaunchDiagnostics? = null
     /** The start in progress is turning PRoot's fake hard links into real files (see [L2sMigration]). */
     @Volatile private var tidyingFiles = false
@@ -142,6 +145,10 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "directEngineAvailable" to directEngineAvailable(),
         "directEngineActive" to (process?.executionMode == "direct"),
         "directEngineFallbackReason" to lastLaunch?.fallbackReason,
+        "rootEngineEnabled" to rootEngineEnabled(),
+        "rootEngineAvailable" to rootEngineAvailable(),
+        "rootEngineActive" to (process?.rootEngine == true),
+        "rootEngineSupport" to runCatching { RootControl.get(app).support().map() }.getOrNull(),
         "currentExecutionMode" to process?.executionMode,
         "launchSelectedMode" to lastLaunch?.selectedMode,
         "launchSpawned" to (lastLaunch?.spawned == true),
@@ -167,6 +174,29 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         check(process == null && phase !in setOf(Phase.STARTING, Phase.RUNNING, Phase.STOPPING, Phase.INSTALLING) && !resetting) { "stop the engine before changing its launch method" }
         check(!enabled || directEngineAvailable()) { "this bundled runtime does not support direct launch" }
         prefs.edit().putBoolean(K_DIRECT_ENGINE, enabled).remove(K_DIRECT_FAILED).apply()
+        emitStatus()
+    }
+
+    // ── Root engine (chroot under su) ────────────────────────────────────────────────
+
+    /** The saved root-engine choice; off until the person turns it on and su grants root. */
+    fun rootEngineEnabled(): Boolean = prefs.getBoolean(K_ROOT_ENGINE, false)
+
+    /** Real root is available when su grants uid 0 **and** the device has chroot(2). */
+    fun rootEngineAvailable(): Boolean = runCatching {
+        (RootEngine.cachedSupport() ?: RootEngine.probe()).usable
+    }.getOrDefault(false)
+
+    /** Arms or disarms the root engine; takes effect on the next start. */
+    @Synchronized fun setRootEngine(enabled: Boolean) {
+        check(process == null && phase !in setOf(Phase.STARTING, Phase.RUNNING, Phase.STOPPING, Phase.INSTALLING) && !resetting) {
+            "stop the engine before changing its launch method"
+        }
+        if (enabled) {
+            val support = RootEngine.probe(force = true)
+            check(support.usable) { "root engine unavailable: ${support.reason ?: "unknown"}" }
+        }
+        prefs.edit().putBoolean(K_ROOT_ENGINE, enabled).apply()
         emitStatus()
     }
 
@@ -305,7 +335,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         setPhase(Phase.STARTING)
         timeline.requested()
         worker.execute {
-            var launched: DshProcess? = null
+            var launched: EngineProcess? = null
             try {
                 noteDns(GuestSetup.writeResolvConf(app, installer.rootfs), DnsConfigSource.START)
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
@@ -343,16 +373,33 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     PhoneControl.get(app).onEngineStopped()
                     return@execute
                 }
-                val p = DshProcess(app, manifest, installer.rootfs, this)
+                // Root engine: su + chroot, real uid 0. Never in safe mode (the rescue profile must
+                // launch on the most conservative path), and only when the probe says it works.
+                val wantsRoot = rootEngineEnabled() && !safe && rootEngineAvailable()
+                if (rootEngineEnabled() && !safe && !wantsRoot) {
+                    val support = RootControl.get(app).support()
+                    log("[dsh-app] root engine: su/chroot not usable (${support.reason ?: "unprobed"}); launching proot", "system")
+                }
+                // Root tools (`mcp__root__*`) ride on su, not on the engine: the model keeps them
+                // under proot too. The overlay is only written when the bridge came up.
+                val rootTools = RootControl.get(app).prepareLaunch(installer.rootfs, safe, wantsRoot) { log(it, "system") }
+                val root = wantsRoot
+                val p: EngineProcess = if (root) {
+                    RootDshProcess(app, manifest, installer.rootfs, this)
+                } else {
+                    DshProcess(app, manifest, installer.rootfs, this)
+                }
                 launched = p
                 lastLaunch = p.launchDiagnostics
                 process = p
                 timeline.spawned()
+                log("[dsh-app] execution engine: ${if (root) "root (su · chroot · uid 0)" else "app (proot / direct)"}", "system")
                 val direct = directEngine()
                 p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed) { actualDirect ->
-                    GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
+                    GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect, root)
                 }
                 if (phone) PhoneControl.get(app).launched(p.phoneMounted)
+                RootControl.get(app).launched(rootTools)
             } catch (e: Throwable) {
                 // Keep ownership while the old UID sweep runs, including a
                 // failure after spawning but before the waiter was allocated.
@@ -712,7 +759,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         emitStatus()
     }
 
-    @Synchronized override fun onReady(source: DshProcess, baseUrl: String, token: String) {
+    @Synchronized override fun onReady(source: EngineProcess, baseUrl: String, token: String) {
         // A late report from a stopped or replaced process.
         if (source !== process || phase == Phase.STOPPING) return
         DshService.cancelStoppedAlert(app)
@@ -742,7 +789,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         main.postDelayed({ if (gen == runGen && phase == Phase.RUNNING && process != null) onHealthy() }, SafePolicy.HEALTHY_MS)
     }
 
-    @Synchronized override fun onExit(source: DshProcess, code: Int, expected: Boolean) {
+    @Synchronized override fun onExit(source: EngineProcess, code: Int, expected: Boolean) {
         if (source !== process) return
         try {
             if (!expected && stopGen < runGen) {
@@ -750,6 +797,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             }
             process = null
             PhoneControl.get(app).onEngineStopped()
+            RootControl.get(app).onEngineStopped()
             baseUrl = null
             token = null
             healthyAt = null
@@ -865,6 +913,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         private const val K_DIRECT_ENGINE = "directEngine"
         /** Runtime version Direct failed to launch with (see [SafePolicy.directLaunchFailed]). */
         private const val K_DIRECT_FAILED = "directEngineFailedRuntime"
+        /** Root engine (su + chroot): real uid 0 inside the bundled rootfs. */
+        private const val K_ROOT_ENGINE = "rootEngine"
         private const val MAIN_FAILURE_LOG = "failure-normal.log"
         private const val LATEST_FAILURE_LOG = "failure-latest.log"
 

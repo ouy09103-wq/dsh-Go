@@ -1,7 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.root
 
 import android.content.Context
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -11,24 +10,19 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.concurrent.thread
 
 /**
- * Real-root access for the app: MethodChannel `dsh/root` (see lib/root/root_channel.dart).
+ * Flutter bridge for the root side: MethodChannel `dsh/root` (see lib/root/root_channel.dart).
  *
- * - `status`   → `{su: <path|null>, manager: "Magisk"|"KernelSU"|"APatch"|"su"|"", sdk, abi,
- *                 guestRootfs: bool, shells: n}` — no process is spawned.
- * - `probe`    → `su -c 'id -u'`: `{ok, uid, exitCode, stdout, stderr}`; the manager's
- *                 authorization prompt appears here.
- * - `exec`     → one command through `su -c`: `{command, timeoutMs}`.
- * - `guest`    → the same command inside the bundled Ubuntu rootfs, under real root:
- *                 `{command, timeoutMs}`.
- * - `installFrida` → downloads frida-server for this ABI into /data/local/tmp and starts it:
- *                 `{version?, port?}`.
- * - `fridaStatus` → whether frida-server runs and on which port.
- * - `shellOpen` / `shellWrite` / `shellPoll` / `shellClose` → one persistent root shell.
- *
- * Everything runs on one worker thread per call; the shell owns its own process.
+ * - `status`       cached probe only; no su spawn.
+ * - `probe`        `su -c 'id -u; command -v chroot; uname -r'` — the manager's grant prompt shows here.
+ * - `supported`    force a re-probe and report whether the chroot engine may be used.
+ * - `exec`         one command on the device as root.
+ * - `guest`        one command inside the bundled rootfs as root (chroot first, proot as fallback).
+ * - `installFrida` / `fridaStatus` / `fridaStop`
+ * - `shellOpen` / `shellWrite` / `shellPoll` / `shellClose`   one persistent root shell.
+ * - `toolsEnabled` / `setToolsEnabled`   the `mcp__root__*` switch for the model.
+ * - `cleanup`      lazy-umount whatever an interrupted launch left in the rootfs.
  */
 class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
@@ -55,9 +49,13 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        val control = RootControl.get(context)
         when (call.method) {
-            "status" -> background(result) { status() }
-            "probe" -> background(result) { RootExec.probe().map() }
+            "status" -> background(result) { control.status() }
+            "probe" -> background(result) {
+                RootExec.probe().map() + mapOf("support" to control.probe(true).map())
+            }
+            "supported" -> background(result) { control.probe(true).map() }
             "exec" -> {
                 val command = call.argument<String>("command")
                 if (command == null) { result.error("badArgs", "command is required", null); return }
@@ -68,28 +66,41 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 val command = call.argument<String>("command")
                 if (command == null) { result.error("badArgs", "command is required", null); return }
                 val timeout = (call.argument<Int>("timeoutMs") ?: 120_000).toLong()
-                background(result) {
-                    val line = GuestExec.suCommand(context, command)
-                        ?: return@background mapOf("ok" to false, "uid" to -1, "exitCode" to -1,
-                            "stdout" to "", "stderr" to "rootfs is not unpacked yet")
-                    RootExec.run(line, timeout).map()
-                }
+                background(result) { guest(command, timeout).map() }
             }
             "installFrida" -> {
                 val version = call.argument<String>("version")
-                val port = call.argument<Int>("port") ?: DEFAULT_PORT
-                background(result) { Frida.install(context, version, port) }
+                val port = call.argument<Int>("port") ?: RootControl.DEFAULT_PORT
+                background(result) {
+                    val state = Frida.install(context, version, port)
+                    mapOf(
+                        "ok" to state.ok, "text" to state.text, "version" to state.version,
+                        "path" to state.path, "port" to state.port, "pid" to state.pid,
+                    )
+                }
             }
-            "fridaStatus" -> background(result) { Frida.status() }
+            "fridaStatus" -> background(result) { Frida.statusMap() + mapOf("ok" to true, "text" to Frida.report()) }
+            "fridaStop" -> background(result) { mapOf("ok" to true, "text" to Frida.stopText()) }
+            "toolsEnabled" -> result.success(control.isEnabled())
+            "setToolsEnabled" -> {
+                control.setEnabled(call.argument<Boolean>("enabled") == true)
+                result.success(control.isEnabled())
+            }
+            "cleanup" -> background(result) {
+                val rootfs = File(context.filesDir, ROOTFS)
+                if (rootfs.isDirectory) RootEngine.cleanupMounts(rootfs)
+                true
+            }
             "shellOpen" -> {
-                val su = RootExec.suPath() ?: run {
-                    result.error("noRoot", "no su on this device", null); return
+                val su = RootEngine.suPath() ?: run {
+                    result.error("noRoot", "no su on this device", null)
+                    return
                 }
                 background(result) {
                     val shell = RootShell.open(su, call.argument<String>("cwd"))
                     val id = shellIds.incrementAndGet()
                     shells[id] = shell
-                    mapOf("id" to id, "pid" to shellPid(shell))
+                    mapOf("id" to id, "pid" to shell.pid)
                 }
             }
             "shellWrite" -> {
@@ -101,7 +112,8 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "shellPoll" -> {
                 val id = call.argument<Int>("id") ?: -1
                 val shell = shells[id] ?: run {
-                    result.success(mapOf("stdout" to "", "stderr" to "", "closed" to true)); return
+                    result.success(mapOf("stdout" to "", "stderr" to "", "closed" to true))
+                    return
                 }
                 val polled = shell.poll()
                 if (polled["closed"] == true) {
@@ -119,18 +131,27 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
     }
 
-    private fun shellPid(shell: RootShell): Int = shell.pid
-
-    private fun status(): Map<String, Any?> {
-        val rootfs = File(context.filesDir, "runtime/rootfs")
-        return mapOf(
-            "su" to RootExec.suPath(),
-            "manager" to RootExec.manager(),
-            "sdk" to Build.VERSION.SDK_INT,
-            "abi" to Build.SUPPORTED_ABIS.firstOrNull(),
-            "guestRootfs" to rootfs.isDirectory,
-            "shells" to shells.size,
-        )
+    /** Runs [command] inside the rootfs: chroot when the device allows it, proot otherwise. */
+    private fun guest(command: String, timeoutMs: Long): RootExec.Result {
+        val rootfs = File(context.filesDir, ROOTFS)
+        if (!rootfs.isDirectory) return RootExec.Result(false, -1, -1, "", "rootfs is not unpacked yet")
+        val support = RootEngine.cachedSupport() ?: RootEngine.probe()
+        val script = if (support.usable) {
+            RootEngine.launchScript(
+                rootfs,
+                listOf(
+                    "/usr/bin/env", "HOME=/root",
+                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "LANG=C.UTF-8", "TERM=xterm-256color",
+                    "/bin/sh", "-lc", command,
+                ),
+                emptyList(),
+            )
+        } else {
+            GuestExec.suCommand(context, command)
+                ?: return RootExec.Result(false, -1, -1, "", "proot is unavailable")
+        }
+        return RootExec.run(script, timeoutMs)
     }
 
     private fun background(result: MethodChannel.Result, work: () -> Any?) {
@@ -147,97 +168,6 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     companion object {
         const val CHANNEL = "dsh/root"
-        const val DEFAULT_PORT = 27042
+        private const val ROOTFS = "runtime/rootfs"
     }
-}
-
-/**
- * frida-server: download the release build for this ABI, push it to /data/local/tmp,
- * start it as root on [port] and leave it running.
- */
-internal object Frida {
-
-    private val ABI_NAMES = mapOf(
-        "arm64-v8a" to "arm64",
-        "armeabi-v7a" to "arm",
-        "x86_64" to "x86_64",
-        "x86" to "x86",
-    )
-
-    /** Recent releases first; a caller-supplied version wins. */
-    private val FALLBACK_VERSIONS = listOf("17.2.17", "17.2.9", "16.7.19")
-
-    fun install(context: Context, version: String?, port: Int): Map<String, Any?> {
-        val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: return fail("unknown ABI")
-        val arch = ABI_NAMES[abi] ?: return fail("unsupported ABI: $abi")
-        val su = RootExec.suPath() ?: return fail("no su on this device")
-        val probe = RootExec.probe()
-        if (!probe.ok || probe.uid != 0) return fail("root not granted", probe.stderr.ifEmpty { "uid=${probe.uid}" })
-
-        val dir = "/data/local/tmp"
-        val remote = "$dir/frida-server"
-        val candidates = (version?.let { listOf(it) } ?: emptyList()) + FALLBACK_VERSIONS
-
-        var lastError = "no release matched"
-        for (v in candidates) {
-            val url = "https://github.com/frida/frida/releases/download/$v/frida-server-$v-android-$arch.xz"
-            val local = File(context.cacheDir, "frida-server-$v-$arch.xz")
-            val download = RootExec.run(
-                "curl -fL --retry 3 --connect-timeout 20 -o ${GuestExec.quote(local.absolutePath)} ${GuestExec.quote(url)}" +
-                    " || wget -q -O ${GuestExec.quote(local.absolutePath)} ${GuestExec.quote(url)}",
-                600_000,
-            )
-            if (!download.ok || !local.isFile || local.length() == 0L) {
-                lastError = "download failed for $v"
-                continue
-            }
-            val unpack = RootExec.run(
-                "xz -dcf ${GuestExec.quote(local.absolutePath)} > $remote && chmod 755 $remote && " +
-                    "$remote --version",
-                120_000,
-            )
-            if (!unpack.ok) {
-                lastError = "unpack failed for $v: ${unpack.stderr.take(200)}"
-                continue
-            }
-            runCatching { local.delete() }
-            stop()
-            val started = RootExec.run(
-                "cd $dir && (setsid ./frida-server -l 127.0.0.1:$port >/dev/null 2>&1 &) ; sleep 1; " +
-                    "pidof frida-server || pgrep -f frida-server | head -1",
-                60_000,
-            )
-            return mapOf(
-                "ok" to started.ok,
-                "version" to v,
-                "arch" to arch,
-                "path" to remote,
-                "port" to port,
-                "pid" to started.stdout.trim(),
-                "stdout" to unpack.stdout.trim(),
-                "stderr" to (started.stderr + download.stderr).trim(),
-            )
-        }
-        return fail(lastError)
-    }
-
-    fun status(): Map<String, Any?> {
-        val su = RootExec.suPath() ?: return fail("no su on this device")
-        val running = RootExec.run("pgrep -f frida-server | head -3", 20_000)
-        val listen = RootExec.run("cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':69A2' | head -3", 20_000)
-        return mapOf(
-            "ok" to true,
-            "running" to running.stdout.trim().isNotEmpty(),
-            "pids" to running.stdout.trim(),
-            "listening" to listen.stdout.trim().isNotEmpty(),
-            "su" to su,
-            "port" to 0x69A2,
-        )
-    }
-
-    private fun stop() {
-        RootExec.run("pkill -f frida-server; sleep 0.3; true", 30_000)
-    }
-
-    private fun fail(reason: String): Map<String, Any?> = mapOf("ok" to false, "error" to reason)
 }

@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.system.ErrnoException
 import android.system.Os
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneGuest
+import io.github.ccch1mneyyy.dsh_app.root.RootGuest
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
@@ -18,6 +19,20 @@ object GuestSetup {
     private val FALLBACK_DNS = listOf("223.5.5.5", "119.29.29.29", "8.8.8.8")
 
     private const val AGENTS_MARKER = "<!-- dsh-app:managed"
+
+    /** The environment section while the root engine (su + chroot, real uid 0) is up. */
+    // l10n:keep agent prompt
+    private val ROOT_ENGINE_MD = ("""
+        |<!-- dsh-app:managed — 删除这一行后，DSH App 不再覆盖本文件 -->
+        |# 运行环境（DSH 手机版 · root 引擎）
+        |
+        |- 你运行在 Android 手机上的 Ubuntu 24.04 环境里，用 su + chroot 起的：`id -u` 是 0，是真 root，不是 proot 的假 root。设备本体也对你开放（`/data`、`/system`、`/proc` 是真的），执行前先读清楚再动手。
+        |- 改设备本体之前先备份，别动 `/system`、`/vendor`、`/data/adb` 里别人的东西，也别 `rm -rf /`。要重启设备或改 SELinux 时先问。
+        |- 需要跑 root 侧专用操作时用 `mcp__root__*`：`status`、`exec`（设备上）、`guest`（rootfs 里）、`frida_start` / `frida_stop` / `frida_status` / `frida_ps` / `frida_script`。
+        |- 默认工作目录是 `/root/workspace`（host 上是 `{ROOTFS}/root/workspace`）。{STORAGE_LINE}
+        |- 已预装 node / npm / pnpm、python3 / pip、git；npm 和 pnpm 默认用国内镜像 registry.npmmirror.com。缺别的工具可以 `apt-get update && apt-get install -y <包名>`。
+        |- 手机屏幕小：回复尽量简洁，代码块不要太宽；用用户使用的语言回答。
+        |""").trimMargin()
 
     // l10n:keep agent prompt
     private val AGENTS_MD = ("""
@@ -100,11 +115,15 @@ object GuestSetup {
         phoneControl: Boolean = false,
         visualReplies: Boolean = true,
         directEngine: Boolean = false,
+        rootEngine: Boolean = false,
     ) {
         try {
             val file = File(rootfs, "root/.dsh/AGENTS.md")
             if (file.exists() && !file.readText().startsWith(AGENTS_MARKER)) return
-            val environment = if (directEngine) {
+            val environment = if (rootEngine) {
+                // l10n:keep agent prompt
+                ROOT_ENGINE_MD.replace("{ROOTFS}", rootfs.canonicalPath)
+            } else if (directEngine) {
                 // l10n:keep agent prompt
                 AGENTS_MD.replace("Ubuntu 24.04 环境里（proot，免 Root）", "Ubuntu 24.04 运行环境里（引擎直接启动，bash/git/python/apt 工具仍经 proot）")
                     .replace("`/root/workspace`", "`${rootfs.canonicalPath}/root/workspace`") +
@@ -121,6 +140,7 @@ object GuestSetup {
                 },
             ) + (if (visualReplies) DSH_UI_SECTION else "") +
                 (if (phoneControl) PhoneGuest.AGENTS_SECTION else "") +
+                (if (rootEngine) RootGuest.AGENTS_SECTION else "") +
                 DIAGNOSTICS_SECTION.replace(
                     "{PATH}",
                     if (directEngine) "${rootfs.canonicalPath}/root/.dsh/dsh-app/diagnostics.md"

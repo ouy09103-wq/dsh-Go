@@ -74,6 +74,7 @@ enum SettingsPageId {
   performance,
   background,
   systemAccess,
+  root,
   privacy,
   sharedLinks,
   engine,
@@ -448,6 +449,14 @@ final _pages = <SettingsPageMeta>[
     keywords: (l) => l.searchKwSystemAccess,
     freq: Freq.medium,
     links: const ['system-permissions'],
+  ),
+  SettingsPageMeta(
+    SettingsPageId.root,
+    title: (l) => 'Root 权限',
+    group: _general,
+    keywords: (l) => 'root su chroot frida 破甲 magisk kernelsu apatch',
+    freq: Freq.medium,
+    links: const ['root'],
   ),
   SettingsPageMeta(
     SettingsPageId.privacy,

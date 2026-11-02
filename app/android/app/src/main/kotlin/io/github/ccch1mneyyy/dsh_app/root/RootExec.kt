@@ -14,27 +14,10 @@ import java.util.concurrent.TimeUnit
  */
 internal object RootExec {
 
-    /** Where su may live. First existing wins; a manager on PATH is checked last. */
-    private val SU_CANDIDATES = listOf(
-        "/system/bin/su",
-        "/system/xbin/su",
-        "/sbin/su",
-        "/su/bin/su",
-        "/debug_ramdisk/su",
-        "/data/adb/ksu/bin/su",
-        "/data/adb/ap/bin/su",
-        "/data/adb/magisk/su",
-    )
+    /** One source of truth for su discovery (see [RootEngine]). */
+    fun suPath(): String? = RootEngine.suPath()
 
-    fun suPath(): String? = SU_CANDIDATES.firstOrNull { File(it).exists() }
-
-    fun manager(): String = when {
-        File("/data/adb/ksu").exists() -> "KernelSU"
-        File("/data/adb/ap").exists() -> "APatch"
-        File("/data/adb/magisk").exists() -> "Magisk"
-        suPath() != null -> "su"
-        else -> ""
-    }
+    fun manager(): String = RootEngine.manager()
 
     data class Result(
         val ok: Boolean,
@@ -57,7 +40,10 @@ internal object RootExec {
 
     fun run(command: String, timeoutMs: Long = 60_000, cwd: String? = null, env: Map<String, String> = emptyMap()): Result {
         val su = suPath() ?: return Result(false, -1, -1, "", "no su on this device")
-        val builder = ProcessBuilder(su, "-c", command).redirectErrorStream(false)
+        // The child reports its own uid on stderr after the command, so `uid` never depends on
+        // what the command happened to print. The marker line is removed from stderr below.
+        val wrapped = "{\n$command\n}; __dsh_rc=\$?; echo \"$UID_MARKER\$(id -u)\" 1>&2; exit \$__dsh_rc"
+        val builder = ProcessBuilder(su, "-c", wrapped).redirectErrorStream(false)
         if (cwd != null) builder.directory(File(cwd))
         builder.environment().putAll(env)
         val process = try {
@@ -79,10 +65,14 @@ internal object RootExec {
         outThread.join(1000)
         errThread.join(1000)
         val code = process.exitValue()
-        val uid = Regex("^\\s*(\\d+)\\s*$", RegexOption.MULTILINE)
-            .find(out.toString())?.groupValues?.get(1)?.toIntOrNull() ?: -1
-        return Result(code == 0, uid, code, out.toString(), err.toString())
+        var errText = err.toString()
+        val marker = Regex("(?m)^" + Regex.escape(UID_MARKER) + "(\\d+)\\s*$")
+        val uid = marker.find(errText)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        errText = marker.replace(errText, "").trimEnd()
+        return Result(code == 0, uid, code, out.toString(), errText)
     }
+
+    private const val UID_MARKER = "__dsh_uid__:"
 
     private fun drain(stream: java.io.InputStream, into: StringBuilder): Thread =
         Thread {

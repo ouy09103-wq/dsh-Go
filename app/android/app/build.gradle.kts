@@ -36,7 +36,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        // The root build ships next to the official app (different signature and id, so both can be
+        // installed): same namespace, new application id. `-PappId=` overrides it in CI.
+        applicationId = (project.findProperty("appId") as String?) ?: "io.github.ccch1mneyyy.dsh_root"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private

@@ -25,11 +25,11 @@ class DshProcess(
     private val manifest: RuntimeManifest,
     private val rootfs: File,
     private val listener: Listener,
-) {
+) : EngineProcess {
     interface Listener {
         fun onLog(line: String, stream: String)
-        fun onReady(source: DshProcess, baseUrl: String, token: String)
-        fun onExit(source: DshProcess, code: Int, expected: Boolean)
+        fun onReady(source: EngineProcess, baseUrl: String, token: String)
+        fun onExit(source: EngineProcess, code: Int, expected: Boolean)
         /** The start is busy turning PRoot's fake hard links into real files (true), or done (false). */
         fun onTidying(active: Boolean) {}
     }
@@ -46,22 +46,24 @@ class DshProcess(
         RuntimeProcessOwnership.cleanupState(rootfs.canonicalPath, AndroidProcess.myUid())
     }
     private val cleanupKnown get() = cleanupState.known
+    override val rootEngine: Boolean get() = false
+
     var port: Int = DEFAULT_PORT
         private set
 
-    @Volatile var startupError: String? = null
+    @Volatile override var startupError: String? = null
         private set
 
     /** The launch command got the phone-control overlay (see [PhoneGuest.launchArg]). */
-    var phoneMounted: Boolean = false
+    override var phoneMounted: Boolean = false
         private set
 
     /** Actual method for this process, fixed before it can be spawned. Safe mode stays proot. */
-    var direct: Boolean = false
+    override var direct: Boolean = false
         private set
 
-    val launchDiagnostics = LaunchDiagnostics()
-    val executionMode: String? get() = launchDiagnostics.currentMode(process?.isAlive == true)
+    override val launchDiagnostics = LaunchDiagnostics()
+    override val executionMode: String? get() = launchDiagnostics.currentMode(process?.isAlive == true)
 
     var directFallbackReason: String? = null
         private set
@@ -70,7 +72,7 @@ class DshProcess(
      * [binds] are extra proot `-b host:guest` mounts, inserted before the guest command.
      * [safe] boots the rescue profile instead of `web` (see [SafeMode.profileArg]).
      */
-    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
+    override fun start(guestEnv: Map<String, String>, binds: List<String>, safe: Boolean, phone: Boolean, directEngine: Boolean, directFailed: Boolean, onLaunchMethod: ((Boolean) -> Unit)?) {
         check(process == null) { "already started" }
         var selection = DirectLaunch.select(rootfs, directEngine, safe, directFailed)
         // Only PRoot's fake hard links stand in Direct's way: tidy them once no runtime process is left.
@@ -224,7 +226,7 @@ class DshProcess(
     }
 
     /** Waits for cleanup and exit reporting; zero waits until completion. */
-    fun awaitExit(millis: Long = 0): Boolean {
+    override fun awaitExit(millis: Long): Boolean {
         // The waiter joins the stopper before reporting exit. Startup can fail
         // after spawning but before allocating it, so await the stopper then.
         val ending = waiter ?: stopper
@@ -233,7 +235,7 @@ class DshProcess(
     }
 
     /** Preserve a startup failure through cleanup and the service's later STOP. */
-    @Synchronized fun failStart(message: String) {
+    @Synchronized override fun failStart(message: String) {
         if (stopping) return
         startupError = message
         listener.onLog("[dsh-app] start failed: $message", "system")
@@ -244,7 +246,7 @@ class DshProcess(
      * proot ignores SIGTERM, so stop DSH itself first (pid file written by the launch
      * command), then SIGQUIT proot, which kills every remaining tracee.
      */
-    @Synchronized fun stop(expected: Boolean = true) {
+    @Synchronized override fun stop(expected: Boolean) {
         stopping = true
         if (expected) expectedExit = true
         if (stopper != null) return
@@ -366,7 +368,7 @@ class DshProcess(
     }
 
     /** Reap a captured process tree before releasing #17 ownership to another launch. */
-    @Synchronized fun killStrays(): Boolean = reapStrays().complete
+    @Synchronized override fun killStrays(): Boolean = reapStrays().complete
 
     private data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean)
 

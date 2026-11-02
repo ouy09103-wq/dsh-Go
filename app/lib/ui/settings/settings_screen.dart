@@ -264,8 +264,8 @@ class SettingsScreen extends ConsumerWidget {
             SettingsTile(
               icon: AppIcons.command,
               tint: SettingsHues.general,
-              title: 'Root 权限',
-              subtitle: 'su 提权 · root shell · Ubuntu rootfs · frida-server',
+              spot: SettingsIndex.entry(SettingsPageId.root),
+              subtitle: '真 root 引擎（su + chroot）· root 工具 · frida-server · root shell',
               onTap: () => _push(context, const RootPage()),
             ),
           ],
