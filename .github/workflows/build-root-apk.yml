@@ -67,15 +67,23 @@ jobs:
           flutter pub get
 
       - name: Signing key
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
-          cat > app/android/key.properties <<EOF
-          storeFile=$RUNNER_TEMP/release.jks
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          EOF
+          if [ -z "$KEYSTORE" ]; then
+            echo "no keystore secret: this build is debug-signed"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > app/android/key.properties
 
       - name: Build APK
         run: |
@@ -102,7 +110,7 @@ jobs:
           retention-days: 60
 
       - name: Attach to a release
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        if: github.event_name == 'workflow_dispatch' 
         uses: softprops/action-gh-release@v2
         with:
           tag_name: root-${{ env.VERSION }}
