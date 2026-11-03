@@ -125,6 +125,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: root-${{ env.VERSION }}
+          # Without this the tag lands on the repository's default branch, so the release
+          # pointed at `main` while the APK was built from `root-build`. Pin it to this build.
+          target_commitish: ${{ github.sha }}
           name: dsh-go root ${{ env.VERSION }}
           body: |
             真 root 版：su + chroot 跑引擎（uid 0）、`mcp__root__*` 工具、frida-server 管理。
