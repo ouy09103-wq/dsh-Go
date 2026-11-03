@@ -269,8 +269,23 @@ object RootEngine {
         false
     }
 
+    /**
+     * True while a guest `node` is alive for this rootfs.
+     *
+     * Its mounts are in use then: unmounting them under a running engine takes away its `/proc`,
+     * `/dev` and `/sdcard` until the next restart, and chowning the tree races the writes it is
+     * doing. Everything below that touches mounts or ownership checks this first.
+     */
+    fun engineRunning(rootfs: File): Boolean {
+        val pid = guestPid(rootfs) ?: return false
+        return alive(pid) && isGuestNode(pid)
+    }
+
     /** Lazy-umounts whatever an interrupted launch left inside this rootfs. */
     fun cleanupMounts(rootfs: File) {
+        // Never yank the mounts out from under a live engine: the caller wants the leftovers of a
+        // dead one, and the live one owns the same mountpoints.
+        if (engineRunning(rootfs)) return
         val r = quote(rootfs.absolutePath)
         RootExec.run(
             // Deepest first: a bind mounted on top of another cannot be released before it, and
@@ -349,6 +364,9 @@ object RootEngine {
      */
     fun releaseTo(rootfs: File, uid: Int, force: Boolean = false): Boolean {
         if (!rootfs.isDirectory) return false
+        // A live engine keeps the tree busy: chowning it would race its writes, and clearing the
+        // mounts would leave it without /proc and /sdcard. It has to be stopped first.
+        if (engineRunning(rootfs)) return false
         if (!force && ownerOf(rootfs) == uid) return false
         // Anything still mounted inside the rootfs goes first, so the walk below sees one tree.
         cleanupMounts(rootfs)
