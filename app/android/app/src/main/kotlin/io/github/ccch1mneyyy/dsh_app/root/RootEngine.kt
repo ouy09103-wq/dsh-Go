@@ -327,13 +327,35 @@ object RootEngine {
     fun shareWithApp(rootfs: File, uid: Int) {
         if (!rootfs.isDirectory) return
         val r = quote(rootfs.absolutePath)
+        // `/root` itself is in the list: it is the parent of every path below, and while it is
+        // 0:0 0700 the app cannot even traverse into `$DSH_HOME` — every read fails with EACCES
+        // no matter how correct the children are. The walk also has no `-maxdepth`: the files the
+        // app must read sit deeper than two levels (`profiles/web/cordis.patch.yml`,
+        // `storages/session_projcache/sessions/*.json`), and a bounded walk silently missed them.
         RootExec.run(
-            "for d in $r/root/.dsh $r/var/lib/dsh-app $r/tmp; do " +
-                "if [ -d \"\$d\" ]; then find \"\$d\" -xdev -maxdepth 2 -exec chown -h $uid:$uid {} + 2>/dev/null; fi; " +
-                "done; true",
-            120_000,
+            "for d in $r/root $r/root/.dsh $r/var/lib/dsh-app $r/tmp $r/opt/dsh-app; do " +
+                "if [ -d \"\$d\" ]; then find \"\$d\" -xdev -exec chown -h $uid:$uid {} + 2>/dev/null; fi; " +
+                "done; " +
+                relabelCommand(r) +
+                "true",
+            180_000,
         )
     }
+
+    /**
+     * SELinux: a file created by the root engine (uid 0, kernel context) lands as
+     * `u:object_r:app_data_file:s0` — the *category-less* label. The app runs in
+     * `u:r:untrusted_app_27:s0:c175,c257,c512,c768`, and MLS forbids reading a category-less
+     * file from a categorized domain, so the app gets EACCES even when the file is owned by its
+     * own uid and mode 0600. chown alone therefore never fixes a root run; the labels have to be
+     * restored too. `restorecon` reads the device's own `file_contexts`, so the exact categories
+     * stay whatever this ROM assigned to this app's data dir.
+     */
+    internal fun relabelCommand(root: String): String =
+        "if command -v restorecon >/dev/null 2>&1; then " +
+            "for d in $root/root $root/var/lib/dsh-app $root/tmp $root/opt/dsh-app $root/etc/resolv.conf; do " +
+            "restorecon -R \"\$d\" >/dev/null 2>&1 || true; done; " +
+            "fi; "
 
     /** The uid the rootfs should belong to whenever the engine runs as the app (proot / direct). */
     fun ownerOf(rootfs: File): Int? = try {
@@ -367,10 +389,15 @@ object RootEngine {
         // A live engine keeps the tree busy: chowning it would race its writes, and clearing the
         // mounts would leave it without /proc and /sdcard. It has to be stopped first.
         if (engineRunning(rootfs)) return false
-        if (!force && ownerOf(rootfs) == uid) return false
+        val r = quote(rootfs.absolutePath)
+        if (!force && ownerOf(rootfs) == uid) {
+            // Ownership already matches, but a root run may still have left category-less labels
+            // behind (they are invisible to `stat %u`). Relabel, then report "nothing chowned".
+            RootExec.run(relabelCommand(r) + "true", 180_000)
+            return false
+        }
         // Anything still mounted inside the rootfs goes first, so the walk below sees one tree.
         cleanupMounts(rootfs)
-        val r = quote(rootfs.absolutePath)
         // Every mount below the rootfs becomes `-path <mount> -prune -o`, so find never descends
         // into a bind. awk keeps each path a single word; `r "/"` restricts it to this rootfs.
         // Single-quoted for the shell, so `$2` and `040` reach awk verbatim: Kotlin's own `$`
@@ -384,6 +411,10 @@ object RootEngine {
             walk("-exec chown -h " + uid + ":" + uid + " {} +") +
                 walk("-type d -exec chmod u+rwx {} +") +
                 walk("-type f -exec chmod u+rw {} +") +
+                // chown alone is not enough after a root run: the guest's files carry the
+                // category-less `app_data_file:s0` label, which the app's own categorized domain
+                // may not read. See [relabelCommand].
+                relabelCommand(r) +
                 "true",
             600_000,
         )

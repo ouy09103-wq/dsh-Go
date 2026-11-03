@@ -336,7 +336,13 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         worker.execute {
             var launched: EngineProcess? = null
             try {
-                noteDns(GuestSetup.writeResolvConf(app, installer.rootfs), DnsConfigSource.START)
+                // The root engine runs as uid 0, which this device's VPN does not route; a VPN
+                // resolver would answer nothing and cost every lookup a 2s timeout. Order the
+                // servers accordingly before the engine reads /etc/resolv.conf.
+                noteDns(
+                    GuestSetup.writeResolvConf(app, installer.rootfs, rootEngineEnabled() && !safe),
+                    DnsConfigSource.START,
+                )
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
                 // Phone control: bridge up and guest files written before DSH starts; off in safe mode.
@@ -440,7 +446,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     /** The default network changed: point the guest's resolv.conf at its DNS. */
     fun refreshDns(properties: LinkProperties) {
-        val servers = GuestSetup.pickDns(properties.dnsServers)
+        // Same ordering rule as the start path: under the root engine the public resolvers lead.
+        val rootEngine = rootEngineEnabled() && safeState != SafeState.ON
+        val servers = GuestSetup.pickDns(properties.dnsServers, rootEngine)
         worker.execute {
             if ((phase == Phase.RUNNING || phase == Phase.STARTING) && installer.isCurrent()) {
                 noteDns(GuestSetup.writeResolvConf(installer.rootfs, servers), DnsConfigSource.NETWORK)

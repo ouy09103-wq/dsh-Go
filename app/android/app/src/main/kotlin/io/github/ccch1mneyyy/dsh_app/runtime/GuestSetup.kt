@@ -153,16 +153,17 @@ object GuestSetup {
     }
 
     /** glibc in the guest reads /etc/resolv.conf; Android has none, so mirror the active network's DNS. */
-    fun writeResolvConf(context: Context, rootfs: File): DnsConfigReport =
+    fun writeResolvConf(context: Context, rootfs: File, rootEngine: Boolean = false): DnsConfigReport =
         writeResolvConfFromNetwork(rootfs, {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             cm.getLinkProperties(cm.activeNetwork)?.dnsServers.orEmpty()
-        }, Os::rename)
+        }, Os::rename, rootEngine)
 
     internal fun writeResolvConfFromNetwork(
         rootfs: File,
         readNetwork: () -> List<InetAddress>,
         replace: (String, String) -> Unit,
+        rootEngine: Boolean = false,
     ): DnsConfigReport {
         var networkRead = DnsNetworkRead.READ
         val addresses = try {
@@ -171,15 +172,25 @@ object GuestSetup {
             networkRead = DnsNetworkRead.FAILED
             emptyList()
         }
-        return writeResolvConf(rootfs, pickDns(addresses), replace).copy(networkRead = networkRead)
+        return writeResolvConf(rootfs, pickDns(addresses, rootEngine), replace).copy(networkRead = networkRead)
     }
 
-    /** Up to two of the network's servers, IPv4 first, then the public fallbacks: three in all. */
-    fun pickDns(addrs: List<InetAddress>): List<String> {
+    /**
+     * Up to two of the network's servers, IPv4 first, then the public fallbacks: three in all.
+     *
+     * [rootEngine] changes the order, not the set. The root engine runs as real uid 0, which the
+     * device's VPN does not route: a VPN's own resolver (Clash / sing-box answer on the tunnel
+     * address, e.g. `172.19.0.2`) accepts nothing from uid 0, so every lookup burns c-ares'
+     * 2s timeout before falling through to the next server. That is the "replies got slow" report
+     * after turning the root engine on: each turn re-resolves the provider host. Under the root
+     * engine the public resolvers therefore come first; the network's own stay as the fallback.
+     */
+    fun pickDns(addrs: List<InetAddress>, rootEngine: Boolean = false): List<String> {
         val network = addrs.filterNot { it.isLinkLocalAddress }
             .sortedBy { if (it is Inet4Address) 0 else 1 }
             .mapNotNull { it.hostAddress?.substringBefore('%') }.distinct().take(2)
-        return (network + FALLBACK_DNS).distinct().take(3)
+        if (!rootEngine) return (network + FALLBACK_DNS).distinct().take(3)
+        return (FALLBACK_DNS + network).distinct().take(3)
     }
 
     fun writeResolvConf(rootfs: File, servers: List<String>): DnsConfigReport =
