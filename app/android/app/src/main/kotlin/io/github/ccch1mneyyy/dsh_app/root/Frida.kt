@@ -179,6 +179,11 @@ internal object Frida {
                 // busybox needs the applet name: `busybox -dcf` is not a command, `busybox xz -dcf` is.
                 "XZ=; for c in xz unxz; do command -v \$c >/dev/null 2>&1 && { XZ=\$c; break; }; done; " +
                 "if [ -z \"\$XZ\" ] && command -v busybox >/dev/null 2>&1; then XZ=\"busybox xz\"; fi; " +
+                // A device with neither cannot unpack a compressed file; say so instead of running
+                // `-dcf` as a command and reporting a confusing failure.
+                "case $src in *.xz|*.tar.xz) " +
+                "  if [ -z \"\$XZ\" ]; then echo \"no xz or busybox on this device to unpack $src\" >&2; exit 127; fi ;; " +
+                "esac; " +
                 "case $src in " +
                 "*.tar.xz) " +
                 "  \$XZ -dcf $src > $DIR/.frida.tar; " +
