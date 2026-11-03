@@ -10,6 +10,15 @@ name: Build root APK
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本名（如 1.0.9-root.2）'
+        required: true
+        default: '1.0.9-root.2'
+      publish:
+        description: '构建完成后发布到 Release'
+        type: boolean
+        default: true
   push:
     branches:
       - root-build
@@ -88,7 +97,7 @@ jobs:
       - name: Build APK
         run: |
           version="${{ github.event.inputs.version }}"
-          if [ -z "$version" ]; then version="1.0.9-root.1"; fi
+          if [ -z "$version" ]; then version="1.0.9-root.2"; fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
           bash tooling/build-apk.sh -f arm64 --build-name "$version" -- --dart-define=DSH_ROOT_BUILD=1
 
@@ -109,8 +118,10 @@ jobs:
             dsh-go-root-*.apk.sha256
           retention-days: 60
 
+      # A push to root-build publishes too: the build is the deliverable, and leaving it only in
+      # the Actions artifact tab means the Release keeps the previous APK. Dispatch can opt out.
       - name: Attach to a release
-        if: github.event_name == 'workflow_dispatch' 
+        if: github.event_name == 'push' || inputs.publish == true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: root-${{ env.VERSION }}
