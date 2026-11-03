@@ -26,9 +26,10 @@ import kotlin.concurrent.thread
  * connects to. proot passes abstract addresses through untranslated (filesystem socket paths are
  * rewritten into the rootfs and may exceed sun_path), so a Node process inside proot reaches it.
  *
- * Every connection must come from this app's uid (SO_PEERCRED) and start with a hello line
- * carrying this launch's token; then it is MCP over newline-delimited JSON-RPC, served by
- * [McpServer]. A per-launch random socket name keeps other apps from squatting it.
+ * Every connection must come from this app's uid (SO_PEERCRED) or from uid 0 — the root engine
+ * runs the guest as real root, so its relay is uid 0 — and start with a hello line carrying this
+ * launch's token; then it is MCP over newline-delimited JSON-RPC, served by [McpServer]. A
+ * per-launch random socket name keeps other apps from squatting it.
  *
  * Fallback: loopback TCP + token, opened only when asked (see [PhoneControl]); the
  * peer uid is checked through /proc/net/tcp when readable. Any app can reach loopback, so this
@@ -139,7 +140,7 @@ class PhoneBridge(
             } catch (_: Exception) {
                 -1
             }
-            if (uid != Process.myUid()) {
+            if (!uidOk(uid)) {
                 log("[dsh-app] phone bridge: refused a connection from uid $uid")
                 runCatching { sock.close() }
                 continue
@@ -161,7 +162,7 @@ class PhoneBridge(
                 return
             }
             val uid = loopbackPeerUid(sock.port, s.localPort)
-            if (uid != null && uid != Process.myUid()) {
+            if (uid != null && !uidOk(uid)) {
                 log("[dsh-app] phone bridge: refused a tcp connection from uid $uid")
                 runCatching { sock.close() }
                 continue
@@ -169,6 +170,18 @@ class PhoneBridge(
             serve(sock, sock.getInputStream(), sock.getOutputStream(), token) { ms -> runCatching { sock.soTimeout = ms } }
         }
     }
+
+    /**
+     * The relay runs as this app under proot, and as **uid 0** under the root engine (su + chroot):
+     * the whole point of that engine is that the guest is a real root process, so a uid-0 peer is
+     * exactly the expected client. Anything else is refused. The token is still required — the
+     * socket name is random per launch and the hello carries this launch's token.
+     *
+     * Before this check accepted uid 0 the root engine refused every phone connection
+     * (`refused a connection from uid 0`), the loopback fallback failed on the same check, and the
+     * model had no `mcp__phone__*` tools at all while root was on.
+     */
+    private fun uidOk(uid: Int): Boolean = uid == 0 || uid == Process.myUid()
 
     private fun serve(sock: Closeable, raw: InputStream, output: OutputStream, token: String, timeout: (Int) -> Unit) {
         val input = java.io.BufferedInputStream(raw)

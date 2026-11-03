@@ -30,7 +30,11 @@ class RootControl private constructor(private val app: Context) {
         RootEngine.manager(),
     )
 
-    fun isEnabled(): Boolean = enabledCache ?: prefs.getBoolean(K_ENABLED, true).also { enabledCache = it }
+    /**
+     * Off by default. Handing the model an unconfirmed root `exec` is the most dangerous thing this
+     * build can do, so it has to be switched on deliberately (README: the capsule starts grey).
+     */
+    fun isEnabled(): Boolean = enabledCache ?: prefs.getBoolean(K_ENABLED, false).also { enabledCache = it }
 
     @Synchronized
     fun setEnabled(enabled: Boolean): Boolean {
@@ -76,6 +80,9 @@ class RootControl private constructor(private val app: Context) {
             return false
         }
         return try {
+            // Whatever a previous root run left owned by 0:0 must be writable by this app before
+            // the files below are written: AGENTS.md, the two bridge.json files and the overlays.
+            RootEngine.shareWithApp(rootfs, android.os.Process.myUid())
             RootGuest.writeFiles(rootfs)
             val ep = bridge.start(withTcp = false)
             RootGuest.writeConfig(rootfs, ep)
@@ -203,7 +210,14 @@ class RootControl private constructor(private val app: Context) {
         val command = args["command"] as? String
         if (command.isNullOrBlank()) return ToolOutput("guest 需要 command", isError = true)
         val root = rootfs ?: return ToolOutput("rootfs 还没解压，先启动一次引擎", isError = true)
-        val script = RootEngine.launchScript(root, listOf("/usr/bin/env", "HOME=/root", "/bin/sh", "-lc", command), emptyList())
+        // `nested`: the engine is usually up and already mounted this rootfs, and this call must
+        // share those mounts instead of re-mounting and then unmounting them on the way out.
+        val script = RootEngine.launchScript(
+            root,
+            listOf("/usr/bin/env", "HOME=/root", "/bin/sh", "-lc", command),
+            emptyList(),
+            nested = true,
+        )
         val result = RootExec.run(script, timeoutOf(args, 120_000))
         return ToolOutput(format(result), isError = !result.ok)
     }
@@ -283,6 +297,7 @@ class RootControl private constructor(private val app: Context) {
             root,
             listOf("/usr/bin/env", "HOME=/root", "/bin/sh", "-lc", "python3 ${RootEngine.quote(py.absolutePath)}"),
             emptyList(),
+            nested = true,
         )
         val result = RootExec.run(script_, (duration + 60_000).toLong())
         runCatching { file.delete() }

@@ -166,6 +166,9 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     "/bin/sh", "-lc", command,
                 ),
                 emptyList(),
+                // Shares the running engine's mounts; tearing them down here would leave the
+                // engine without /proc and /sdcard until it restarts.
+                nested = true,
             )
         } else {
             GuestExec.suCommand(context, command)

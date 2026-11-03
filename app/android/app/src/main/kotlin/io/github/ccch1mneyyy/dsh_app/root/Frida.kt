@@ -30,6 +30,9 @@ internal object Frida {
     /** Where a person usually keeps a downloaded frida-server. Scanned shallowly, as root. */
     private val SCAN_DIRS = listOf(
         "/sdcard/Download/DSH-Go", "/sdcard/Download", "/sdcard/Documents", "/data/local/tmp",
+        // People download frida-server into whatever folder they happen to use; the top level of
+        // shared storage catches those without walking the whole card.
+        "/sdcard",
     )
 
     private const val DIR = "/data/local/tmp"
@@ -53,12 +56,19 @@ internal object Frida {
         )
     }
 
-    /** Lists local frida-server binaries, newest-looking first. Read-only; needs root to read /sdcard. */
+    /**
+     * Lists local frida-server binaries, newest-looking first. Read-only; needs root to read /sdcard.
+     *
+     * A `.tar.xz` from the frida releases is the file people actually end up with, and the scan used
+     * to miss it: the pattern only matched names containing `frida-server`, while the release
+     * archive is `frida-<version>-android-<arch>.tar.xz`. It is listed here as a compressed
+     * candidate; [deploy] unpacks the archive rather than the archive itself.
+     */
     fun scan(): List<Candidate> {
         val dirs = SCAN_DIRS.joinToString(" ") { RootEngine.quote(it) }
         // A raw string: the shell needs its own backslashes, and Kotlin rejects \( and \; in a literal.
         val out = RootExec.run(
-            """find $dirs -maxdepth 2 -type f \( -iname '*frida-server*' -o -iname 'frida-server*' \) -exec stat -c '%s %n' {} \; 2>/dev/null | head -40""",
+            """find $dirs -maxdepth 2 -type f \( -iname '*frida-server*' -o -iname 'frida-*-android-*.tar.xz' -o -iname 'frida-server*' \) -exec stat -c '%s %n' {} \; 2>/dev/null | head -40""",
             60_000,
         )
         return out.stdout.lines().mapNotNull { line ->
@@ -67,7 +77,10 @@ internal object Frida {
             val bytes = line.substring(0, at).toLongOrNull() ?: return@mapNotNull null
             val path = line.substring(at + 1).trim()
             if (path.isEmpty() || bytes < 1_000_000L) return@mapNotNull null
-            Candidate(path, bytes, path.endsWith(".xz"))
+            val compressed = path.endsWith(".xz")
+            // A release archive of one binary is ~24 MB compressed; anything much smaller is not it.
+            if (compressed && path.endsWith(".tar.xz") && bytes < 8_000_000L) return@mapNotNull null
+            Candidate(path, bytes, compressed)
         }.sortedByDescending { it.bytes }
     }
 
@@ -151,14 +164,29 @@ internal object Frida {
     }
 
     /**
-     * Unpacks an .xz (or copies a raw binary) to /data/local/tmp, checks it with `--version`,
-     * and only then stops the old server and starts this one. Null when the file is not a
-     * runnable frida-server for this device.
+     * Unpacks the file to /data/local/tmp, checks it with `--version`, and only then stops the old
+     * server and starts this one. Null when the file is not a runnable frida-server for this device.
+     *
+     * Three shapes arrive here: a raw binary, a single-file `.xz`, and the release archive
+     * `frida-<version>-android-<arch>.tar.xz`. Android's toybox has no `xz` (and `find -exec` on a
+     * `.tar.xz` used to be handed straight to `xz`, which does not exist on a stock device), so the
+     * decompression picks whatever is on PATH: busybox from Magisk / KernelSU, or toybox.
      */
     private fun deploy(local: String, version: String, port: Int): State? {
         val src = RootEngine.quote(local)
         val unpack = RootExec.run(
-            "case $src in *.xz) xz -dcf $src > $REMOTE ;; *) cp -f $src $REMOTE ;; esac; " +
+            "set -e; " +
+                // busybox needs the applet name: `busybox -dcf` is not a command, `busybox xz -dcf` is.
+                "XZ=; for c in xz unxz; do command -v \$c >/dev/null 2>&1 && { XZ=\$c; break; }; done; " +
+                "if [ -z \"\$XZ\" ] && command -v busybox >/dev/null 2>&1; then XZ=\"busybox xz\"; fi; " +
+                "case $src in " +
+                "*.tar.xz) " +
+                "  \$XZ -dcf $src > $DIR/.frida.tar; " +
+                "  tar -xOf $DIR/.frida.tar \$(tar -tf $DIR/.frida.tar | grep -m1 -E '/frida-server$|^frida-server$') > $REMOTE; " +
+                "  rm -f $DIR/.frida.tar ;; " +
+                "*.xz) \$XZ -dcf $src > $REMOTE ;; " +
+                "*) cp -f $src $REMOTE ;; " +
+                "esac; " +
                 "chmod 755 $REMOTE; chown 0:0 $REMOTE; $REMOTE --version",
             300_000,
         )
@@ -167,7 +195,7 @@ internal object Frida {
         stopQuiet()
         val start = RootExec.run(
             "cd $DIR && (setsid ./frida-server -l 127.0.0.1:$port >/dev/null 2>&1 &) ; sleep 1; " +
-                "pgrep -f frida-server | head -1",
+                "pgrep -x frida-server | head -1",
             60_000,
         )
         val pid = start.stdout.trim().lines().firstOrNull().orEmpty()
@@ -183,10 +211,16 @@ internal object Frida {
         )
     }
 
-    fun running(): Boolean = RootExec.run("pgrep -f frida-server >/dev/null && echo yes || echo no", 20_000)
+    /**
+     * `pgrep -f` matches the whole command line, so any process whose *arguments* merely mention
+     * `frida-server` counts as a hit — including the `su -c` wrapper this check itself runs in, and
+     * the shell that typed the command. The server's process name is exactly `frida-server`
+     * (it execs itself), so `-x` is the honest match.
+     */
+    fun running(): Boolean = RootExec.run("pgrep -x frida-server >/dev/null && echo yes || echo no", 20_000)
         .stdout.contains("yes")
 
-    fun pids(): String = RootExec.run("pgrep -f frida-server | head -5", 20_000).stdout.trim()
+    fun pids(): String = RootExec.run("pgrep -x frida-server | head -5", 20_000).stdout.trim()
 
     fun listening(port: Int = RootControl.DEFAULT_PORT): Boolean {
         val hex = Integer.toHexString(port).uppercase().padStart(4, '0')
@@ -224,6 +258,6 @@ internal object Frida {
     }
 
     private fun stopQuiet() {
-        RootExec.run("pkill -f frida-server; sleep 0.3; pkill -9 -f frida-server; true", 40_000)
+        RootExec.run("pkill -x frida-server; sleep 0.3; pkill -9 -x frida-server; true", 40_000)
     }
 }

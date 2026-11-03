@@ -109,16 +109,24 @@ object RootEngine {
      * [guestArgv] starts at the guest's `/usr/bin/env` (manifest template, expanded, overlays in).
      * [binds] are `src` or `src:dst` mounts to add inside the rootfs (phone storage).
      */
-    fun launchScript(rootfs: File, guestArgv: List<String>, binds: List<String>, logFile: String? = null): String {
+    fun launchScript(
+        rootfs: File,
+        guestArgv: List<String>,
+        binds: List<String>,
+        logFile: String? = null,
+        nested: Boolean = false,
+    ): String {
         // Keep the raw path and quote every composed path once: quoting an already-quoted prefix
         // would nest quotes and hand the shell a literal that no longer names the directory.
         val root = rootfs.absolutePath
         fun at(guestPath: String): String = quote(root + guestPath)
 
+        // A nested run shares the mounts the engine already made. Mounting again would stack a
+        // second /proc on top of the first on every tool call, so it only mounts what is missing.
         val base = listOf(
-            "mount -t proc proc ${at("/proc")}",
-            "mount --bind /dev ${at("/dev")}",
-            "mount --bind /sys ${at("/sys")}",
+            "mountpoint -q ${at("/proc")} || mount -t proc proc ${at("/proc")}",
+            "mountpoint -q ${at("/dev")} || mount --bind /dev ${at("/dev")}",
+            "mountpoint -q ${at("/sys")} || mount --bind /sys ${at("/sys")}",
         )
         val extra = ArrayList<Pair<String, String>>()
         for (bind in binds) {
@@ -136,7 +144,7 @@ object RootEngine {
                 append("if [ -e $host ]; then\n")
                 append("  mkdir -p \$(dirname $guest) 2>/dev/null || true\n")
                 append("  if [ -d $host ]; then mkdir -p $guest 2>/dev/null || true; else touch $guest 2>/dev/null || true; fi\n")
-                append("  if mount --bind $host $guest 2>/dev/null; then echo $guest >> \$R/.dsh-root-mounts; fi\n")
+                append("  if mountpoint -q $guest 2>/dev/null; then :; elif mount --bind $host $guest 2>/dev/null; then echo $guest >> \$R/.dsh-root-mounts; fi\n")
                 append("fi")
             }
         }
@@ -154,15 +162,22 @@ object RootEngine {
             append("set -u\n")
             append("R=${quote(root)}\n")
             append("mkdir -p \$R/proc \$R/sys \$R/dev \$R/dev/shm \$R/tmp \$R/root 2>/dev/null || true\n")
-            append(": > \$R/.dsh-root-mounts 2>/dev/null || true\n")
+            if (!nested) {
+                // The ledger belongs to the launch that owns the mounts. A nested run (a `guest`
+                // tool call while the engine is up) shares those mounts and must not reset or
+                // unmount them: it would tear down the running engine's /proc, /dev and /sdcard.
+                append(": > \$R/.dsh-root-mounts 2>/dev/null || true\n")
+            }
             append("cleanup() {\n")
             if (unmount.isNotEmpty()) {
                 append("  ").append(unmount.replace("\n", "\n  ")).append("\n")
             }
-            append("  umount -l \$R/sys 2>/dev/null || true\n")
-            append("  umount -l \$R/dev/shm 2>/dev/null || true\n")
-            append("  umount -l \$R/dev 2>/dev/null || true\n")
-            append("  umount -l \$R/proc 2>/dev/null || true\n")
+            if (!nested) {
+                append("  umount -l \$R/sys 2>/dev/null || true\n")
+                append("  umount -l \$R/dev/shm 2>/dev/null || true\n")
+                append("  umount -l \$R/dev 2>/dev/null || true\n")
+                append("  umount -l \$R/proc 2>/dev/null || true\n")
+            }
             append("}\n")
             // A signal must end the script, not merely run cleanup: only EXIT guarantees the trap
             // fires exactly once, after the guest is gone.
@@ -171,7 +186,7 @@ object RootEngine {
             for (line in base) {
                 append("$line 2>/dev/null || true\n")
             }
-            append("mount -t tmpfs tmpfs \$R/dev/shm 2>/dev/null || true\n")
+            append("mountpoint -q \$R/dev/shm || mount -t tmpfs tmpfs \$R/dev/shm 2>/dev/null || true\n")
             if (extraLines.isNotEmpty()) {
                 append(extraLines)
                 append("\n")
@@ -181,16 +196,40 @@ object RootEngine {
         }
     }
 
-    /** The guest pid (`echo $$ > /tmp/dsh-web.pid`), read from the host. */
-    fun guestPid(rootfs: File): Int? = try {
-        File(rootfs, "tmp/dsh-web.pid").readText().trim().toIntOrNull()?.takeIf { it > 0 }
-    } catch (_: Exception) {
-        null
+    /**
+     * The guest pid (`echo $$ > /tmp/dsh-web.pid`).
+     *
+     * The root engine runs the guest as uid 0 and `adopt()` chowns `/root` and `/tmp` to 0:0, so
+     * `/tmp/dsh-web.pid` ends up mode 0600 owned by root. Reading it from the app (uid 10428) fails
+     * with EACCES, [guestPid] then returns null, and `terminate()` silently gives up — the engine
+     * keeps running as an orphan. Read through su instead, which is what the root engine is for.
+     */
+    fun guestPid(rootfs: File): Int? {
+        val file = File(rootfs, "tmp/dsh-web.pid")
+        // The fast path still works when the file happens to be readable by this app.
+        val direct = try {
+            file.readText().trim().toIntOrNull()
+        } catch (_: Exception) {
+            null
+        }
+        if (direct != null && direct > 0) return direct
+        val out = try {
+            RootExec.run("cat ${quote(file.absolutePath)} 2>/dev/null || echo 0", 20_000).stdout
+        } catch (_: Exception) {
+            return null
+        }
+        return out.trim().lines().firstOrNull()?.toIntOrNull()?.takeIf { it > 0 }
     }
 
     /** SIGTERM node (dsh exits 0), then SIGKILL; the launch script's trap unmounts. */
     fun terminate(rootfs: File, waitMs: Long = 6_000): Boolean {
         val pid = guestPid(rootfs) ?: return false
+        // Never signal a recycled pid: the file survives a crash, and the pid may since belong
+        // to another app's process. Only a live node inside this rootfs is ours to end.
+        if (!isGuestNode(pid)) {
+            runCatching { File(rootfs, "tmp/dsh-web.pid").delete() }
+            return false
+        }
         RootExec.run("kill -TERM $pid 2>/dev/null; true", 20_000)
         val deadline = System.nanoTime() + waitMs * 1_000_000L
         while (System.nanoTime() < deadline) {
@@ -199,6 +238,29 @@ object RootEngine {
         }
         RootExec.run("kill -KILL $pid 2>/dev/null; true", 20_000)
         return true
+    }
+
+    /**
+     * True when [pid] is a DSH guest `node`: the process name is node, it runs DSH's own bin, and
+     * its working directory is a `runtime/rootfs` tree (an earlier install's rootfs, since deleted,
+     * shows up as `…/rootfs (deleted)` — still ours to reap).
+     *
+     * This guards against a recycled pid: `/tmp/dsh-web.pid` survives a crash, and the pid it
+     * names may since belong to something unrelated.
+     */
+    private fun isGuestNode(pid: Int): Boolean {
+        val out = RootExec.run(
+            "if [ -d /proc/$pid ]; then " +
+                "tr '\\0' '\\n' < /proc/$pid/cmdline 2>/dev/null | head -3; " +
+                "readlink /proc/$pid/cwd 2>/dev/null; fi",
+            20_000,
+        ).stdout
+        val text = out.trim()
+        if (text.isEmpty()) return false
+        val isNode = Regex("""^\s*(/opt/node/bin/node|node)$""", RegexOption.MULTILINE).containsMatchIn(text) ||
+            text.contains("/opt/node/bin/node")
+        if (!isNode || !text.contains("/opt/dsh/node_modules/@deepseek-ai/dsh")) return false
+        return Regex("""runtime/rootfs(\s*\(deleted\))?$""", RegexOption.MULTILINE).containsMatchIn(text)
     }
 
     fun alive(pid: Int): Boolean = try {
@@ -211,7 +273,10 @@ object RootEngine {
     fun cleanupMounts(rootfs: File) {
         val r = quote(rootfs.absolutePath)
         RootExec.run(
-            "for m in \$(cat $r/.dsh-root-mounts 2>/dev/null); do umount -l \"\$m\" 2>/dev/null; done; " +
+            // Deepest first: a bind mounted on top of another cannot be released before it, and
+            // the ledger also holds the phone-storage binds that are not under $r/proc etc.
+            "for m in \$(cat $r/.dsh-root-mounts 2>/dev/null | sort -r); do umount -l \"\$m\" 2>/dev/null; done; " +
+                "umount -l $r/sdcard 2>/dev/null; umount -l $r/storage 2>/dev/null; " +
                 "umount -l $r/sys 2>/dev/null; umount -l $r/dev/shm 2>/dev/null; " +
                 "umount -l $r/dev 2>/dev/null; umount -l $r/proc 2>/dev/null; true",
             60_000,
@@ -220,8 +285,39 @@ object RootEngine {
 
     /** Makes the guest's own dirs root-owned (cosmetic; root ignores the app's modes anyway). */
     fun adopt(rootfs: File) {
+        // Deliberately empty.
+        //
+        // It used to `chown -R 0:0 /root /tmp /var/lib/dsh-app`. Root ignores ownership, so the
+        // guest never needed it — but the *app* does: while the root engine runs, the app still
+        // writes `$DSH_HOME/AGENTS.md`, `var/lib/dsh-app/root/bridge.json` and
+        // `var/lib/dsh-app/phone/bridge.json`, and reads `tmp/dsh-web.pid`. Once those trees were
+        // chowned to 0:0 the app got EACCES on all of them: the root-tools overlay went stale (the
+        // model never saw the `mcp__root__*` section), bridge config writes failed, and `terminate()`
+        // could not read the pid, so stopped engines were left running as orphans.
+        //
+        // Guest writes still create root-owned files; `releaseTo()` hands the tree back to the app
+        // before any non-root launch, which is the case that actually needs fixing.
+        if (!rootfs.isDirectory) return
+    }
+
+    /**
+     * Hands back only the trees the *app* still writes while the root engine is up, leaving the
+     * rest of the guest (sessions, packages, workspace) as uid 0 wrote it.
+     *
+     * Root ignores ownership, so the guest keeps working; the app needs this to write its own
+     * managed files (`AGENTS.md`, the two `bridge.json` files, the frida script under `tmp/`) and
+     * to read `tmp/dsh-web.pid`. Without it those writes fail with EACCES and the model silently
+     * loses the root / phone sections of `AGENTS.md` and the MCP overlays.
+     */
+    fun shareWithApp(rootfs: File, uid: Int) {
+        if (!rootfs.isDirectory) return
         val r = quote(rootfs.absolutePath)
-        RootExec.run("chown -R 0:0 $r/root $r/tmp $r/var/lib/dsh-app 2>/dev/null; true", 120_000)
+        RootExec.run(
+            "for d in $r/root/.dsh $r/var/lib/dsh-app $r/tmp; do " +
+                "if [ -d \"\$d\" ]; then find \"\$d\" -xdev -maxdepth 2 -exec chown -h $uid:$uid {} + 2>/dev/null; fi; " +
+                "done; true",
+            120_000,
+        )
     }
 
     /** The uid the rootfs should belong to whenever the engine runs as the app (proot / direct). */
@@ -240,13 +336,37 @@ object RootEngine {
      * sessions, plugins and the LKG profile would fail. Root ignores ownership, so the app-owned
      * files keep working under the root engine too.
      *
-     * Returns whether anything was changed; [wasRootOwned] avoids a pointless 27k-file walk.
+     * `chown -R` follows bind mounts. The rootfs is a plain directory whenever this runs, but a
+     * launch killed mid-way can leave `/sdcard`, `/storage`, `/proc` or `/dev` mounted inside it,
+     * and chowning those rewrites the ownership of the phone's whole shared storage.
+     *
+     * Neither `find -xdev` nor toybox's `mountpoint` catches this: a bind mount has the same
+     * `st_dev` as the rootfs, so `-xdev` walks through it and `mountpoint` answers "not a
+     * mountpoint" (both measured on a real device). The walk is therefore pruned from
+     * `/proc/mounts`, which does list same-device binds, and the leftover mounts are cleared first.
+     *
+     * Returns whether anything was changed; [ownerOf] avoids a pointless 38k-file walk.
      */
     fun releaseTo(rootfs: File, uid: Int, force: Boolean = false): Boolean {
         if (!rootfs.isDirectory) return false
         if (!force && ownerOf(rootfs) == uid) return false
+        // Anything still mounted inside the rootfs goes first, so the walk below sees one tree.
+        cleanupMounts(rootfs)
+        val r = quote(rootfs.absolutePath)
+        // Every mount below the rootfs becomes `-path <mount> -prune -o`, so find never descends
+        // into a bind. awk keeps each path a single word; `r "/"` restricts it to this rootfs.
+        // Single-quoted for the shell, so `$2` and `040` reach awk verbatim: Kotlin's own `$`
+        // interpolation would otherwise eat them, which is why the pieces are plain literals.
+        val awk = "awk -v r=" + r + " " +
+            "'{ gsub(/\\040/, \" \", ${'$'}2); " +
+            "if (index(${'$'}2, r \"/\") == 1) printf \" -path %s -prune -o\", ${'$'}2 }' /proc/mounts"
+        val prune = "\$(" + awk + ")"
+        fun walk(action: String): String = "find " + r + " " + prune + " " + action + " 2>/dev/null; "
         RootExec.run(
-            "chown -R $uid:$uid ${quote(rootfs.absolutePath)} 2>/dev/null; chmod -R u+rwX ${quote(rootfs.absolutePath)} 2>/dev/null; true",
+            walk("-exec chown -h " + uid + ":" + uid + " {} +") +
+                walk("-type d -exec chmod u+rwx {} +") +
+                walk("-type f -exec chmod u+rw {} +") +
+                "true",
             600_000,
         )
         return true
