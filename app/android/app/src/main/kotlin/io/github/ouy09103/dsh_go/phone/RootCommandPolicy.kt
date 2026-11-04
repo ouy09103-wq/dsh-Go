@@ -52,13 +52,28 @@ class RootCommandPolicy(
 
     /** Directories that belong to the system; read-only unless 系统设置 is lifted. */
     private val SYSTEM_PREFIXES = listOf(
-        "/system", "/system_ext", "/vendor", "/product", "/odm", "/apex", "/data/adb", "/data/misc",
+        "/system", "/system_ext", "/vendor", "/product", "/odm", "/apex",
+        "/data/adb", "/data/misc", "/data/system",
     )
 
-    /** Stores whose whole point is a credential. Read as well as write: reading is the leak. */
-    private val SECRET_STORES = listOf(
-        "/data/misc/keystore", "/data/system/locksettings", "/data/misc/vold",
-        "/data/system/users/0/accounts", "autofill",
+    /**
+     * Stores whose whole point is a credential. Read as well as write: reading is the leak.
+     *
+     * Split in two because they match differently. A path is matched at its own boundaries, so
+     * `/data/system` doesn't fire on `/data/system_ext`. A word is matched anywhere, because
+     * `accounts_ce.db` puts an underscore right after `accounts` and `autofill` appears inside
+     * longer names — over-matching is the safe direction here.
+     */
+    private val SECRET_PATHS = listOf(
+        "/data/misc/keystore",
+        "/data/misc/vold",
+        "/data/system/locksettings",
+        // accounts_ce.db / accounts_de.db, the device's saved sign-ins.
+        "/data/system/users/0",
+    )
+
+    private val SECRET_WORDS = listOf(
+        "accounts_ce", "accounts_de", "autofill", "keystore", "locksettings",
     )
 
     fun judge(command: String, policy: PhonePolicies, appLabel: (String) -> String? = { null }): Verdict {
@@ -96,24 +111,28 @@ class RootCommandPolicy(
             }
         }
 
-        // 3. 解除限制: system directories and system settings, then the credential stores.
+        // 3. 解除限制. The credential stores come first: they are the narrower rule, and a path
+        //    like /data/system/users/0/accounts_ce.db would otherwise be reported as "系统目录",
+        //    which sends the model to the wrong fix.
         val lifted = policy.unlocks
+        if (!lifted.secretFields) {
+            val store = SECRET_PATHS.firstOrNull { hitsPath(text, it) }
+                ?: SECRET_WORDS.firstOrNull { text.contains(it, ignoreCase = true) }
+            if (store != null) {
+                return Verdict.Refuse(
+                    "密码、验证码、支付凭据所在的存储（$store）不读也不写：" +
+                        "用户没有解除「密码与验证码」这条限制。",
+                    "secret-store",
+                )
+            }
+        }
         if (!lifted.systemPages) {
-            val hit = SYSTEM_PREFIXES.firstOrNull { text.contains(it) } ?: settingsHit(text)
+            val hit = SYSTEM_PREFIXES.firstOrNull { hitsPath(text, it) } ?: settingsHit(text)
             if (hit != null && writes) {
                 return Verdict.Refuse(
                     "系统目录和系统设置（$hit）只读不动：用户没有解除「系统设置」这条限制。" +
                         "要改请 handoff 让用户自己点。",
                     "system-page",
-                )
-            }
-        }
-        if (!lifted.secretFields) {
-            SECRET_STORES.firstOrNull { text.contains(it) }?.let { store ->
-                return Verdict.Refuse(
-                    "密码、验证码、支付凭据所在的存储（$store）不读也不写：" +
-                        "用户没有解除「密码与验证码」这条限制。",
-                    "secret-store",
                 )
             }
         }
@@ -126,6 +145,30 @@ class RootCommandPolicy(
 
     /** True when [text] does anything beyond reading. */
     fun writes(text: String): Boolean = WRITES.any { text.contains(it) }
+
+    /**
+     * Whether [text] names the path [prefix] **as a path**, not as a substring of a longer one.
+     *
+     * `/data/system/users/0/...` contains `/system`, and a plain substring test would report a
+     * credential store as "系统目录" — the right refusal with the wrong reason, which sends the
+     * model to the wrong fix. Matching is "start of text, or after a separator, and ending at a
+     * separator or the end".
+     */
+    fun hitsPath(text: String, prefix: String): Boolean {
+        var from = 0
+        while (true) {
+            val at = text.indexOf(prefix, from)
+            if (at < 0) return false
+            val before = at == 0 || text[at - 1] in PATH_SEPARATORS
+            val end = at + prefix.length
+            val after = end == text.length || text[end] in PATH_SEPARATORS || text[end] == '/'
+            if (before && after) return true
+            from = at + 1
+        }
+    }
+
+    /** Characters that may sit between a shell word and a path without being part of it. */
+    private val PATH_SEPARATORS = " \t\n'\"`;|&()=<>,".toSet()
 
     private fun settingsHit(text: String): String? = when {
         text.contains("settings put") || text.contains("settings delete") -> "settings"

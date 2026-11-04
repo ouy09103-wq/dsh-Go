@@ -97,6 +97,15 @@ class RootCommandPolicyTest {
         assertEquals(RootCommandPolicy.Verdict.Allow, judge("settings put global adb_enabled 1", lifted))
     }
 
+    @Test fun aPathMatchesAtItsOwnBoundariesNotInsideALongerOne() {
+        // /data/system/users/0 is a credential path; the "系统目录" rule must not claim it first.
+        assertTrue(policy.hitsPath("ls /data/system/users/0/accounts_ce.db", "/data/system"))
+        assertFalse(policy.hitsPath("ls /data/system_ext/build.prop", "/data/system"))
+        assertFalse(policy.hitsPath("ls /system_ext/build.prop", "/system"))
+        assertTrue(policy.hitsPath("cat /system/build.prop", "/system"))
+        assertTrue(policy.hitsPath("rm -rf '/system/framework'", "/system"))
+    }
+
     @Test fun credentialStoresAreRefusedInBothDirections() {
         for (command in listOf(
             "ls /data/misc/keystore",
