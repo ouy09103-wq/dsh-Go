@@ -126,17 +126,19 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
     return AppPage(
       title: l10n.pluginsTitle,
       subtitle: Text(_subtitle(host)),
+      // 问 AI 和刷新保持相邻：顶栏的键间距是 8，测试和视觉都按这个来。
+      // 「从文件安装」放在最后，紧挨着刷新。
       actions: [
         const AskAiButton(AskAiTopic.plugins),
-        GlassIconButton(
-          icon: AppIcons.add,
-          tooltip: l10n.pluginsInstallFromFile,
-          onPressed: () => unawaited(_installFromFile(context)),
-        ),
         GlassIconButton(
           icon: AppIcons.refresh,
           tooltip: l10n.pluginsRefresh,
           onPressed: _refreshing ? null : () => unawaited(_refresh()),
+        ),
+        GlassIconButton(
+          icon: AppIcons.add,
+          tooltip: l10n.pluginsInstallFromFile,
+          onPressed: () => unawaited(_installFromFile(context)),
         ),
       ],
       slivers: [
