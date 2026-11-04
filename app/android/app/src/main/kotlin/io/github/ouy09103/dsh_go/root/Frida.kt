@@ -56,11 +56,6 @@ internal object Frida {
             return fail("root 没授权成功：" + (probe.stderr.ifBlank { "uid=${probe.uid}" }))
         }
 
-        // One frida-server per device. Two DSH Go builds can be installed side by side, and each
-        // has its own root channel, but there is only one 27042 — replacing the other instance's
-        // server would silently break its session.
-        foreignServer(context, port)?.let { return fail(it) }
-
         val extracted = try {
             extract(context)
         } catch (e: Exception) {
@@ -78,7 +73,7 @@ internal object Frida {
         }
         val version = push.stdout.trim().lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
 
-        stop()
+        freePort(port)?.let { return fail(it) }
         return start(port) + mapOf("version" to version.ifBlank { null }, "path" to REMOTE_SERVER)
     }
 
@@ -199,21 +194,31 @@ internal object Frida {
     }
 
     /**
-     * A sentence when something already serves [port] and it isn't ours, null otherwise.
+     * Stops whatever already holds [port], so the new server can bind it.
      *
-     * In `/proc/net/tcp` the eighth column is the socket owner's uid, and a listening socket
-     * belongs to the process that opened it. Any DSH Go build runs as its own `u0_a*` uid, so a
-     * uid that isn't ours is another instance.
+     * The first version of this tried to tell "another DSH Go instance" from ours by the socket's
+     * uid in /proc/net/tcp — which is nonsense: frida-server runs as root, so that uid is always
+     * 0, and every install refused itself. There is no useful ownership test here; what a person
+     * wants is "make it work", and two frida-servers cannot share 27042 anyway.
+     *
+     * So: kill any frida-server, wait for the port to clear, and if something *else* still
+     * holds it, say so with the one fact that helps — which pid.
      */
-    private fun foreignServer(context: Context, port: Int): String? {
+    private fun freePort(port: Int): String? {
+        stop()
         val hex = "%04X".format(port)
-        val owner = RootExec.run(
-            "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | awk '{print \$8}' | sort -u | head -1",
-            15_000,
-        ).stdout.trim().toIntOrNull() ?: return null
-        if (owner == context.applicationInfo.uid) return null
-        return "端口 $port 已经被另一个 DSH Go 实例的 frida-server 占着（uid $owner）。" +
-            "同一台手机只能有一个：先去那边关掉，再在这里装。"
+        repeat(6) {
+            val held = RootExec.run(
+                "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | head -1",
+                15_000,
+            ).stdout.trim()
+            if (held.isEmpty()) return null
+            Thread.sleep(300)
+        }
+        val pids = RootExec.run("pidof frida-server 2>/dev/null", 15_000).stdout.trim()
+        // l10n:keep agent tool result
+        return "端口 $port 还是被占着" + (pids.ifBlank { "" }.let { if (it.isEmpty()) "" else "（frida-server pid $it）" }) +
+            "。它不是 frida-server，或者是刚被杀还没退干净：重启手机后最干净。"
     }
 
     private fun quote(word: String): String =

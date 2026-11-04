@@ -7122,19 +7122,6 @@
   "pluginsLoadUnreported": "状态未报告",
   "pluginsLoadNoRuntimeDetail": "主机未返回运行时错误详情，请查看引擎日志。",
   "pluginsLoadRemoteLogs": "请在这台主机上查看引擎日志。",
-  "pluginsInstallFromFile": "从文件安装",
-  "@pluginsInstallFromFile": {
-    "description": "Title/button: install a plugin from a file on this phone."
-  },
-  "pluginsLocalUnsupported": "这个文件装不了：{name}。要 .tgz、.tar.gz 或 .zip。",
-  "@pluginsLocalUnsupported": {
-    "description": "Toast: the picked file is not a plugin archive. {name} is the file name.",
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "plugslotsSurfaceComposerActions": "输入框按钮",
   "plugslotsSurfaceMessageActions": "消息菜单",
   "plugslotsSurfaceComposerStrip": "状态条",

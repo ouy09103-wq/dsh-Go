@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,13 +8,11 @@ import '../../plugins/native/native_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/plugins_state.dart';
 import '../common/ask_ai.dart';
-import '../common/brief_notice.dart';
 import '../common/segmented_pill.dart';
 import '../features/feature_kit.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'installed_tab.dart';
-import 'local_install.dart';
 import 'market_tab.dart';
 
 enum PluginsTab { installed, market }
@@ -51,34 +48,6 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
         unawaited(ref.read(installedPluginsProvider.notifier).refresh().catchError((Object _) {}));
       });
     }
-  }
-
-  /// 从手机装一个本地插件包：选文件 → 写进 guest → 让 host 装。
-  ///
-  /// 本机引擎才有这条路（远端 host 的文件系统和这台手机无关）。选完立刻开始装，
-  /// 不做二次确认：装一个插件和装一个 App 一样，是用户自己点的。
-  Future<void> _installFromFile(BuildContext context) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final blocked = localPluginBlockedReason(context, ref);
-    if (blocked != null) {
-      messenger?.showBriefNotice(blocked);
-      return;
-    }
-    // Everything the async part needs is captured first: the picker can be open
-    // for a while, and `context` must not be read across that gap.
-    final l10n = context.l10n;
-    final picked = await FilePicker.pickFile();
-    if (picked == null) return;
-    final file = LocalPluginFile(name: picked.name, bytes: await picked.readAsBytes());
-    if (!file.usable) {
-      messenger?.showBriefNotice(l10n.pluginsLocalUnsupported(picked.name));
-      return;
-    }
-    // `context` here is the parameter, not State.context: the analyzer pairs a
-    // mounted check with the exact context it guards.
-    if (!context.mounted) return;
-    final job = await installLocalPlugin(context, file);
-    if (job == null) messenger?.showBriefNotice(l10n.pluginsConnectToManage);
   }
 
   Future<void> _refresh() async {
@@ -126,19 +95,12 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
     return AppPage(
       title: l10n.pluginsTitle,
       subtitle: Text(_subtitle(host)),
-      // 问 AI 和刷新保持相邻：顶栏的键间距是 8，测试和视觉都按这个来。
-      // 「从文件安装」放在最后，紧挨着刷新。
       actions: [
         const AskAiButton(AskAiTopic.plugins),
         GlassIconButton(
           icon: AppIcons.refresh,
           tooltip: l10n.pluginsRefresh,
           onPressed: _refreshing ? null : () => unawaited(_refresh()),
-        ),
-        GlassIconButton(
-          icon: AppIcons.add,
-          tooltip: l10n.pluginsInstallFromFile,
-          onPressed: () => unawaited(_installFromFile(context)),
         ),
       ],
       slivers: [

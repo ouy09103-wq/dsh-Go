@@ -12197,14 +12197,6 @@ class L10nEn extends L10n {
   String get pluginsLoadRemoteLogs => 'Check the engine logs on this host.';
 
   @override
-  String get pluginsInstallFromFile => 'Install from file';
-
-  @override
-  String pluginsLocalUnsupported(String name) {
-    return 'Can\'t install this file: $name. Use a .tgz, .tar.gz or .zip.';
-  }
-
-  @override
   String get plugslotsSurfaceComposerActions => 'Composer buttons';
 
   @override

@@ -11597,14 +11597,6 @@ class L10nZh extends L10n {
   String get pluginsLoadRemoteLogs => '请在这台主机上查看引擎日志。';
 
   @override
-  String get pluginsInstallFromFile => '从文件安装';
-
-  @override
-  String pluginsLocalUnsupported(String name) {
-    return '这个文件装不了：$name。要 .tgz、.tar.gz 或 .zip。';
-  }
-
-  @override
   String get plugslotsSurfaceComposerActions => '输入框按钮';
 
   @override
