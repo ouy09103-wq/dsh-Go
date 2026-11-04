@@ -382,6 +382,7 @@ class PhoneStatus {
     this.enabled = false,
     this.bridgeListening = false,
     this.rootShell = false,
+    this.rootShellStrict = false,
     this.rootShellUntil,
     this.rootShellOffReason,
     this.a11y = const PhoneA11yStatus(),
@@ -400,6 +401,7 @@ class PhoneStatus {
       enabled = false,
       bridgeListening = false,
       rootShell = false,
+      rootShellStrict = false,
       rootShellUntil = null,
       rootShellOffReason = null,
       a11y = const PhoneA11yStatus(),
@@ -414,6 +416,7 @@ class PhoneStatus {
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
     enabled: _flag(m['enabled']),
     rootShell: _flag(m['rootShell']),
+    rootShellStrict: _flag(m['rootShellStrict']),
     rootShellUntil: _int(m['rootShellUntil']),
     rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
@@ -442,6 +445,9 @@ class PhoneStatus {
   /// 开一次只算一段时间（原生侧 12 小时），到点自己关；连续失败也会关。
   final bool rootShell;
 
+  /// 严格模式：`shell` 是否也走手机操控那套规则（不碰名单、系统目录…）。默认关。
+  final bool rootShellStrict;
+
   /// 这次授权到什么时候为止（毫秒时间戳）；关着是 null。
   final int? rootShellUntil;
 
@@ -461,11 +467,12 @@ class PhoneStatus {
   final PhoneTaskStatus task;
   final PhoneDevice device;
 
-  PhoneStatus copyWith({bool? enabled, bool? rootShell}) => PhoneStatus(
+  PhoneStatus copyWith({bool? enabled, bool? rootShell, bool? rootShellStrict}) => PhoneStatus(
     ready: ready,
     error: error,
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
+    rootShellStrict: rootShellStrict ?? this.rootShellStrict,
     rootShellUntil: rootShellUntil,
     rootShellOffReason: rootShellOffReason,
     bridgeListening: bridgeListening,
@@ -960,8 +967,11 @@ class PhoneChannel {
 
   Future<bool> setEnabled(bool enabled) => _bool('setEnabled', {'enabled': enabled});
 
-  /// 聊天页的「启用 root」：只影响之后对 `shell` 的调用，不重启引擎。
+  /// 「启用 root」：只影响之后对 `shell` 的调用，不重启引擎。
   Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
+
+  /// 严格模式开关。
+  Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

@@ -74,6 +74,18 @@ class RootGrant(private val prefs: SharedPreferences, private val clock: () -> L
         return false
     }
 
+    /**
+     * 严格模式：`shell` 是否也走手机操控那套规则。默认 **关**。
+     *
+     * 打开 root 开关本身就是一句明确的允许；再在每条命令上拦一次，用户会觉得「自己的机器
+     * 自己说了不算」。想多一层保险的人可以在这里打开。
+     */
+    fun strict(): Boolean = prefs.getBoolean(K_STRICT, false)
+
+    fun setStrict(on: Boolean) {
+        prefs.edit().putBoolean(K_STRICT, on).apply()
+    }
+
     /** Why [enabled] last read false: `expired` or `strikes`. Reset by [set]. */
     @Volatile
     var lastReason: String? = null
@@ -87,6 +99,7 @@ class RootGrant(private val prefs: SharedPreferences, private val clock: () -> L
         const val MAX_STRIKES = 3
 
         const val K_ON = "root_shell"
+        private const val K_STRICT = "root_shell_strict"
         private const val K_UNTIL = "root_shell_until"
         private const val K_STRIKES = "root_shell_strikes"
     }

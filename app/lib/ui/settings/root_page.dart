@@ -238,6 +238,20 @@ class _RootPageState extends ConsumerState<RootPage> {
                 );
               },
             ),
+            Consumer(
+              builder: (context, ref, _) {
+                final strict = ref.watch(phoneProvider.select((s) => s.status.rootShellStrict));
+                return SettingsSwitchTile(
+                  icon: AppIcons.privacy,
+                  title: '严格模式',
+                  subtitle: strict
+                      ? '开着：shell 也走手机操控那套规则——不碰名单里的应用、系统目录、凭据库、本 App 存储都会被拒。'
+                      : '关着（默认）：shell 就是 shell，只受 root 管理器管。打开它才逐条套用手机操控的规则。',
+                  value: strict,
+                  onChanged: (on) => unawaited(ref.read(phoneProvider.notifier).setRootShellStrict(on)),
+                );
+              },
+            ),
           ],
         ),
         SettingsSection(

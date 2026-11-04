@@ -29,6 +29,12 @@ interface PhoneEnv {
     /** 设置 › Root 权限 的「允许模型执行 root 命令」。关着时 shell 工具拒绝执行。 */
     fun rootShellEnabled(): Boolean = false
 
+    /**
+     * 严格模式：开着时 `shell` 也走手机操控那套规则（不碰名单、系统目录、自有存储…）。
+     * 默认关——用户打开 root 开关就是要它能干活。
+     */
+    fun rootShellStrict(): Boolean = false
+
     /** The app's display name for [pkg], when the host can resolve it (null: use the id). */
     fun appLabel(pkg: String): String? = null
 
@@ -668,24 +674,28 @@ class PhoneCore(
             ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = SHELL_LOG,
                 decision = "refused:no-command")
 
-        // The person's own rules, judged on the text before su ever sees it.
-        val verdict = rootPolicy.judge(command, env.policies()) { pkg -> env.appLabel(pkg) }
-        if (verdict is RootCommandPolicy.Verdict.Refuse) {
-            return Out(verdict.message, error = true, summary = SHELL_LOG,
-                decision = "refused:${verdict.rule}")
-        }
-        if (verdict is RootCommandPolicy.Verdict.Confirm) {
-            val names = verdict.packages.joinToString("、") { env.appLabel(it) ?: it }
-            // l10n:keep agent safety result
-            val sentence = "以 root 执行这条命令，动到「$names」（这个应用每次写入都要确认）：\n$command"
-            val asked = safety.resolve(safety.confirmation(sentence, verdict.packages.first(), names, verdict.reason), scope)
-            if (asked is SafetyGate.Result.No) return Out(asked.message, error = true, summary = SHELL_LOG, decision = asked.decision)
+        // 严格模式默认关：打开了「允许模型执行 root 命令」就是要它能干活，不该再被自己的
+        // 工具管着。开着这个开关（设置 › Root 权限）才按 RootCommandPolicy 逐条判定——
+        // 那是给想多一层保险的人用的，不是默认体验。
+        if (env.rootShellStrict()) {
+            val verdict = rootPolicy.judge(command, env.policies()) { pkg -> env.appLabel(pkg) }
+            if (verdict is RootCommandPolicy.Verdict.Refuse) {
+                return Out(verdict.message, error = true, summary = SHELL_LOG,
+                    decision = "refused:${verdict.rule}")
+            }
+            if (verdict is RootCommandPolicy.Verdict.Confirm) {
+                val names = verdict.packages.joinToString("、") { env.appLabel(it) ?: it }
+                // l10n:keep agent safety result
+                val sentence = "以 root 执行这条命令，动到「$names」（这个应用每次写入都要确认）：\n$command"
+                val asked = safety.resolve(safety.confirmation(sentence, verdict.packages.first(), names, verdict.reason), scope)
+                if (asked is SafetyGate.Result.No) return Out(asked.message, error = true, summary = SHELL_LOG, decision = asked.decision)
+            }
         }
 
         if (!shellBudget.tryAcquire()) {
             // l10n:keep agent tool result
             return Out(
-                "root 命令太密了：每任务每分钟最多 ${ShellBudget.PER_MINUTE} 条，同时只能跑一条。" +
+                "root 命令太密了：每任务每分钟最多 ${ShellBudget.PER_MINUTE} 条。" +
                     "把这次要做的合成一条命令，或等一会儿再试。",
                 error = true,
                 summary = SHELL_LOG,

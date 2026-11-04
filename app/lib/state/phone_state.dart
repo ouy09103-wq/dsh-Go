@@ -197,6 +197,14 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
+  /// 严格模式：开着时 `shell` 也走手机操控的规则。默认关。
+  Future<bool> setRootShellStrict(bool on) async {
+    final ok = await _channel.setRootShellStrict(on);
+    if (!ref.mounted) return ok;
+    if (ok) state = state.copyWith(status: state.status.copyWith(rootShellStrict: on));
+    return ok;
+  }
+
   Future<bool> openAccessibilitySettings() => _channel.openAccessibilitySettings();
 
   Future<PhoneResult> grantSecureSettings() => _thenRefresh(_channel.grantSecureSettings());

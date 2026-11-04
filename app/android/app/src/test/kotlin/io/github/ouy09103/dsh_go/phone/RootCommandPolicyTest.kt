@@ -8,16 +8,68 @@ import org.junit.Test
 /**
  * The root tool's rules, judged on the command text.
  *
- * These are the cases from the audit report: `shell` used to run anything su would, so the 不碰
- * list, 解除限制 and every-write confirmation meant nothing for it. Each test names the rule it
- * pins, because a regression here is silent — the command simply runs.
+ * These tests describe **strict mode**, which is off by default: turning on 允许模型执行 root
+ * 命令 is itself an explicit permission, and re-checking every command after it makes the tool
+ * feel like it doesn't trust its owner. The policy below is what the person gets if they turn
+ * 严格模式 on — see [strictModeIsOffByDefault].
+ *
+ * Each test names the rule it pins, because a regression here is silent: the command simply runs.
  */
 class RootCommandPolicyTest {
+    /** The interface's own default: strict off unless a host says otherwise. */
+    private class PhoneEnvDefaults : PhoneEnv {
+        override fun enabled() = true
+        override fun policies() = PhonePolicies()
+        override fun isLocked() = false
+        override fun gate() = null
+        override fun driver(screen: PhoneScreen) = null
+        override fun a11yState() = A11yState.DISABLED
+        override fun backgroundUnavailable() = ""
+        override fun system() = object : SystemApi {
+            override fun apps() = emptyList<AppEntry>()
+            override fun isInstalled(pkg: String) = false
+            override fun launch(app: AppEntry) = SysResult(false, "")
+            override fun urlTarget(url: String) = UrlTarget("no")
+            override fun openUrl(url: String, target: UrlTarget) = SysResult(false, "")
+            override fun intent(spec: IntentSpec, shareTo: AppEntry?) = SysResult(false, "")
+            override fun notify(title: String, text: String) = SysResult(false, "")
+            override fun clipboardSet(text: String) = SysResult(false, "")
+            override fun clipboardGet() = SysResult(false, "")
+        }
+        override fun zone() = java.time.ZoneId.of("UTC")
+        override fun notifyFix(kind: String) = Unit
+    }
+
     private val policy = RootCommandPolicy()
     private val defaults = PhonePolicies()
 
     private fun judge(command: String, p: PhonePolicies = defaults, label: (String) -> String? = { null }) =
         policy.judge(command, p, label)
+
+    @Test fun strictModeIsOffByDefault() {
+        // The switch in 设置 › Root 权限 decides this; nothing in the core should force it on.
+        assertFalse(
+            "shell must not be gated unless the person asked for it",
+            PhoneEnvDefaults().rootShellStrict(),
+        )
+    }
+
+    @Test fun withStrictOffTheCoreDoesNotConsultThePolicyAtAll() {
+        // Judged at the source level: the call is behind `if (env.rootShellStrict())`. This
+        // asserts the shape that keeps the default path free of refusals, so a future refactor
+        // that moves the check above the flag fails here instead of in someone's terminal.
+        val source = java.io.File(
+            "src/main/kotlin/io/github/ouy09103/dsh_go/phone/PhoneCore.kt",
+        ).readText()
+        val gate = source.indexOf("if (env.rootShellStrict()) {")
+        val judge = source.indexOf("rootPolicy.judge(")
+        assertTrue("the strict-mode gate must exist", gate > 0)
+        assertTrue("the policy must sit inside the gate", judge > gate)
+        assertTrue(
+            "shell must not be rejected before the root switch is consulted",
+            source.indexOf("rootShellEnabled()") < gate,
+        )
+    }
 
     @Test fun plainReadsAndHarmlessCommandsAreAllowed() {
         for (command in listOf("id", "ls /data/local/tmp", "uptime", "df -h", "cat /proc/meminfo", "getprop ro.product.model")) {

@@ -439,6 +439,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
         "rootShell" to rootShellEnabled(),
+        "rootShellStrict" to rootShellStrict(),
         "rootShellUntil" to rootShellExpiresAt(),
         "rootShellOffReason" to rootShellOffReason(),
         "bridgeListening" to bridge.listening,
@@ -571,6 +572,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      * 开关不该靠人记得关。
      */
     override fun rootShellEnabled(): Boolean = grant.enabled()
+
+    /** 严格模式：`shell` 是否也受手机操控规则约束。默认关。 */
+    override fun rootShellStrict(): Boolean = grant.strict()
+
+    fun setRootShellStrict(on: Boolean) {
+        grant.setStrict(on)
+        emitStatus()
+    }
 
     /** 这个开关什么时候到期；关着是 null。 */
     fun rootShellExpiresAt(): Long? = grant.expiresAt()
