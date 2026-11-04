@@ -21338,13 +21338,13 @@ abstract class L10n {
   /// **'请在这台主机上查看引擎日志。'**
   String get pluginsLoadRemoteLogs;
 
-  /// No description provided for @pluginsInstallFromFile.
+  /// Title/button: install a plugin from a file on this phone.
   ///
   /// In zh, this message translates to:
   /// **'从文件安装'**
   String get pluginsInstallFromFile;
 
-  /// No description provided for @pluginsLocalUnsupported.
+  /// Toast: the picked file is not a plugin archive. {name} is the file name.
   ///
   /// In zh, this message translates to:
   /// **'这个文件装不了：{name}。要 .tgz、.tar.gz 或 .zip。'**
