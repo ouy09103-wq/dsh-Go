@@ -48,6 +48,16 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** root 模式开关：带到期时间与失败降级。 */
     private val grant by lazy { RootGrant(prefs) }
 
+    /**
+     * frida-server 的最后一次观察，给聊天页的胶囊用。
+     *
+     * 不能每次 `status()` 都跑 su：那个 map 每 2 秒推一次，每次都 spawn 一个 root shell
+     * 会一直给 root 管理器弹授权框。所以缓存一份，由 [refreshFrida] 在 tick 里低频刷新，
+     * 且只在 root 模式开着时刷——关着的时候本来也不该有 frida。
+     */
+    @Volatile private var fridaCache: Map<String, Any?> = emptyMap()
+    @Volatile private var fridaCheckedAt = 0L
+
     /** 手机操控规则的签名：被外部改过的 policies 不生效。 */
     private val signature by lazy { PoliciesSignature(prefs) }
 
@@ -492,6 +502,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         "policiesTampered" to tampered,
         "rootShellUntil" to rootShellExpiresAt(),
         "rootShellOffReason" to rootShellOffReason(),
+        "fridaRunning" to (fridaCache["running"] == true),
+        "fridaInstalled" to (fridaCache["installed"] == true),
+        "fridaVersion" to fridaCache["version"],
         "bridgeListening" to bridge.listening,
         "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
         "overlay" to (PhoneRegistry.overlayGate != null),
@@ -594,9 +607,44 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         try {
             tasks.expireIdle()
             A11yKeeper.check(app)
+            refreshFrida()
             pushIfChanged(force = false)
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * 低频重读 frida-server 的状态（最多每 [FRIDA_REFRESH_MS] 一次）。
+     *
+     * 只在 root 模式开着时读：关着时没有 su 可问，问了就是弹授权框。
+     * 读失败保留上一次的快照，而不是报「没在跑」——su 超时说明不了 frida 的事。
+     */
+    private fun refreshFrida() {
+        if (!rootShellEnabled()) {
+            if (fridaCache.isNotEmpty()) fridaCache = emptyMap()
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (now - fridaCheckedAt < FRIDA_REFRESH_MS) return
+        fridaCheckedAt = now
+        val snapshot = runCatching { Frida.status() }.getOrNull() ?: return
+        if (snapshot["ok"] == true) fridaCache = snapshot
+    }
+
+    /** 胶囊的点击（关闭）：停掉 server，并立刻刷新快照。 */
+    fun stopFridaNow(): Boolean {
+        runCatching { Frida.stop() }
+        fridaCache = runCatching { Frida.status() }.getOrDefault(emptyMap())
+        emitStatus()
+        return true
+    }
+
+    /** 胶囊的点击：现在就装/启一次，并立刻刷新快照。 */
+    fun startFridaNow(): Boolean {
+        val result = runCatching { Frida.install(app, Frida.DEFAULT_PORT) }.getOrNull() ?: return false
+        if (result["ok"] == true) fridaCache = runCatching { Frida.status() }.getOrDefault(fridaCache)
+        emitStatus()
+        return result["ok"] == true
     }
 
     // ── ControlListener (the overlay's 暂停 / 停止 / 插话, the service's own stops) ──
@@ -758,6 +806,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
         private const val K_POLICIES = "policies"
         private const val K_TCP_FALLBACK = "tcpFallback"
+
+        /** How often the chat pill's frida state is re-read (su is expensive and prompts). */
+        private const val FRIDA_REFRESH_MS = 10_000L
         private const val CHANNEL_FIX = "dsh-phone-fix"
         private const val NOTIFY_FIX_ID = 4099
 

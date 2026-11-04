@@ -197,6 +197,12 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
+  /// 聊天页「Frida 已启用」胶囊：装/启一次，成功后状态会自己刷。
+  Future<bool> startFrida() => _channel.startFrida();
+
+  /// 停掉 frida-server。
+  Future<bool> stopFrida() => _channel.stopFrida();
+
   /// 严格模式：开着时 `shell` 也走手机操控的规则。默认关。
   Future<bool> setRootShellStrict(bool on) async {
     final ok = await _channel.setRootShellStrict(on);

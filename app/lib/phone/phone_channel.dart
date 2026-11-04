@@ -384,6 +384,9 @@ class PhoneStatus {
     this.rootShell = false,
     this.rootShellStrict = false,
     this.policiesTampered = false,
+    this.fridaRunning = false,
+    this.fridaInstalled = false,
+    this.fridaVersion,
     this.rootShellUntil,
     this.rootShellOffReason,
     this.a11y = const PhoneA11yStatus(),
@@ -404,6 +407,9 @@ class PhoneStatus {
       rootShell = false,
       rootShellStrict = false,
       policiesTampered = false,
+      fridaRunning = false,
+      fridaInstalled = false,
+      fridaVersion = null,
       rootShellUntil = null,
       rootShellOffReason = null,
       a11y = const PhoneA11yStatus(),
@@ -420,6 +426,9 @@ class PhoneStatus {
     rootShell: _flag(m['rootShell']),
     rootShellStrict: _flag(m['rootShellStrict']),
     policiesTampered: _flag(m['policiesTampered']),
+    fridaRunning: _flag(m['fridaRunning']),
+    fridaInstalled: _flag(m['fridaInstalled']),
+    fridaVersion: m['fridaVersion'] as String?
     rootShellUntil: _int(m['rootShellUntil']),
     rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
@@ -454,6 +463,15 @@ class PhoneStatus {
   /// 手机操控的规则被 App 之外的东西改过：改过的规则没有生效，用的是内置默认。
   final bool policiesTampered;
 
+  /// frida-server 正在跑（原生侧每 10 秒看一次，且只在 root 模式开着时看）。
+  final bool fridaRunning;
+
+  /// 二进制已经在 /data/local/tmp（还没跑也算 true）。
+  final bool fridaInstalled;
+
+  /// 跑着的那个版本；没装或没跑是 null。
+  final String? fridaVersion;
+
   /// 这次授权到什么时候为止（毫秒时间戳）；关着是 null。
   final int? rootShellUntil;
 
@@ -480,6 +498,9 @@ class PhoneStatus {
     rootShell: rootShell ?? this.rootShell,
     rootShellStrict: rootShellStrict ?? this.rootShellStrict,
     policiesTampered: policiesTampered,
+    fridaRunning: fridaRunning,
+    fridaInstalled: fridaInstalled,
+    fridaVersion: fridaVersion,
     rootShellUntil: rootShellUntil,
     rootShellOffReason: rootShellOffReason,
     bridgeListening: bridgeListening,
@@ -979,6 +1000,12 @@ class PhoneChannel {
 
   /// 严格模式开关。
   Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
+
+  /// 聊天页「Frida 已启用」胶囊的点击：装/启一次。
+  Future<bool> startFrida() => _bool('startFrida');
+
+  /// 同一个胶囊的另一半：停掉。
+  Future<bool> stopFrida() => _bool('stopFrida');
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

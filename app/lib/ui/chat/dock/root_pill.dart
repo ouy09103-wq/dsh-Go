@@ -80,3 +80,77 @@ class RootDockSlot extends ConsumerWidget {
     return DockSlot(key: const ValueKey('root'), child: on ? const RootPill() : null);
   }
 }
+
+/// 「▣ 启用 Frida                点击启动」
+/// 「▣ Frida 已启用 · 17.23.3   点击关闭」
+///
+/// 和 root 胶囊同形，紧挨着它出现。存在的理由：模型没法从「我能跑 shell」
+/// 推断出「这台手机上 frida-server 装在哪、监听哪个端口」，所以它常常想不到要用；
+/// 这一行把「有没有在跑」摆在它眼前，也让人能一键起停。
+class FridaPill extends ConsumerStatefulWidget {
+  const FridaPill({super.key});
+
+  @override
+  ConsumerState<FridaPill> createState() => _FridaPillState();
+}
+
+class _FridaPillState extends ConsumerState<FridaPill> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(phoneProvider.select((s) => s.status));
+    final on = status.fridaRunning;
+    final installed = status.fridaInstalled;
+    final theme = Theme.of(context);
+    final dsh = DshColors.of(context);
+    final color = on ? dsh.warning : theme.colorScheme.onSurfaceVariant;
+    final version = status.fridaVersion;
+    final title = on
+        ? (version == null ? 'Frida 已启用' : 'Frida 已启用 · $version')
+        : (installed ? 'Frida 已装未启动' : '启用 Frida');
+    final detail = _busy ? '处理中…' : (on ? '点击关闭' : '点击启动');
+    return Semantics(
+      button: true,
+      label: on ? '$title，点击关闭' : '$title，点击启动',
+      excludeSemantics: true,
+      child: GlassSurface(
+        tier: GlassTier.chrome,
+        borderRadius: DockMetrics.shape,
+        grouped: true,
+        onTap: _busy ? null : () => _tap(on),
+        child: DockRow(
+          leading: DockGlyph.icon(AppIcons.plugin, color: color),
+          content: Text(title, style: DockText.title(context, color: color)),
+          accessory: Text(detail, style: DockText.detail(context)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _tap(bool running) async {
+    final notifier = ref.read(phoneProvider.notifier);
+    if (running) {
+      await notifier.stopFrida();
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await notifier.startFrida();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+/// Frida 胶囊的插槽：只在 root 模式开着时出现——frida-server 要 root 才能跑，
+/// root 关着的时候摆一行「启用 Frida」只是噪音。
+class FridaDockSlot extends ConsumerWidget {
+  const FridaDockSlot({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final show = ref.watch(phoneProvider.select((s) => s.status.rootShell));
+    return DockSlot(key: const ValueKey('frida'), child: show ? const FridaPill() : null);
+  }
+}

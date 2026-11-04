@@ -1806,6 +1806,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                         if (!readOnly) ComposerStripSlot(sessionId: sessionId, visible: !running),
                                         // 「启用 root」胶囊：独立一行，跟着待办 / 目标条一起堆叠。
                                         if (!readOnly) const RootDockSlot(),
+                                        // Frida 胶囊：只在 root 开着时出现，就在 root 下面。
+                                        if (!readOnly) const FridaDockSlot(),
                                       ],
                                       accessory: pillsBesideStrip
                                           ? _stripRisk(sessionId, autoApprove: chat?.autoApprove ?? false)
