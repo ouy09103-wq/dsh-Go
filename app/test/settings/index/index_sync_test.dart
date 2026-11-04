@@ -60,8 +60,6 @@ final Map<SettingsPageId, List<String Function(L10n)>> _unlisted = {
   ],
   SettingsPageId.pets: [(l) => l.botsPetShowNow, (l) => l.botsPetSwitchDisabled, (l) => l.botsPetHiddenToday],
   SettingsPageId.remote: [(l) => l.remoteWebConsole],
-  // Only while the stored rules fail their signature check: a one-row warning, not a setting.
-  SettingsPageId.rootAccess: [(_) => '手机操控的规则被改过'],
 };
 
 /// Entries whose row shows the thing itself rather than the page's name
