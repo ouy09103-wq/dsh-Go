@@ -1,7 +1,7 @@
 package io.github.ouy09103.dsh_go.phone.background
 
+import io.github.ouy09103.dsh_go.root.RootExec
 import io.github.ouy09103.dsh_go.root.RootSpawn
-
 import java.io.File
 
 /**
@@ -40,10 +40,8 @@ object RootShell {
      */
     private val NOT_ANDROID_SU = setOf("/usr/bin/su", "/bin/su", "/usr/local/bin/su")
 
-    /** A PATH that covers AOSP, Magisk, KernelSU and APatch layouts. */
-    const val ROOT_PATH =
-        "/system/bin:/system/xbin:/vendor/bin:/product/bin" +
-            ":/data/adb/magisk:/data/adb/ksu/bin:/data/adb/ap/bin:/sbin:/usr/bin:/bin"
+    /** A PATH that covers AOSP, Magisk, KernelSU and APatch layouts (one definition: RootExec). */
+    const val ROOT_PATH = RootExec.ROOT_PATH
 
     /** Output cap for the model. Bigger than a screenful, small enough to stay in context. */
     const val MAX_CHARS = 8_000

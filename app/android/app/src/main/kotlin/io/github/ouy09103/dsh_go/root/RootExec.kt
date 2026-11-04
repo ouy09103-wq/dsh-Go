@@ -14,6 +14,11 @@ import java.util.concurrent.TimeUnit
  */
 internal object RootExec {
 
+    /** A PATH covering AOSP, Magisk, KernelSU and APatch, for commands run through su. */
+    const val ROOT_PATH =
+        "/system/bin:/system/xbin:/vendor/bin:/product/bin" +
+            ":/data/adb/magisk:/data/adb/ksu/bin:/data/adb/ap/bin:/sbin:/usr/bin:/bin"
+
     /** Where su may live. First existing wins; a manager on PATH is checked last. */
     private val SU_CANDIDATES = listOf(
         "/system/bin/su",
@@ -57,8 +62,13 @@ internal object RootExec {
 
     fun run(command: String, timeoutMs: Long = 60_000, cwd: String? = null, env: Map<String, String> = emptyMap()): Result {
         val su = suPath() ?: return Result(false, -1, -1, "", "no su on this device")
+        // A root shell's PATH depends on which manager granted it (Magisk, KernelSU and APatch
+        // each set their own), so spell out one that covers all of them. Without this,
+        // `su -c "id -u"` fails with "id: inaccessible or not found" on a manager that hands its
+        // shell a bare environment — which is exactly how the probe broke.
+        val path = env["PATH"] ?: ROOT_PATH
         val process = try {
-            RootSpawn.piped(listOf(su, "-c", command), cwd, env)
+            RootSpawn.piped(listOf(su, "-c", command), cwd, env + ("PATH" to path))
         } catch (error: IOException) {
             return Result(false, -1, -1, "", error.message ?: "su failed to start")
         }

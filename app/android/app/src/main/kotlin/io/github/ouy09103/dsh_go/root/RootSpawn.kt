@@ -35,12 +35,18 @@ internal object RootSpawn {
         builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
     }
 
+    /**
+     * [cwd] and environment overrides. Additions only — never a clear.
+     *
+     * Clearing was a mistake worth recording: `su -c "id -u"` needs the inherited `PATH` to find
+     * `id` at all, and an `env` of `emptyMap()` (the default) is not null, so the clear ran on
+     * every call and every root command became "id: inaccessible or not found". A caller that
+     * really wants a bare environment passes the whole thing, PATH included — [bounded]'s
+     * caller does, because it exports its own.
+     */
     private fun env(builder: ProcessBuilder, cwd: String?, env: Map<String, String>?) {
         if (cwd != null) builder.directory(File(cwd))
-        if (env != null) {
-            builder.environment().clear()
-            builder.environment().putAll(env)
-        }
+        if (!env.isNullOrEmpty()) builder.environment().putAll(env)
     }
 
     /** stderr joins stdout; stdout is inherited by the app process. */
@@ -51,13 +57,22 @@ internal object RootSpawn {
             env(builder, cwd, env)
         }
 
-    /** stderr joins stdout; stdout goes to [out] so there is no pipe to fill. */
+    /**
+     * stderr joins stdout; stdout goes to [out] so there is no pipe to fill.
+     *
+     * [env], when given, *replaces* the environment: the bounded shell spells out everything the
+     * command needs (PATH, HOME, LANG) and wants nothing inherited.
+     */
     fun toFile(argv: List<String>, out: File, cwd: String? = null, env: Map<String, String>? = null): Process =
         start(argv) { builder ->
             builder.redirectErrorStream(true)
             quiet(builder)
             builder.redirectOutput(ProcessBuilder.Redirect.to(out))
-            env(builder, cwd, env)
+            if (cwd != null) builder.directory(File(cwd))
+            if (!env.isNullOrEmpty()) {
+                builder.environment().clear()
+                builder.environment().putAll(env)
+            }
         }
 
     /** stdout and stderr stay apart, both as pipes the caller drains. */
