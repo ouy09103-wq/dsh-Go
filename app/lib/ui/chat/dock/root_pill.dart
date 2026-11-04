@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../state/phone_state.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import 'dock_pill.dart';
 
@@ -32,7 +33,7 @@ class RootPill extends ConsumerWidget {
         grouped: true,
         onTap: () => _toggle(context, ref, on),
         child: DockRow(
-          leading: DockGlyph.icon(on ? Icons.terminal : Icons.terminal_outlined, color: color),
+          leading: DockGlyph.icon(AppIcons.terminal, color: color),
           content: Text(
             on ? 'root 已启用' : '启用 root',
             style: DockText.title(context, color: color),

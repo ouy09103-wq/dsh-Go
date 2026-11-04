@@ -284,7 +284,7 @@ class _RootPageState extends ConsumerState<RootPage> {
                   hintText: 'whoami / ls /data/adb',
                   border: const OutlineInputBorder(),
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.send),
+                    icon: const Icon(AppIcons.send),
                     onPressed: () => unawaited(_send()),
                   ),
                 ),
