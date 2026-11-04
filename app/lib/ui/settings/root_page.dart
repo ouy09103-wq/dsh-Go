@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../phone/phone_channel.dart';
 import '../../root/root_channel.dart';
 import '../../state/phone_state.dart';
 import '../shell/page_frame.dart';

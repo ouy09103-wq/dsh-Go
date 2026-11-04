@@ -95,13 +95,13 @@ internal object Frida {
             ?: clientVersion(context)
             ?: FALLBACK_VERSIONS.first()
 
-        val built = fetch(context, chosen, arch)
+        val built = fetch(context, chosen, arch, port)
         if (built != null) return built
 
         // One more try with the newest known build, then say what happened.
         for (v in FALLBACK_VERSIONS) {
             if (v == chosen) continue
-            fetch(context, v, arch)?.let { return it }
+            fetch(context, v, arch, port)?.let { return it }
         }
         return fail("$chosen 的 frida-server 下载或解压失败（网络或 GitHub 被拦）。先确认能打开 github.com。")
     }
@@ -111,7 +111,7 @@ internal object Frida {
      * be fetched (so the caller may try another); a *downloaded* server that won't start returns
      * a failure map instead, because trying an older major is what broke the phone before.
      */
-    private fun fetch(context: Context, version: String, arch: String): Map<String, Any?>? {
+    private fun fetch(context: Context, version: String, arch: String, port: Int): Map<String, Any?>? {
         val name = "frida-server-$version-android-$arch.xz"
         val url = "https://github.com/frida/frida/releases/download/$version/$name"
         val local = File(context.cacheDir, "frida-server-$version-$arch")
