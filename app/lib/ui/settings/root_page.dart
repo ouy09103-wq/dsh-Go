@@ -31,9 +31,6 @@ class _RootPageState extends ConsumerState<RootPage> {
 
   RootStatus? _status;
   bool _busy = false;
-
-  /// guest 里 `frida` 的版本：server 要装同一个，否则连不上（版本不匹配看起来像装坏了）。
-  String? _fridaVersion;
   int _shellId = -1;
   Timer? _poller;
 
@@ -63,17 +60,6 @@ class _RootPageState extends ConsumerState<RootPage> {
     } on PlatformException catch (error) {
       _log('状态读取失败：${error.message}');
     }
-    unawaited(_readFridaVersion());
-  }
-
-  /// 只读，不 spawn 任何东西：读不到就算了，安装时再退回内置版本。
-  Future<void> _readFridaVersion() async {
-    try {
-      final version = await _root.fridaClientVersion();
-      if (mounted && version != null) setState(() => _fridaVersion = version);
-    } on PlatformException {
-      // rootfs 还没解压时读不到，不是错。
-    }
   }
 
   void _log(String line) {
@@ -96,35 +82,14 @@ class _RootPageState extends ConsumerState<RootPage> {
 
   Future<void> _installFrida() async {
     setState(() => _busy = true);
-    _log('安装 frida-server…（下载可能较慢）');
+    _log('安装内置 frida-server…（解压约 59 MB，写进 /data/local/tmp）');
     try {
-      final state = await _root.installFrida(version: _fridaVersion);
+      final state = await _root.installFrida();
       _log(state.ok
           ? 'frida-server 已启动：${state.version} · PID ${state.pid} · 127.0.0.1:${state.port}\n${state.path}'
           : 'frida-server 安装失败：${state.error ?? '未知原因'}');
     } on PlatformException catch (error) {
       _log('frida-server 安装失败：${error.code} ${error.message ?? ''}');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// 注入：先选一个正在运行的 App，再问要不要带脚本。都用对话框，不悄悄动别人的进程。
-  Future<void> _injectDialog() async {
-    final package = await showDialog<String>(
-      context: context,
-      builder: (context) => _InjectDialog(clientVersion: _fridaVersion),
-    );
-    if (package == null || !mounted) return;
-    setState(() => _busy = true);
-    _log('注入 $package…');
-    try {
-      final state = await _root.fridaInject(package, version: _fridaVersion);
-      _log(state.ok
-          ? '已注入 $package（PID ${state.pid}）\n${state.report}'
-          : '注入失败：${state.error ?? '未知原因'}');
-    } on PlatformException catch (error) {
-      _log('注入失败：${error.code} ${error.message ?? ''}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -349,8 +314,9 @@ class _RootPageState extends ConsumerState<RootPage> {
             SettingsTile(
               icon: AppIcons.plugin,
               title: '安装并启动 frida-server',
-              subtitle: '版本跟 Linux 里的 frida 对齐；装到 /data/local/tmp 并以 127.0.0.1:27042 启动',
-              value: Text(_busy ? '…' : (_fridaVersion ?? '自动')),
+              subtitle: '内置 17.23.3（arm64），不联网下载。装到 /data/local/tmp，'
+                  '以 127.0.0.1:27042 启动。Linux 里的 frida 是 17.x，主版本一致就能连。',
+              value: Text(_busy ? '…' : '17.23.3'),
               onTap: _busy ? null : _installFrida,
             ),
             SettingsTile(
@@ -358,12 +324,6 @@ class _RootPageState extends ConsumerState<RootPage> {
               title: 'frida-server 状态',
               value: Text(_busy ? '…' : '查看'),
               onTap: _busy ? null : _fridaStatus,
-            ),
-            SettingsTile(
-              icon: AppIcons.command,
-              title: '往 App 里注入（server 起不来时用）',
-              subtitle: '把 agent 注进一个正在运行的普通 App。不碰 system_server / zygote：那里一崩整台手机会重启。',
-              onTap: _busy ? null : _injectDialog,
             ),
           ],
         ),
@@ -431,76 +391,3 @@ class _RootPageState extends ConsumerState<RootPage> {
   }
 }
 
-/// 选一个要注入的 App。
-///
-/// 只列装着的普通应用，且把 frida 明确不能碰的进程挡在外面：往 system_server 或 zygote
-/// 注 agent，崩一次就是整台手机重启（这台机器上已经发生过一次）。所以这两个不走列表，
-/// 也不做「随便填个包名」的入口。
-class _InjectDialog extends StatefulWidget {
-  const _InjectDialog({this.clientVersion});
-
-  final String? clientVersion;
-
-  @override
-  State<_InjectDialog> createState() => _InjectDialogState();
-}
-
-class _InjectDialogState extends State<_InjectDialog> {
-  static const _forbidden = {'system_server', 'zygote', 'zygote64', 'zygote32', 'init', 'surfaceflinger'};
-
-  final _query = TextEditingController();
-  String? _picked;
-
-  @override
-  void dispose() {
-    _query.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('注入到 App'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            widget.clientVersion == null
-                ? '写要注入的 App 包名（必须是普通应用）。'
-                : '写要注入的 App 包名。用的是 frida ${widget.clientVersion}。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _query,
-            autofocus: true,
-            onChanged: (v) => setState(() => _picked = v.trim()),
-            decoration: const InputDecoration(
-              labelText: '包名',
-              hintText: 'com.example.app',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          if (_picked != null && _forbidden.contains(_picked))
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '这个进程不能注入：崩了整台手机会重启。只对普通 App 用。',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-        ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-        FilledButton(
-          onPressed: _picked == null || _picked!.isEmpty || _forbidden.contains(_picked)
-              ? null
-              : () => Navigator.of(context).pop(_picked),
-          child: const Text('注入'),
-        ),
-      ],
-    );
-  }
-}
