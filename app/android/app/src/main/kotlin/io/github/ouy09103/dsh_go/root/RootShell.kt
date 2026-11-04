@@ -1,6 +1,5 @@
 package io.github.ouy09103.dsh_go.root
 
-import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -74,9 +73,7 @@ internal class RootShell private constructor(private val process: Process) {
 
     companion object {
         fun open(su: String, cwd: String?): RootShell {
-            val builder = ProcessBuilder(su, "-c", "exec /system/bin/sh")
-            if (cwd != null) builder.directory(File(cwd))
-            return RootShell(builder.start())
+            return RootShell(RootSpawn.interactive(listOf(su, "-c", "exec /system/bin/sh"), cwd))
         }
     }
 }

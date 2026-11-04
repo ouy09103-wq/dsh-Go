@@ -16,7 +16,7 @@ abstract final class AppInfo {
 
   /// The app's name as the phone shows it: launcher, Recents, notifications, system
   /// settings, the licence page. Matches `android:label` in AndroidManifest.xml.
-  static const name = 'DSH Go Root';
+  static const name = 'DSH Go';
 
   /// The in-app wordmark: the drawer's lockup, the welcome page and the brand mark's
   /// spoken label.

@@ -20,7 +20,7 @@ import '../shell/golden_harness.dart';
 /// Every item off, on a phone that reports them all.
 const offPhone = AccessReadings(
   vendor: 'vivo',
-  appLabel: 'DSH Go Root',
+  appLabel: 'DSH Go',
   mic: false,
   storage: false,
   notifications: false,

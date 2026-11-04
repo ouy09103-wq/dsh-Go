@@ -96,7 +96,7 @@ void main() {
       expect(c.phase, LaunchPhase.playing);
       final text = tester.widget<Text>(find.descendant(of: _wordmark, matching: find.byType(Text)));
       expect(text.style!.color, const Color(0xFFE6E9F0));
-      expect(text.data, 'DSH Go Root');
+      expect(text.data, 'DSH Go');
     });
   });
 

@@ -58,7 +58,7 @@ class LauncherManifestTest {
 
     @Test fun thePhoneShowsTheAppAsDshGo() {
         val app = manifest().children("application").single()
-        assertEquals("DSH Go Root", app.getAttribute("android:label"))
+        assertEquals("DSH Go", app.getAttribute("android:label"))
         // Notification titles say the same name.
         assertEquals(app.getAttribute("android:label"), AppStrings.APP_NAME)
         // Launcher entries, Recents and the share sheet all take the application's label.

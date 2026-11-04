@@ -221,7 +221,7 @@ class MediaPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
         /** The gallery album: `Pictures/DSH Go`, the app's name as galleries show it (downloads go to
          *  `Download/DSH-Go`, a path the agent types). */
-        private const val ALBUM = "DSH Go Root"
+        private const val ALBUM = "DSH Go"
         private const val STORAGE_REQUEST = 0x5d7
 
         /** What a gallery takes, by MIME type → file extension. */

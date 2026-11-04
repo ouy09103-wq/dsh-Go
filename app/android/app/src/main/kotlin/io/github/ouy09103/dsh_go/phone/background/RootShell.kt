@@ -1,5 +1,7 @@
 package io.github.ouy09103.dsh_go.phone.background
 
+import io.github.ouy09103.dsh_go.root.RootSpawn
+
 import java.io.File
 
 /**
@@ -144,9 +146,7 @@ object RootShell {
         }
         // Some managers expose su only through the shell environment.
         runCatching {
-            val p = ProcessBuilder("sh", "-c", "command -v su")
-                .redirectErrorStream(true)
-                .start()
+            val p = RootSpawn.merged(listOf("sh", "-c", "command -v su"))
             val found = p.inputStream.bufferedReader().use { it.readText() }.trim()
             p.waitFor()
             // Absolute paths only, and never the guest distro's own su.

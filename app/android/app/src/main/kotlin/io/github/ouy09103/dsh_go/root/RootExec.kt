@@ -57,11 +57,8 @@ internal object RootExec {
 
     fun run(command: String, timeoutMs: Long = 60_000, cwd: String? = null, env: Map<String, String> = emptyMap()): Result {
         val su = suPath() ?: return Result(false, -1, -1, "", "no su on this device")
-        val builder = ProcessBuilder(su, "-c", command).redirectErrorStream(false)
-        if (cwd != null) builder.directory(File(cwd))
-        builder.environment().putAll(env)
         val process = try {
-            builder.start()
+            RootSpawn.piped(listOf(su, "-c", command), cwd, env)
         } catch (error: IOException) {
             return Result(false, -1, -1, "", error.message ?: "su failed to start")
         }

@@ -1,5 +1,6 @@
 package io.github.ouy09103.dsh_go.phone.background
 
+import io.github.ouy09103.dsh_go.root.RootSpawn
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -71,19 +72,9 @@ object BoundedShell {
         }
 
         val process = try {
-            // stdin from /dev/null: an interactive `su` waiting on a pipe that never closes would
-            // sit until the timeout. Redirect.DISCARD is a write-side redirect and is rejected
-            // for input, so the device is named explicitly.
-            val builder = ProcessBuilder(argv)
-                .redirectErrorStream(true)                              // stderr joins stdout
-                .redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
-                .redirectOutput(ProcessBuilder.Redirect.to(outFile))
-            if (cwd != null) builder.directory(File(cwd))
-            if (env != null) {
-                builder.environment().clear()
-                builder.environment().putAll(env)
-            }
-            builder.start()
+            // stdout to the temp file (stderr joins it), stdin from /dev/null: an interactive `su`
+            // waiting on a pipe that never closes would sit until the timeout.
+            RootSpawn.toFile(argv, outFile, cwd, env)
         } catch (e: Exception) {
             outFile.delete()
             return Result(false, EXIT_START_FAILED,
