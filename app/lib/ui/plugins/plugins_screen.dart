@@ -9,11 +9,13 @@ import '../../plugins/native/native_state.dart';
 import '../../state/hosts_state.dart';
 import '../../state/plugins_state.dart';
 import '../common/ask_ai.dart';
+import '../common/brief_notice.dart';
 import '../common/segmented_pill.dart';
 import '../features/feature_kit.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'installed_tab.dart';
+import 'local_install.dart';
 import 'market_tab.dart';
 
 enum PluginsTab { installed, market }
@@ -62,17 +64,19 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
       messenger?.showBriefNotice(blocked);
       return;
     }
+    // Everything the async part needs is captured first: the picker can be open
+    // for a while, and `context` must not be read across that gap.
+    final l10n = context.l10n;
     final picked = await FilePicker.pickFile();
-    if (picked == null || !context.mounted) return;
+    if (picked == null) return;
     final file = LocalPluginFile(name: picked.name, bytes: await picked.readAsBytes());
     if (!file.usable) {
-      messenger?.showBriefNotice(context.l10n.pluginsLocalUnsupported(picked.name));
+      messenger?.showBriefNotice(l10n.pluginsLocalUnsupported(picked.name));
       return;
     }
+    if (!mounted) return;
     final job = await installLocalPlugin(context, file);
-    if (job == null && context.mounted) {
-      messenger?.showBriefNotice(context.l10n.pluginsConnectToManage);
-    }
+    if (job == null) messenger?.showBriefNotice(l10n.pluginsConnectToManage);
   }
 
   Future<void> _refresh() async {

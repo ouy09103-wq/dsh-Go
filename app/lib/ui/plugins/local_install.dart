@@ -66,6 +66,9 @@ Future<PluginInstallJob?> installLocalPlugin(BuildContext context, LocalPluginFi
     title: _packageGuess(safe),
     replaceInstalled: true,
   );
+  // The staging above awaited file IO; `runPluginInstall` grabs everything it
+  // needs from the context synchronously, so it only has to still be mounted.
+  if (!context.mounted) return null;
   try {
     return await runPluginInstall(context, request);
   } finally {
