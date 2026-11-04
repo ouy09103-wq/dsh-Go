@@ -428,7 +428,7 @@ class PhoneStatus {
     policiesTampered: _flag(m['policiesTampered']),
     fridaRunning: _flag(m['fridaRunning']),
     fridaInstalled: _flag(m['fridaInstalled']),
-    fridaVersion: m['fridaVersion'] as String?
+    fridaVersion: m['fridaVersion'] as String?,
     rootShellUntil: _int(m['rootShellUntil']),
     rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
