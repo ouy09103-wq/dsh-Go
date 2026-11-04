@@ -74,7 +74,9 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
       messenger?.showBriefNotice(l10n.pluginsLocalUnsupported(picked.name));
       return;
     }
-    if (!mounted) return;
+    // `context` here is the parameter, not State.context: the analyzer pairs a
+    // mounted check with the exact context it guards.
+    if (!context.mounted) return;
     final job = await installLocalPlugin(context, file);
     if (job == null) messenger?.showBriefNotice(l10n.pluginsConnectToManage);
   }
