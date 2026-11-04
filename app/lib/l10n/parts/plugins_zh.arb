@@ -843,6 +843,11 @@
   },
   "pluginsLocalUnsupported": "这个文件装不了：{name}。要 .tgz、.tar.gz 或 .zip。",
   "@pluginsLocalUnsupported": {
-    "description": "Toast: the picked file is not a plugin archive. {name} is the file name."
+    "description": "Toast: the picked file is not a plugin archive. {name} is the file name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

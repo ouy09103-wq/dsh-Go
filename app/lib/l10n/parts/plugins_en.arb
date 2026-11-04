@@ -378,6 +378,11 @@
   },
   "pluginsLocalUnsupported": "Can't install this file: {name}. Use a .tgz, .tar.gz or .zip.",
   "@pluginsLocalUnsupported": {
-    "description": "Toast: the picked file is not a plugin archive. {name} is the file name."
+    "description": "Toast: the picked file is not a plugin archive. {name} is the file name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

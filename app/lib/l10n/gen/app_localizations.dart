@@ -19430,18 +19430,6 @@ abstract class L10n {
   /// **'官方插件'**
   String get pluginsOfficialPlugin;
 
-  /// No description provided for @pluginsInstallFromFile.
-  ///
-  /// In zh, this message translates to:
-  /// **'从文件安装'**
-  String get pluginsInstallFromFile;
-
-  /// No description provided for @pluginsLocalUnsupported.
-  ///
-  /// In zh, this message translates to:
-  /// **'这个文件装不了：{name}。要 .tgz、.tar.gz 或 .zip。'**
-  String pluginsLocalUnsupported(String name);
-
   /// No description provided for @pluginsLocalUnshareable.
   ///
   /// In zh, this message translates to:
@@ -21349,6 +21337,18 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'请在这台主机上查看引擎日志。'**
   String get pluginsLoadRemoteLogs;
+
+  /// No description provided for @pluginsInstallFromFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'从文件安装'**
+  String get pluginsInstallFromFile;
+
+  /// No description provided for @pluginsLocalUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个文件装不了：{name}。要 .tgz、.tar.gz 或 .zip。'**
+  String pluginsLocalUnsupported(String name);
 
   /// No description provided for @plugslotsSurfaceComposerActions.
   ///
