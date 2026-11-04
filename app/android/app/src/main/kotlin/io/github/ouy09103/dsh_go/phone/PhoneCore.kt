@@ -51,6 +51,21 @@ interface PhoneEnv {
      */
     fun shellSpillFile(path: String): java.io.File? = null
 
+    /**
+     * frida-server 的状态与起停，由 host 实现（root/Frida.kt）。
+     *
+     * `shell` 能跑任意命令，但模型没法从「能跑命令」推断出 frida 在不在：
+     * 它得先知道 `/data/local/tmp/frida-server` 这个约定。把这件事做成工具，
+     * 模型就能直接问「frida 现在什么状态」，而不是猜。
+     */
+    fun fridaStatus(): Map<String, Any?> = emptyMap()
+
+    /** 装内置的 frida-server 并启动。失败时 map 里有 error。 */
+    fun fridaStart(): Map<String, Any?> = emptyMap()
+
+    /** 停掉正在跑的 frida-server。 */
+    fun fridaStop(): Map<String, Any?> = emptyMap()
+
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
@@ -210,6 +225,7 @@ class PhoneCore(
             PhoneToolCatalog.HANDOFF -> handoff(a, scope)
             PhoneToolCatalog.SHELL -> shell(a, scope)
             PhoneToolCatalog.SHELL_READ -> shellRead(a)
+            PhoneToolCatalog.FRIDA -> frida(a)
             // l10n:keep agent tool result
             else -> Out("没有这个手机工具：$name", error = true)
         }
@@ -732,6 +748,75 @@ class PhoneCore(
     }
 
     /**
+     * frida：查状态，或者装上并启动、停掉。
+     *
+     * 加这个工具的理由：模型能从「我能跑 shell 命令」推断出「我能跑 frida」，
+     * 但推断不出「这台手机上 frida-server 装在 /data/local/tmp、监听 27042、
+     * 二进制是随 App 分发的」。没有这个工具，它只能猜，或者去翻文档。
+     *
+     * `status` 是只读的，任何模式下都能调；`start` / `stop` 要 root 模式开着。
+     */
+    private fun frida(a: Args): Out {
+        val action = a.str("action") ?: "status"
+        if (action !in FRIDA_ACTIONS) {
+            // l10n:keep agent tool result
+            return Out("frida 的 action 只能是 ${FRIDA_ACTIONS.joinToString(" / ")}。", error = true,
+                summary = "frida", decision = "refused:bad-action")
+        }
+        if (action != "status" && !env.rootShellEnabled()) {
+            // l10n:keep agent tool result
+            return Out(
+                "root 模式没开：查状态可以，但要装/停 frida-server 请用户在 设置 → root 模式 里打开开关。",
+                error = true,
+                summary = "frida",
+                decision = "refused:root-off",
+            )
+        }
+        val result = when (action) {
+            "start" -> env.fridaStart()
+            "stop" -> env.fridaStop()
+            else -> env.fridaStatus()
+        }
+        val text = describeFrida(action, result)
+        return Out(text, error = result["ok"] != true, summary = "frida",
+            decision = if (result["ok"] == true) "ok" else "failed")
+    }
+
+    /** frida 结果的一句话说明。空 map 说明这个 host 没实现（测试里的假环境）。 */
+    private fun describeFrida(action: String, result: Map<String, Any?>): String {
+        if (result.isEmpty()) {
+            // l10n:keep agent tool result
+            return "这台设备上没有 frida 支持。"
+        }
+        if (result["ok"] != true) {
+            // l10n:keep agent tool result
+            return "frida $action 失败：" + (result["error"] as? String ?: "未知原因")
+        }
+        val installed = result["installed"] == true
+        val running = result["running"] == true
+        val version = result["version"] as? String
+        val pid = result["pids"] as? String
+        val port = result["port"] ?: 27042
+        return buildString {
+            // l10n:keep agent tool result
+            append(if (installed) "frida-server 已装" else "frida-server 没装")
+            if (version != null) append("（$version）")
+            append("，")
+            // l10n:keep agent tool result
+            append(if (running) "正在跑" else "没在跑")
+            if (pid?.isNotBlank() == true) append("，PID $pid")
+            append("。")
+            if (running) {
+                // l10n:keep agent tool result
+                append("\nLinux 里的 frida 连 127.0.0.1:$port。")
+            } else if (action == "status") {
+                // l10n:keep agent tool result
+                append("\n要用就调 frida action=start（需要 root 模式开着）。")
+            }
+        }
+    }
+
+    /**
      * 接着读一个被截断的 shell 输出。
      *
      * 只读 [BoundedShell] 自己留在 cacheDir 里的文件（`dsh-shell-*.log`），别的路径一律不认：
@@ -846,6 +931,9 @@ class PhoneCore(
         /** One `shell_read` answer never exceeds this, so a follow-up can't flood the context. */
         const val MAX_SHELL_READ_CHARS = 32_000
 
+        /** frida's three actions; anything else is refused before it reaches the host. */
+        val FRIDA_ACTIONS = listOf("status", "start", "stop")
+
         /** The call's own time, not counting waits for the person. */
         fun budgetMs(tool: String): Long = when (tool) {
             PhoneToolCatalog.APPS -> 15_000L
@@ -856,6 +944,7 @@ class PhoneCore(
             PhoneToolCatalog.HANDOFF -> 30_000L
             PhoneToolCatalog.SHELL -> 125_000L
             PhoneToolCatalog.SHELL_READ -> 10_000L
+            PhoneToolCatalog.FRIDA -> 200_000L
             else -> 30_000L
         }
     }

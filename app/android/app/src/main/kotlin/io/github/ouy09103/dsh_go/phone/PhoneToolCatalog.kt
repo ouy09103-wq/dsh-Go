@@ -24,6 +24,7 @@ object PhoneToolCatalog {
     const val HANDOFF = "handoff"
     const val SHELL = "shell"
     const val SHELL_READ = "shell_read"
+    const val FRIDA = "frida"
 
     class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
         fun toJson(): Map<String, Any?> = linkedMapOf(
@@ -275,6 +276,19 @@ object PhoneToolCatalog {
                 "length" to int("读多少个字符，默认 8000，最长 32000（1–32000）"),
             ),
             listOf("path"),
+        ),
+        Tool(
+            FRIDA,
+            // l10n:keep agent tool catalog
+            "查 frida-server 在不在、跑没跑，或者把它装上并启动、停掉。" +
+                // l10n:keep agent tool catalog
+                "二进制随 App 分发（17.23.3，arm64），不联网下载；装到 /data/local/tmp，" +
+                "监听 127.0.0.1:27042。Linux 环境里的 frida 客户端可以直接连。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "action" to str("status（默认，只读）/ start（装上并启动）/ stop（停掉）"),
+            ),
+            emptyList(),
         ),
     )
 

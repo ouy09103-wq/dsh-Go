@@ -6017,6 +6017,10 @@
   "phoneDndManualConnect": "按端口连接",
   "phoneDndConnectPortLabel": "连接端口",
   "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
+  "phoneToolFrida": "Frida",
+  "@phoneToolFrida": {
+    "description": "Action log label for the frida tool."
+  },
   "phoneTaskResultReady": "任务完成 · 查看结果",
   "phoneTaskEndedResult": "任务已结束 · 查看结果",
   "phoneBackgroundGuideTitle": "后台确认与返回",

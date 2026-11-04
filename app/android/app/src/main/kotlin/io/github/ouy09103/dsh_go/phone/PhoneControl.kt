@@ -26,6 +26,7 @@ import io.github.ouy09103.dsh_go.phone.a11y.A11yKeeper
 import io.github.ouy09103.dsh_go.phone.a11y.PhoneA11yService
 import io.github.ouy09103.dsh_go.phone.background.BackgroundControl
 import io.github.ouy09103.dsh_go.phone.background.SecureSettingsGrant
+import io.github.ouy09103.dsh_go.root.Frida
 import io.github.ouy09103.dsh_go.runtime.DshService
 import io.github.ouy09103.dsh_go.shortcuts.EntryActivity
 import java.io.File
@@ -654,6 +655,22 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         runCatching { app.packageManager.getApplicationInfo(pkg, 0) }
             .map { app.packageManager.getApplicationLabel(it).toString() }
             .getOrNull()
+
+    /**
+     * frida-server 的状态与起停（root/Frida.kt）。二进制随 App 分发，装到
+     * /data/local/tmp，监听 127.0.0.1:27042。
+     *
+     * 这些方法会 spawn su，所以 `start` / `stop` 在 PhoneCore 里先检查 root 开关；
+     * `status` 是只读的，但它也要 root 才能读 /proc，所以同样走 su。
+     */
+    override fun fridaStatus(): Map<String, Any?> = Frida.status()
+
+    override fun fridaStart(): Map<String, Any?> = Frida.install(app, Frida.DEFAULT_PORT)
+
+    override fun fridaStop(): Map<String, Any?> {
+        Frida.stop()
+        return Frida.status()
+    }
 
     /**
      * Only files the root tool itself spilled into this app's cache count: `shell_read` is a

@@ -18,8 +18,14 @@ import '../../share_code/guest_fs.dart';
 import '../../state/plugins_state.dart';
 import 'plugin_actions.dart';
 
-/// 本地包放在 guest 的哪里。装完就删，不留在 profile 里。
-const _stagingDir = '${GuestFs.dshHome}/local-plugin-staging';
+/// 本地包暂存在 profile 目录里面。
+///
+/// 位置是有讲究的：`dsh plugin add` 要把这个包记进 profile 的 package.json，而它只接受
+/// 能相对 profile 解析的地址。放在 profile 外面（比如 DSH home 下）时，host 会回
+/// `unaddressable` / `management-required`，界面上就显示「不能在这里修改」——包其实
+/// 装进去了，只是没法登记。
+const _profileDir = '${GuestFs.dshHome}/profiles/web';
+const _stagingDir = '$_profileDir/local-plugin-staging';
 
 /// A picked file, already read. The picker hands back a content URI, so the
 /// bytes are the only thing that survives the trip.
@@ -57,9 +63,10 @@ Future<PluginInstallJob?> installLocalPlugin(BuildContext context, LocalPluginFi
   final staged = File('${dir.path}/$safe');
   staged.writeAsBytesSync(file.bytes);
 
-  // npm's file: spec wants a path, not a URL. The guest sees the rootfs at /,
-  // so the spec is the guest path of the same file.
-  final spec = 'file:$_stagingDir/$safe';
+  // A profile-relative spec: that is the form `dsh plugin add` can record in the
+  // profile's package.json. An absolute path outside the profile comes back
+  // `unaddressable` — the package is unpacked but never registered.
+  final spec = 'file:./local-plugin-staging/$safe';
   final request = PluginInstallRequest(
     name: _packageGuess(safe),
     spec: spec,

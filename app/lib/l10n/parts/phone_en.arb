@@ -447,5 +447,9 @@
   },
   "phoneDndManualConnect": "Connect by port",
   "phoneDndConnectPortLabel": "Connection port",
-  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port."
+  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.",
+  "phoneToolFrida": "Frida",
+  "@phoneToolFrida": {
+    "description": "Action log label for the frida tool."
+  }
 }

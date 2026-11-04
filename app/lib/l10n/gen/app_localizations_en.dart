@@ -9136,6 +9136,9 @@ class L10nEn extends L10n {
   String get phoneToolShell => 'Root command';
 
   @override
+  String get phoneToolFrida => 'Frida';
+
+  @override
   String get phoneToolAction => 'Action';
 
   @override
