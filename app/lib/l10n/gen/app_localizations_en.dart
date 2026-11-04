@@ -14628,7 +14628,7 @@ class L10nEn extends L10n {
   String get searchKwPrivacy => 'privacy,data,logs,sharing,statistics';
 
   @override
-  String get searchKwRoot => 'root,su,superuser,privilege escalation,root shell,rootfs,shell command,terminal';
+  String get searchKwRoot => 'root,su,superuser,privilege escalation,root shell,rootfs,frida,shell command,terminal';
 
   @override
   String get searchKwAbout => 'about,version,update,licenses';

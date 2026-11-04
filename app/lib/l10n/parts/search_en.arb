@@ -107,7 +107,7 @@
   "searchKwPersonalization": "personalization,preferences,style",
   "searchKwInterface": "native,web,web mode,web app,general",
   "searchKwPrivacy": "privacy,data,logs,sharing,statistics",
-  "searchKwRoot": "root,su,superuser,privilege escalation,root shell,rootfs,shell command,terminal",
+  "searchKwRoot": "root,su,superuser,privilege escalation,root shell,rootfs,frida,shell command,terminal",
   "searchKwAbout": "about,version,update,licenses",
   "searchKwPhoneConfirmEntry": "confirmation,phone control,don't ask",
   "searchKwWebCodingView": "coding view,work view,web",
