@@ -440,7 +440,7 @@ class PhoneStatus {
   final bool enabled;
   final bool bridgeListening;
 
-  /// 「允许模型执行 root 命令」开关：关着时 `shell` 工具拒绝执行。
+  /// 「root 模式开关」：关着时 `shell` 工具拒绝执行。
   ///
   /// 开一次只算一段时间（原生侧 12 小时），到点自己关；连续失败也会关。
   final bool rootShell;

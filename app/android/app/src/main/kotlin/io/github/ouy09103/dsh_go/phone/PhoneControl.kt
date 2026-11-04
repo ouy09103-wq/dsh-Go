@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit
 class PhoneControl private constructor(private val app: Context) : PhoneEnv, ControlListener {
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** 允许模型执行 root 命令的开关：带到期时间与失败降级。 */
+    /** root 模式开关：带到期时间与失败降级。 */
     private val grant by lazy { RootGrant(prefs) }
     private val main = Handler(Looper.getMainLooper())
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -567,7 +567,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     override fun enabled(): Boolean = isEnabled()
 
     /**
-     * 「允许模型执行 root 命令」：关着时 shell 工具拒绝执行。默认关，而且开一次只算一段时间
+     * 「root 模式开关」：关着时 shell 工具拒绝执行。默认关，而且开一次只算一段时间
      * （[RootGrant.WINDOW_MS]），连续失败会把开关自己关掉——一个开着就再也不回来的 root
      * 开关不该靠人记得关。
      */

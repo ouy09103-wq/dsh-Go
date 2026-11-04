@@ -13409,7 +13409,7 @@ abstract class L10n {
   /// No description provided for @hubRootAccess.
   ///
   /// In zh, this message translates to:
-  /// **'Root 权限'**
+  /// **'root 模式'**
   String get hubRootAccess;
 
   /// No description provided for @hubPrivacySharing.

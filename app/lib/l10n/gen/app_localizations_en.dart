@@ -7749,7 +7749,7 @@ class L10nEn extends L10n {
   String get hubPrivacy => 'Privacy and sharing';
 
   @override
-  String get hubRootAccess => 'Root access';
+  String get hubRootAccess => 'Root mode';
 
   @override
   String get hubPrivacySharing => 'Sharing';

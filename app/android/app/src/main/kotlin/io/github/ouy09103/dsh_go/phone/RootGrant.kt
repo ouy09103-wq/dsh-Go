@@ -3,7 +3,7 @@ package io.github.ouy09103.dsh_go.phone
 import android.content.SharedPreferences
 
 /**
- * The 允许模型执行 root 命令 switch, with an expiry and a failure counter.
+ * The root 模式 switch, with an expiry and a failure counter.
  *
  * The switch used to be one boolean that stayed true until someone turned it off. That is a long
  * time for a tool that runs arbitrary commands as uid 0: a person who turned it on once to try it,

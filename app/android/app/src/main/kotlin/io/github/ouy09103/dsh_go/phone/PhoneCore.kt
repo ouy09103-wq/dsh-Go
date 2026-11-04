@@ -26,7 +26,7 @@ interface PhoneEnv {
      * without destroying its content so the app comes to the main screen. A sentence for the model, or null.
      */
     fun beforeHandoff(screen: PhoneScreen): String? = null
-    /** 设置 › Root 权限 的「允许模型执行 root 命令」。关着时 shell 工具拒绝执行。 */
+    /** 设置 › Root 权限 的「root 模式开关」。关着时 shell 工具拒绝执行。 */
     fun rootShellEnabled(): Boolean = false
 
     /**
@@ -76,7 +76,7 @@ class PhoneCore(
         }
         return if (env.noteRootFailure()) {
             // l10n:keep agent tool result
-            "\n\n（连续 ${RootGrant.MAX_STRIKES} 次拿不到 root，已把「允许模型执行 root 命令」自动关掉。" +
+            "\n\n（连续 ${RootGrant.MAX_STRIKES} 次拿不到 root，已把「root 模式开关」自动关掉。" +
                 "要接着用请用户重新打开。）"
         } else {
             null
@@ -663,7 +663,7 @@ class PhoneCore(
         if (!env.rootShellEnabled()) {
             // l10n:keep agent tool result
             return Out(
-                "root 未启用：请用户先在 设置 → Root 权限 里打开「允许模型执行 root 命令」，再调用这个工具。",
+                "root 未启用：请用户先在 设置 → Root 权限 里打开「root 模式开关」，再调用这个工具。",
                 error = true,
                 summary = SHELL_LOG,
                 decision = "refused:root-off",
@@ -674,7 +674,7 @@ class PhoneCore(
             ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = SHELL_LOG,
                 decision = "refused:no-command")
 
-        // 严格模式默认关：打开了「允许模型执行 root 命令」就是要它能干活，不该再被自己的
+        // 严格模式默认关：打开了「root 模式开关」就是要它能干活，不该再被自己的
         // 工具管着。开着这个开关（设置 › Root 权限）才按 RootCommandPolicy 逐条判定——
         // 那是给想多一层保险的人用的，不是默认体验。
         if (env.rootShellStrict()) {

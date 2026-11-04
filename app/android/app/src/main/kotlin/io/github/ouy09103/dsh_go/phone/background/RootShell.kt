@@ -65,6 +65,8 @@ object RootShell {
         val failure: String?,
         /** Where the full output went when it did not fit; null when [text] is all of it. */
         val spillPath: String? = null,
+        /** Said so when [timeoutMs] had to be clamped; null when it was used as given. */
+        val timeoutNote: String? = null,
     )
 
     /**
@@ -121,8 +123,15 @@ object RootShell {
                         "su 拒绝了这次调用：root 管理器里 DSH Go 的授权可能被撤销了。"
                     else -> null
                 }
+                // Say so when the caller's number wasn't the one used: a model that asked for
+                // 500 ms and got 1 s should know why, instead of trusting a wrong deadline.
+                val clamped = when {
+                    timeoutMs > MAX_TIMEOUT_MS -> "[timeoutMs 超过了上限，按 ${MAX_TIMEOUT_MS}ms 跑]"
+                    timeoutMs < 1_000L -> "[timeoutMs 太短，按 1000ms 跑]"
+                    else -> null
+                }
                 return Output(result.exitCode, result.text, result.timedOut, result.truncated,
-                    result.totalBytes, failure, result.spillPath)
+                    result.totalBytes, failure, result.spillPath, clamped)
             }
         } finally {
             marker?.delete()
@@ -178,7 +187,7 @@ object RootShell {
     fun describe(command: String, output: Output): String {
         output.failure?.let { return it }
         val body = if (output.text.isBlank()) "(没有输出)" else output.text.trimEnd()
-        val notes = ArrayList<String>(2)
+        val notes = ArrayList<String>(3)
         if (output.truncated) {
             val where = output.spillPath
             notes.add(
@@ -191,6 +200,7 @@ object RootShell {
             )
         }
         if (output.timedOut) notes.add("[超时终止]")
+        output.timeoutNote?.let { notes.add(it) }
         val head = "$ $command\n[exit ${output.exitCode}]"
         return if (notes.isEmpty()) "$head\n$body"
         else "$head\n${notes.joinToString("\n")}\n$body"

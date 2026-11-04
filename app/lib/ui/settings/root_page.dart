@@ -142,7 +142,7 @@ class _RootPageState extends ConsumerState<RootPage> {
     }
   }
 
-  /// 「允许模型执行 root 命令」的总开关：写进 SharedPreferences，引擎每次调用时现查。
+  /// 「root 模式开关」：写进 SharedPreferences，引擎每次调用时现查。
   ///
   /// 开一次只算 12 小时，到点自己关；连续 3 次拿不到 root 也会关。这两件事都由原生侧算，
   /// 这里只把那一刻说给用户看，免得他以为按钮点坏了。
@@ -224,14 +224,14 @@ class _RootPageState extends ConsumerState<RootPage> {
               : '未检测到 su'),
       children: [
         SettingsSection(
-          title: '模型能用 root 吗',
+          title: 'root 模式',
           children: [
             Consumer(
               builder: (context, ref, _) {
                 final status = ref.watch(phoneProvider.select((s) => s.status));
                 return SettingsSwitchTile(
                   icon: AppIcons.command,
-                  title: '允许模型执行 root 命令',
+                  title: 'root 模式开关',
                   subtitle: _grantSubtitle(status),
                   value: status.rootShell,
                   onChanged: (on) => _setAgentRoot(on),

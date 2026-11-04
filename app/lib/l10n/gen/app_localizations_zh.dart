@@ -7323,7 +7323,7 @@ class L10nZh extends L10n {
   String get hubPrivacy => '隐私与分享';
 
   @override
-  String get hubRootAccess => 'Root 权限';
+  String get hubRootAccess => 'root 模式';
 
   @override
   String get hubPrivacySharing => '分享';
