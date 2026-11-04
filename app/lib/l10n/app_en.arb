@@ -3541,6 +3541,8 @@
   "pluginsLoadUnreported": "Not reported",
   "pluginsLoadNoRuntimeDetail": "The host did not return the runtime error details. Check its engine logs.",
   "pluginsLoadRemoteLogs": "Check the engine logs on this host.",
+  "pluginsInstallFromFile": "Install from file",
+  "pluginsLocalUnsupported": "Can't install this file: {name}. Use a .tgz, .tar.gz or .zip.",
   "plugslotsSurfaceComposerActions": "Composer buttons",
   "plugslotsSurfaceMessageActions": "Message menu",
   "plugslotsSurfaceComposerStrip": "Status line",

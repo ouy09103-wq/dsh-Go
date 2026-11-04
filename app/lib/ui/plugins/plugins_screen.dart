@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -50,6 +51,30 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
     }
   }
 
+  /// 从手机装一个本地插件包：选文件 → 写进 guest → 让 host 装。
+  ///
+  /// 本机引擎才有这条路（远端 host 的文件系统和这台手机无关）。选完立刻开始装，
+  /// 不做二次确认：装一个插件和装一个 App 一样，是用户自己点的。
+  Future<void> _installFromFile(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final blocked = localPluginBlockedReason(context, ref);
+    if (blocked != null) {
+      messenger?.showBriefNotice(blocked);
+      return;
+    }
+    final picked = await FilePicker.pickFile();
+    if (picked == null || !context.mounted) return;
+    final file = LocalPluginFile(name: picked.name, bytes: await picked.readAsBytes());
+    if (!file.usable) {
+      messenger?.showBriefNotice(context.l10n.pluginsLocalUnsupported(picked.name));
+      return;
+    }
+    final job = await installLocalPlugin(context, file);
+    if (job == null && context.mounted) {
+      messenger?.showBriefNotice(context.l10n.pluginsConnectToManage);
+    }
+  }
+
   Future<void> _refresh() async {
     if (_refreshing) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -97,6 +122,11 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
       subtitle: Text(_subtitle(host)),
       actions: [
         const AskAiButton(AskAiTopic.plugins),
+        GlassIconButton(
+          icon: AppIcons.add,
+          tooltip: l10n.pluginsInstallFromFile,
+          onPressed: () => unawaited(_installFromFile(context)),
+        ),
         GlassIconButton(
           icon: AppIcons.refresh,
           tooltip: l10n.pluginsRefresh,
