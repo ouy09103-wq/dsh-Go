@@ -13912,10 +13912,10 @@ class L10nZh extends L10n {
   String get searchKwInterface => '原生,网页,网页模式,网页版,通用设置';
 
   @override
-  String get searchKwRoot => 'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行';
+  String get searchKwPrivacy => '隐私,数据,日志,分享,统计';
 
   @override
-  String get searchKwPrivacy => '隐私,数据,日志,分享,统计';
+  String get searchKwRoot => 'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行';
 
   @override
   String get searchKwAbout => '关于,版本,更新,许可,dsh-go';

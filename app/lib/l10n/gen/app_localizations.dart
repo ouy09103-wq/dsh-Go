@@ -25478,17 +25478,17 @@ abstract class L10n {
   /// **'原生,网页,网页模式,网页版,通用设置'**
   String get searchKwInterface;
 
-  /// No description provided for @searchKwRoot.
-  ///
-  /// In zh, this message translates to:
-  /// **'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行'**
-  String get searchKwRoot;
-
   /// No description provided for @searchKwPrivacy.
   ///
   /// In zh, this message translates to:
   /// **'隐私,数据,日志,分享,统计'**
   String get searchKwPrivacy;
+
+  /// No description provided for @searchKwRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行'**
+  String get searchKwRoot;
 
   /// No description provided for @searchKwAbout.
   ///
