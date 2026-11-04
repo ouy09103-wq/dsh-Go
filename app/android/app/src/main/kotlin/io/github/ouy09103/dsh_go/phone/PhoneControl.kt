@@ -46,6 +46,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     /** root 模式开关：带到期时间与失败降级。 */
     private val grant by lazy { RootGrant(prefs) }
+
+    /** 手机操控规则的签名：被外部改过的 policies 不生效。 */
+    private val signature by lazy { PoliciesSignature(prefs) }
+
+    /** True when the stored rules were ignored because the signature didn't match. */
+    @Volatile
+    private var tampered = false
+
+    /** False when the keystore refused to sign, so the rules are stored unsigned. */
+    @Volatile
+    private var signatureAvailable = true
     private val main = Handler(Looper.getMainLooper())
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
@@ -173,10 +184,34 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return true
     }
 
+    /**
+     * The person's rules, or the shipped defaults when the stored copy doesn't add up.
+     *
+     * `shell` runs as uid 0 and can write this file, so an edited `policies` blob would silently
+     * lift every rule on the next start. The JSON is signed with a key in the Android keystore
+     * (see [PoliciesSignature]); a stored blob whose signature is missing or wrong is ignored —
+     * defaults are the safe side, and [tampered] tells the phone page to say so.
+     *
+     * The first read after an upgrade has no signature: it is trusted once and signed right here,
+     * so an install that already has settings keeps them.
+     */
     override fun policies(): PhonePolicies = policiesCache ?: run {
         val stored = prefs.getString(K_POLICIES, null)
         val p = try {
-            PhonePolicies.fromMap(stored?.let { Json.parse(it) as? Map<*, *> })
+            if (stored != null) {
+                val trusted = when {
+                    signature.verify(stored) -> true
+                    !signature.present() -> signature.store(stored) // first read after upgrade
+                    else -> false
+                }
+                if (!trusted) {
+                    tampered = true
+                    logger("[dsh-app] phone control: the stored policies were changed outside the app; using the defaults")
+                }
+                if (trusted) PhonePolicies.fromMap(Json.parse(stored) as? Map<*, *>) else PhonePolicies()
+            } else {
+                PhonePolicies()
+            }
         } catch (_: Exception) {
             PhonePolicies()
         }
@@ -187,8 +222,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun setPolicies(map: Map<*, *>?): Boolean {
         // Partial updates keep what they don't mention (the 免确认 switch sends only its flag).
         val p = PhonePolicies.fromMap(map, base = policies())
-        prefs.edit().putString(K_POLICIES, Json.write(p.toMap())).apply()
+        val json = Json.write(p.toMap())
+        val signed = signature.store(json)
+        prefs.edit().putString(K_POLICIES, json).apply()
         policiesCache = p
+        tampered = false
+        // A keystore that can't sign (rare) leaves the rules unsigned rather than refusing the
+        // change; the phone page says so instead of pretending the file is protected.
+        signatureAvailable = signed
         return true
     }
 
@@ -446,6 +487,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         "enabled" to isEnabled(),
         "rootShell" to rootShellEnabled(),
         "rootShellStrict" to rootShellStrict(),
+        "policiesSigned" to signatureAvailable,
+        "policiesTampered" to tampered,
         "rootShellUntil" to rootShellExpiresAt(),
         "rootShellOffReason" to rootShellOffReason(),
         "bridgeListening" to bridge.listening,

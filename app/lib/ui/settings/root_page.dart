@@ -254,6 +254,25 @@ class _RootPageState extends ConsumerState<RootPage> {
             ),
           ],
         ),
+        // 规则被 App 之外的东西改过：说一声，别让人以为限制还在。
+        Consumer(
+          builder: (context, ref, _) {
+            final tampered = ref.watch(phoneProvider.select((s) => s.status.policiesTampered));
+            if (!tampered) return const SizedBox.shrink();
+            return SettingsSection(
+              title: '注意',
+              children: [
+                SettingsTile(
+                  icon: AppIcons.privacy,
+                  danger: true,
+                  title: '手机操控的规则被改过',
+                  subtitle: 'shared_prefs 里的策略文件签名对不上，改过的内容没有生效，现在用的是内置默认。'
+                      '如果是你自己用 root 改的，重新在 设置 › 手机操控 里改一遍即可。',
+                ),
+              ],
+            );
+          },
+        ),
         SettingsSection(
           title: '状态',
           children: [

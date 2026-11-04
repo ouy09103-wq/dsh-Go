@@ -383,6 +383,7 @@ class PhoneStatus {
     this.bridgeListening = false,
     this.rootShell = false,
     this.rootShellStrict = false,
+    this.policiesTampered = false,
     this.rootShellUntil,
     this.rootShellOffReason,
     this.a11y = const PhoneA11yStatus(),
@@ -402,6 +403,7 @@ class PhoneStatus {
       bridgeListening = false,
       rootShell = false,
       rootShellStrict = false,
+      policiesTampered = false,
       rootShellUntil = null,
       rootShellOffReason = null,
       a11y = const PhoneA11yStatus(),
@@ -417,6 +419,7 @@ class PhoneStatus {
     enabled: _flag(m['enabled']),
     rootShell: _flag(m['rootShell']),
     rootShellStrict: _flag(m['rootShellStrict']),
+    policiesTampered: _flag(m['policiesTampered']),
     rootShellUntil: _int(m['rootShellUntil']),
     rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
@@ -448,6 +451,9 @@ class PhoneStatus {
   /// 严格模式：`shell` 是否也走手机操控那套规则（不碰名单、系统目录…）。默认关。
   final bool rootShellStrict;
 
+  /// 手机操控的规则被 App 之外的东西改过：改过的规则没有生效，用的是内置默认。
+  final bool policiesTampered;
+
   /// 这次授权到什么时候为止（毫秒时间戳）；关着是 null。
   final int? rootShellUntil;
 
@@ -473,6 +479,7 @@ class PhoneStatus {
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
     rootShellStrict: rootShellStrict ?? this.rootShellStrict,
+    policiesTampered: policiesTampered,
     rootShellUntil: rootShellUntil,
     rootShellOffReason: rootShellOffReason,
     bridgeListening: bridgeListening,
