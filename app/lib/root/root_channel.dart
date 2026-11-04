@@ -90,6 +90,7 @@ class FridaState {
     this.running = false,
     this.pids = '',
     this.listening = false,
+    this.env = '',
   });
 
   final bool ok;
@@ -102,6 +103,9 @@ class FridaState {
   final String pids;
   final bool listening;
 
+  /// 启动时注入的 ART 环境变量名（诊断用：空说明没读到 zygote 的环境）。
+  final String env;
+
   String get report {
     if (!ok) return '失败：${error ?? '未知原因'}';
     final buffer = StringBuffer(running ? 'frida-server 运行中' : 'frida-server 未运行');
@@ -109,6 +113,7 @@ class FridaState {
     if (listening) buffer.write(' · 27042 在监听');
     if (version != null) buffer.write('\n版本 $version');
     if (path != null) buffer.write('\n$path');
+    if (env.trim().isNotEmpty) buffer.write('\nART 环境：${env.trim()}');
     return buffer.toString();
   }
 
@@ -122,8 +127,9 @@ class FridaState {
       pid: map['pid'] as String?,
       error: map['error'] as String?,
       running: map['running'] == true || (map['pid'] as String? ?? '').isNotEmpty,
-      pids: (map['pids'] as String?) ?? '',
+      pids: (map['pids'] as String?) ?? (map['pid'] as String?) ?? '',
       listening: map['listening'] == true,
+      env: (map['env'] as String?) ?? '',
     );
   }
 }
@@ -165,11 +171,26 @@ class RootChannel {
         await channel.invokeMethod<Object?>('guest', {'command': command, 'timeoutMs': timeoutMs}),
       );
 
+  /// 装 frida-server。不给 [version] 时用 guest 里 `frida` 包的版本，server 和 client 才对得上。
   Future<FridaState> installFrida({String? version, int port = 27042}) async => FridaState.from(
         await channel.invokeMethod<Object?>('installFrida', {'version': version, 'port': port}),
       );
 
   Future<FridaState> fridaStatus() async => FridaState.from(await channel.invokeMethod<Object?>('fridaStatus'));
+
+  /// guest 里 `frida` 的版本；读不到是 null。
+  Future<String?> fridaClientVersion() async {
+    final raw = await channel.invokeMethod<Object?>('fridaClientVersion');
+    final map = (raw as Map?)?.cast<String, Object?>() ?? const <String, Object?>{};
+    return map['version'] as String?;
+  }
+
+  /// frida-server 起不来时的替代：把 agent 注进一个普通 App（不碰 system_server / zygote）。
+  Future<FridaState> fridaInject(String package, {String? script, String? version}) async =>
+      FridaState.from(await channel.invokeMethod<Object?>(
+        'fridaInject',
+        {'package': package, 'script': script, 'version': version},
+      ));
 
   Future<int> shellOpen({String? cwd}) async {
     final raw = await channel.invokeMethod<Object?>('shellOpen', {'cwd': cwd});

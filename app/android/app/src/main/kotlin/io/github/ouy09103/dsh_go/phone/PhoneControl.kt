@@ -43,6 +43,9 @@ import java.util.concurrent.TimeUnit
  */
 class PhoneControl private constructor(private val app: Context) : PhoneEnv, ControlListener {
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** 允许模型执行 root 命令的开关：带到期时间与失败降级。 */
+    private val grant by lazy { RootGrant(prefs) }
     private val main = Handler(Looper.getMainLooper())
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
@@ -436,6 +439,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
         "rootShell" to rootShellEnabled(),
+        "rootShellUntil" to rootShellExpiresAt(),
+        "rootShellOffReason" to rootShellOffReason(),
         "bridgeListening" to bridge.listening,
         "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
         "overlay" to (PhoneRegistry.overlayGate != null),
@@ -560,12 +565,54 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun enabled(): Boolean = isEnabled()
 
-    /** 聊天页的「启用 root」：关着时 shell 工具拒绝执行。默认关。 */
-    override fun rootShellEnabled(): Boolean = prefs.getBoolean(K_ROOT_SHELL, false)
+    /**
+     * 「允许模型执行 root 命令」：关着时 shell 工具拒绝执行。默认关，而且开一次只算一段时间
+     * （[RootGrant.WINDOW_MS]），连续失败会把开关自己关掉——一个开着就再也不回来的 root
+     * 开关不该靠人记得关。
+     */
+    override fun rootShellEnabled(): Boolean = grant.enabled()
 
-    /** 开关只影响下一次 `shell` 调用，不重启引擎。 */
+    /** 这个开关什么时候到期；关着是 null。 */
+    fun rootShellExpiresAt(): Long? = grant.expiresAt()
+
+    /** 上一次读成 false 的原因（expired / strikes），没有就是 null。 */
+    fun rootShellOffReason(): String? = grant.lastReason
+
+    /**
+     * A `shell` call that couldn't get root. After [RootGrant.MAX_STRIKES] the switch turns
+     * itself off, so the model is told to stop instead of retrying into a root manager that
+     * isn't answering.
+     */
+    override fun noteRootFailure(): Boolean {
+        val tripped = grant.recordFailure()
+        if (tripped) emitStatus()
+        return tripped
+    }
+
+    /** A `shell` call that worked: the grant is alive. */
+    override fun noteRootSuccess() { grant.recordSuccess() }
+
+    override fun appLabel(pkg: String): String? =
+        runCatching { app.packageManager.getApplicationInfo(pkg, 0) }
+            .map { app.packageManager.getApplicationLabel(it).toString() }
+            .getOrNull()
+
+    /**
+     * Only files the root tool itself spilled into this app's cache count: `shell_read` is a
+     * window onto a truncation, not a general file reader that would skip every rule the tool
+     * has. A path is accepted when it is directly inside [app].cacheDir and named `dsh-shell-*`.
+     */
+    override fun shellSpillFile(path: String): java.io.File? {
+        val file = runCatching { java.io.File(path).canonicalFile }.getOrNull() ?: return null
+        val dir = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
+        if (file.parentFile != dir) return null
+        if (!file.name.startsWith("dsh-shell-") || !file.name.endsWith(".log")) return null
+        return file.takeIf { it.isFile }
+    }
+
+    /** 开关只影响下一次 `shell` 调用，不重启引擎。开着时从现在起算一个新的窗口。 */
     fun setRootShell(on: Boolean) {
-        prefs.edit().putBoolean(K_ROOT_SHELL, on).apply()
+        grant.set(on)
         emitStatus()
     }
 
@@ -634,8 +681,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         private const val PREFS = "dsh_phone"
         private const val K_ENABLED = "enabled"
 
-        /** 聊天页「启用 root」的开关，默认关。 */
-        private const val K_ROOT_SHELL = "root_shell"
         private const val K_POLICIES = "policies"
         private const val K_TCP_FALLBACK = "tcpFallback"
         private const val CHANNEL_FIX = "dsh-phone-fix"

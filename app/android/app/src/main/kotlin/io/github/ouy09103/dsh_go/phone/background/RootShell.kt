@@ -64,7 +64,9 @@ object RootShell {
         /** Bytes the command produced, including those dropped by the character cap. */
         val totalBytes: Long,
         /** A sentence for the model when the call could not run at all; null otherwise. */
-        val failure: String?
+        val failure: String?,
+        /** Where the full output went when it did not fit; null when [text] is all of it. */
+        val spillPath: String? = null,
     )
 
     /**
@@ -122,7 +124,7 @@ object RootShell {
                     else -> null
                 }
                 return Output(result.exitCode, result.text, result.timedOut, result.truncated,
-                    result.totalBytes, failure)
+                    result.totalBytes, failure, result.spillPath)
             }
         } finally {
             marker?.delete()
@@ -179,7 +181,17 @@ object RootShell {
         output.failure?.let { return it }
         val body = if (output.text.isBlank()) "(没有输出)" else output.text.trimEnd()
         val notes = ArrayList<String>(2)
-        if (output.truncated) notes.add("[输出超过 $MAX_CHARS 字符，只保留开头部分]")
+        if (output.truncated) {
+            val where = output.spillPath
+            notes.add(
+                if (where != null) {
+                    "[输出超过 $MAX_CHARS 字符，只保留开头部分；全文 ${output.totalBytes} 字节在 $where，" +
+                        "用 shell_read 读它]"
+                } else {
+                    "[输出超过 $MAX_CHARS 字符，只保留开头部分]"
+                }
+            )
+        }
         if (output.timedOut) notes.add("[超时终止]")
         val head = "$ $command\n[exit ${output.exitCode}]"
         return if (notes.isEmpty()) "$head\n$body"

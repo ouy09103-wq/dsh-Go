@@ -23,6 +23,7 @@ object PhoneToolCatalog {
     const val TAP_XY = "tap_xy"
     const val HANDOFF = "handoff"
     const val SHELL = "shell"
+    const val SHELL_READ = "shell_read"
 
     class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
         fun toJson(): Map<String, Any?> = linkedMapOf(
@@ -249,9 +250,10 @@ object PhoneToolCatalog {
         Tool(
             SHELL,
             // l10n:keep agent tool catalog
-            "在手机上以 root 执行一条 shell 命令（经 su），返回退出码和输出。会绕开手机操控的安全检查：" +
+            "在手机上以 root 执行一条 shell 命令（经 su），返回退出码和输出。" +
                 // l10n:keep agent tool catalog
-                "只在用户明确要求、或别无他法时用。删除、改系统、动钱的命令先问用户。",
+                "手机操控的限制在这里同样有效：不碰名单里的应用、DSH Go 自己的数据、系统目录、" +
+                "密码凭据都不会执行。只在用户明确要求、或别无他法时用；删除和改系统的命令先问用户。",
             linkedMapOf(
                 // l10n:keep agent tool catalog
                 "command" to str("要执行的命令，按 sh 语法"),
@@ -259,6 +261,20 @@ object PhoneToolCatalog {
                 "timeoutMs" to int("超时毫秒数，默认 20000，最长 120000（1–120000）"),
             ),
             listOf("command"),
+        ),
+        Tool(
+            SHELL_READ,
+            // l10n:keep agent tool catalog
+            "接着读上一次 shell 的输出：输出太长时结果里会给出一个文件路径，用这个工具按行读它的后面部分。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "path" to str("结果里给出的输出文件路径"),
+                // l10n:keep agent tool catalog
+                "offset" to int("从第几个字符开始，默认 0"),
+                // l10n:keep agent tool catalog
+                "length" to int("读多少个字符，默认 8000，最长 32000（1–32000）"),
+            ),
+            listOf("path"),
         ),
     )
 

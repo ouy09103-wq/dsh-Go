@@ -56,6 +56,24 @@ class PhoneBridge(
     /** Connections that passed uid + token since [start] (DSH's probe plus the serving relay). */
     val authenticatedConnections: Int get() = authed.get()
 
+    /**
+     * Whether [pid] is the relay this engine launched.
+     *
+     * The token has to sit in `bridge.json` for the relay to read, and everything in the rootfs
+     * runs as this app's uid — so permissions cannot hide it from guest code, and "a process that
+     * has the token" is not the same as "our relay". Checking the cmdline is a speed bump, not a
+     * boundary: a guest that copies the token *and* names its helper `relay.cjs` still gets in.
+     * The load-bearing fix is in [PhoneCore]'s root-command policy, which decides what a caller
+     * may do once it is inside — including `shell`, the one tool that could otherwise re-read the
+     * token or rewrite the switches that gate it.
+     */
+    private fun isRelay(pid: Int): Boolean {
+        if (pid <= 0) return false
+        val cmdline = runCatching { java.io.File("/proc/$pid/cmdline").readBytes() }.getOrNull() ?: return false
+        val text = String(cmdline, Charsets.UTF_8)
+        return text.contains("relay.cjs")
+    }
+
     /** Binds a fresh abstract socket (and TCP when [withTcp]); returns what the relay needs. */
     @Synchronized
     fun start(withTcp: Boolean): PhoneGuest.Endpoint {
@@ -144,6 +162,8 @@ class PhoneBridge(
                 runCatching { sock.close() }
                 continue
             }
+            val peer = runCatching { sock.peerCredentials.pid }.getOrDefault(-1)
+            if (peer > 0 && !isRelay(peer)) log("[dsh-app] phone bridge: connection from pid $peer (not a relay process)")
             serve(sock, sock.inputStream, sock.outputStream, token) { ms -> runCatching { sock.soTimeout = ms } }
         }
     }

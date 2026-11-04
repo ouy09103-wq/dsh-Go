@@ -26,8 +26,24 @@ interface PhoneEnv {
      * without destroying its content so the app comes to the main screen. A sentence for the model, or null.
      */
     fun beforeHandoff(screen: PhoneScreen): String? = null
-    /** 聊天页的「启用 root」开关。关着时 shell 工具拒绝执行。 */
+    /** 设置 › Root 权限 的「允许模型执行 root 命令」。关着时 shell 工具拒绝执行。 */
     fun rootShellEnabled(): Boolean = false
+
+    /** The app's display name for [pkg], when the host can resolve it (null: use the id). */
+    fun appLabel(pkg: String): String? = null
+
+    /** One failed `shell`; true when that turned the switch off (see [RootGrant]). */
+    fun noteRootFailure(): Boolean = false
+
+    /** One `shell` that worked. */
+    fun noteRootSuccess() = Unit
+
+    /**
+     * The file a truncated `shell` output was spilled to, or null when [path] is not one of
+     * them. The host owns this check: only its own cache directory counts, so `shell_read`
+     * cannot become an arbitrary file read.
+     */
+    fun shellSpillFile(path: String): java.io.File? = null
 
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
@@ -45,6 +61,27 @@ class PhoneCore(
 ) {
     private val ui: PhoneUiText get() = env.uiText()
     val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
+
+    /** 让 `shell` 的成败回到开关上：连续失败会把 root 自己关掉。 */
+    private fun shellGrant(ok: Boolean): String? {
+        if (ok) {
+            env.noteRootSuccess()
+            return null
+        }
+        return if (env.noteRootFailure()) {
+            // l10n:keep agent tool result
+            "\n\n（连续 ${RootGrant.MAX_STRIKES} 次拿不到 root，已把「允许模型执行 root 命令」自动关掉。" +
+                "要接着用请用户重新打开。）"
+        } else {
+            null
+        }
+    }
+
+    /** The rules a root command meets before su: the same policies, judged on the text. */
+    private val rootPolicy = RootCommandPolicy()
+
+    /** Per-task rate limit for the root tool. */
+    private val shellBudget = ShellBudget()
 
     /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
     private fun say(text: String) {
@@ -68,6 +105,8 @@ class PhoneCore(
         val app: String? = null,
         val summary: String? = null,
         val decision: String? = null,
+        /** What the action log shows for this call, when it isn't [summary] (a command's first line). */
+        val logDetail: String? = null,
     )
 
     fun call(name: String, args: Map<String, Any?>): ToolOutput {
@@ -112,7 +151,7 @@ class PhoneCore(
                 decision = "error",
             )
         }
-        out.summary?.let { log.add(name, out.app, it, out.decision ?: if (out.error) "error" else "ok") }
+        out.summary?.let { log.add(name, out.app, out.logDetail ?: it, out.decision ?: if (out.error) "error" else "ok") }
         noteRefusal(name, out.decision)
         val interjections = tasks.drainInterjections()
         val text = buildString {
@@ -163,7 +202,8 @@ class PhoneCore(
             PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope)
             PhoneToolCatalog.KEY -> key(a)
             PhoneToolCatalog.HANDOFF -> handoff(a, scope)
-            PhoneToolCatalog.SHELL -> shell(a)
+            PhoneToolCatalog.SHELL -> shell(a, scope)
+            PhoneToolCatalog.SHELL_READ -> shellRead(a)
             // l10n:keep agent tool result
             else -> Out("没有这个手机工具：$name", error = true)
         }
@@ -600,30 +640,70 @@ class PhoneCore(
     }
 
     /**
-     * root shell：经 su 执行一条命令。工具集固定，放不放行由聊天页的「启用 root」决定。
+     * root shell：经 su 执行一条命令。
+     *
+     * 三道关，缺一不可：
+     *  1. 聊天页的「启用 root」开关（[PhoneEnv.rootShellEnabled]）。
+     *  2. [RootCommandPolicy]：不碰名单、DSH Go 自己的存储、系统目录、密码凭据，以及
+     *     every-write 名单要的那句确认。shell 不是 tap，无障碍那层永远看不到它，所以
+     *     这些规则必须在这里重新判一遍，否则用户设的规则对这一个工具等于不存在。
+     *  3. 限流：每任务每分钟 60 次、并发 1（[ShellBudget]），超了直接说清楚而不是排队。
      *
      * 执行交给 [RootShell]：它把输出写临时文件而不是管道（命令输出超过 64 KiB 时，
      * 管道会填满、子进程阻塞、waitFor 等到超时再杀掉一个其实已经跑完的命令），
      * 超时杀整棵进程树，并且认得出 PRoot 里那个答 uid=0 却没有真 root 权限的假 su。
      */
-    private fun shell(a: Args): Out {
+    private fun shell(a: Args, scope: SerialWorker.Scope): Out {
         if (!env.rootShellEnabled()) {
             // l10n:keep agent tool result
             return Out(
-                "root 未启用：请用户先在聊天页输入框上方点「启用 root」，再调用这个工具。",
+                "root 未启用：请用户先在 设置 → Root 权限 里打开「允许模型执行 root 命令」，再调用这个工具。",
                 error = true,
-                summary = "shell",
+                summary = SHELL_LOG,
                 decision = "refused:root-off",
             )
         }
         // l10n:keep agent tool result
         val command = a.str("command")?.takeIf { it.isNotBlank() }
-            ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = "shell",
+            ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = SHELL_LOG,
                 decision = "refused:no-command")
-        val timeoutMs = (a.int("timeoutMs") ?: RootShell.DEFAULT_TIMEOUT_MS.toInt()).toLong()
 
-        val output = RootShell.run(command, timeoutMs)
-        val text = RootShell.describe(command, output)
+        // The person's own rules, judged on the text before su ever sees it.
+        val verdict = rootPolicy.judge(command, env.policies()) { pkg -> env.appLabel(pkg) }
+        if (verdict is RootCommandPolicy.Verdict.Refuse) {
+            return Out(verdict.message, error = true, summary = SHELL_LOG,
+                decision = "refused:${verdict.rule}")
+        }
+        if (verdict is RootCommandPolicy.Verdict.Confirm) {
+            val names = verdict.packages.joinToString("、") { env.appLabel(it) ?: it }
+            // l10n:keep agent safety result
+            val sentence = "以 root 执行这条命令，动到「$names」（这个应用每次写入都要确认）：\n$command"
+            val asked = safety.resolve(safety.confirmation(sentence, verdict.packages.first(), names, verdict.reason), scope)
+            if (asked is SafetyGate.Result.No) return Out(asked.message, error = true, summary = SHELL_LOG, decision = asked.decision)
+        }
+
+        if (!shellBudget.tryAcquire()) {
+            // l10n:keep agent tool result
+            return Out(
+                "root 命令太密了：每任务每分钟最多 ${ShellBudget.PER_MINUTE} 条，同时只能跑一条。" +
+                    "把这次要做的合成一条命令，或等一会儿再试。",
+                error = true,
+                summary = SHELL_LOG,
+                decision = "refused:rate-limit",
+            )
+        }
+
+        val timeoutMs = (a.int("timeoutMs") ?: RootShell.DEFAULT_TIMEOUT_MS.toInt()).toLong()
+        val output = try {
+            RootShell.run(command, timeoutMs)
+        } finally {
+            shellBudget.release()
+        }
+        val described = RootShell.describe(command, output)
+        // Only "couldn't get root" counts against the grant: a command that ran and exited
+        // non-zero is a command problem, not an authorization problem.
+        val note = shellGrant(ok = output.failure == null)
+        val text = described + (note ?: "")
         val decision = when {
             output.failure != null -> "refused:no-root"
             output.timedOut -> "timeout"
@@ -633,9 +713,67 @@ class PhoneCore(
         return Out(
             text,
             error = output.failure != null || output.exitCode != 0,
-            summary = "shell",
+            // The log keeps the first line and the exit code, never the output: a command may
+            // print a token, and the action log is shown on screen.
+            summary = SHELL_LOG,
             decision = decision,
+            logDetail = command.lineSequence().first().take(120),
         )
+    }
+
+    /**
+     * 接着读一个被截断的 shell 输出。
+     *
+     * 只读 [BoundedShell] 自己留在 cacheDir 里的文件（`dsh-shell-*.log`），别的路径一律不认：
+     * 否则它就成了一个绕开上面所有规则的任意文件读取。
+     */
+    private fun shellRead(a: Args): Out {
+        if (!env.rootShellEnabled()) {
+            // l10n:keep agent tool result
+            return Out(
+                "root 未启用：先让用户在 设置 → Root 权限 里打开，再读 root 的输出。",
+                error = true,
+                summary = "shell_read",
+                decision = "refused:root-off",
+            )
+        }
+        val path = a.str("path")?.trim()
+            ?: return Out("shell_read 需要 path：上一次 shell 结果里给出的输出文件路径。", error = true,
+                summary = "shell_read", decision = "refused:no-path")
+        val offset = (a.int("offset") ?: 0).coerceAtLeast(0)
+        val length = (a.int("length") ?: RootShell.MAX_CHARS).coerceIn(1, MAX_SHELL_READ_CHARS)
+        val file = env.shellSpillFile(path) ?: return Out(
+            // l10n:keep agent tool result
+            "只能读 shell 自己留下的输出文件（路径里要有 dsh-shell- 且目录是 App 的缓存目录），" +
+                "这个路径不是：$path。要看别的文件用 shell 命令本身，它受同样的规则约束。",
+            error = true,
+            summary = "shell_read",
+            decision = "refused:not-spill",
+        )
+        val text = try {
+            file.inputStream().use { input ->
+                input.skip(offset.toLong())
+                val buffer = ByteArray(length)
+                var read = 0
+                while (read < buffer.size) {
+                    val n = input.read(buffer, read, buffer.size - read)
+                    if (n < 0) break
+                    read += n
+                }
+                String(buffer, 0, read, Charsets.UTF_8)
+            }
+        } catch (e: Exception) {
+            return Out("读不到 $path：${e.javaClass.simpleName}", error = true, summary = "shell_read",
+                decision = "failed")
+        }
+        if (text.isEmpty()) {
+            return Out("从第 $offset 个字符起已经没有内容了（文件到结尾，或被清掉了）。", summary = "shell_read",
+                decision = "ok")
+        }
+        val more = file.length() > offset + text.length
+        // l10n:keep agent tool result
+        val tail = if (more) "\n[还有更多：再调用一次，offset=${offset + text.length}]" else "\n[读完了]"
+        return Out(text + tail, summary = "shell_read", decision = "ok")
     }
 
     private fun handoff(a: Args, scope: SerialWorker.Scope): Out {
@@ -692,6 +830,12 @@ class PhoneCore(
         const val MAX_APPS = 150
         const val MAX_COLLECT_CHARS = 16_000
 
+        /** The action log's name for the root tool (the catalog's id is `shell`). */
+        const val SHELL_LOG = "shell"
+
+        /** One `shell_read` answer never exceeds this, so a follow-up can't flood the context. */
+        const val MAX_SHELL_READ_CHARS = 32_000
+
         /** The call's own time, not counting waits for the person. */
         fun budgetMs(tool: String): Long = when (tool) {
             PhoneToolCatalog.APPS -> 15_000L
@@ -701,6 +845,7 @@ class PhoneCore(
             PhoneToolCatalog.COLLECT -> 120_000L
             PhoneToolCatalog.HANDOFF -> 30_000L
             PhoneToolCatalog.SHELL -> 125_000L
+            PhoneToolCatalog.SHELL_READ -> 10_000L
             else -> 30_000L
         }
     }

@@ -382,6 +382,8 @@ class PhoneStatus {
     this.enabled = false,
     this.bridgeListening = false,
     this.rootShell = false,
+    this.rootShellUntil,
+    this.rootShellOffReason,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
     this.overlay = false,
@@ -398,6 +400,8 @@ class PhoneStatus {
       enabled = false,
       bridgeListening = false,
       rootShell = false,
+      rootShellUntil = null,
+      rootShellOffReason = null,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
       overlay = false,
@@ -410,6 +414,8 @@ class PhoneStatus {
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
     enabled: _flag(m['enabled']),
     rootShell: _flag(m['rootShell']),
+    rootShellUntil: _int(m['rootShellUntil']),
+    rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -431,8 +437,16 @@ class PhoneStatus {
   final bool enabled;
   final bool bridgeListening;
 
-  /// 聊天页的「启用 root」开关：关着时 `shell` 工具拒绝执行。
+  /// 「允许模型执行 root 命令」开关：关着时 `shell` 工具拒绝执行。
+  ///
+  /// 开一次只算一段时间（原生侧 12 小时），到点自己关；连续失败也会关。
   final bool rootShell;
+
+  /// 这次授权到什么时候为止（毫秒时间戳）；关着是 null。
+  final int? rootShellUntil;
+
+  /// 上一次读成 false 的原因：`expired`（到期）或 `strikes`（连续失败）。
+  final String? rootShellOffReason;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
   final bool overlay;
@@ -452,6 +466,8 @@ class PhoneStatus {
     error: error,
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
+    rootShellUntil: rootShellUntil,
+    rootShellOffReason: rootShellOffReason,
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,

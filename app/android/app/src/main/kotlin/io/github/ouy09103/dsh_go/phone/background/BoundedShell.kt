@@ -45,7 +45,13 @@ object BoundedShell {
         val text: String,
         /** Bytes the command produced, including those dropped by the cap. */
         val totalBytes: Long,
-        val truncated: Boolean
+        val truncated: Boolean,
+        /**
+         * Where the whole output was left when it did not fit in [text], or null when [text] is
+         * all of it. The model gets the path, so a truncated answer can say where the rest is
+         * instead of pretending the command printed this much.
+         */
+        val spillPath: String? = null,
     ) {
         val ok: Boolean get() = !timedOut && exitCode == 0
     }
@@ -92,7 +98,9 @@ object BoundedShell {
                 if (left <= 0) {
                     timedOut = true
                     killTree(process)
-                    process.waitFor(2, TimeUnit.SECONDS)
+                    // The verdict is already certain; waiting longer here would only delay the
+                    // reply. The tree is killed either way (see [killTree]).
+                    process.waitFor(300, TimeUnit.MILLISECONDS)
                     break
                 }
                 if (process.waitFor(minOf(left, WATCHDOG_MS), TimeUnit.MILLISECONDS)) break
@@ -116,15 +124,24 @@ object BoundedShell {
         } catch (e: Exception) {
             ByteArray(0)
         }
-        outFile.delete()
 
         var text = String(bytes, Charsets.UTF_8)
         if (text.length > maxChars) text = text.substring(0, maxOf(0, maxChars))
+        val truncated = total > bytes.size.toLong() || oversized
+        // A truncated answer keeps the file and names it; the caller can read the rest with
+        // `shell_read` instead of re-running a command that may not be repeatable.
+        val spill = if (truncated) {
+            val kept = File(outFile.parentFile, "dsh-shell-${System.currentTimeMillis()}.log")
+            if (runCatching { outFile.renameTo(kept) }.getOrDefault(false)) kept.absolutePath else null
+        } else {
+            null
+        }
+        if (spill == null) outFile.delete()
         val code = when {
             timedOut -> EXIT_TIMEOUT
             else -> runCatching { process.exitValue() }.getOrDefault(EXIT_START_FAILED)
         }
-        return Result(timedOut, code, text, total, total > bytes.size.toLong() || oversized)
+        return Result(timedOut, code, text, total, truncated, spill)
     }
 
     /** First [count] bytes of [file], without loading the whole thing. */
