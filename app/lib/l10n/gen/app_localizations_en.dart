@@ -9136,9 +9136,6 @@ class L10nEn extends L10n {
   String get phoneToolShell => 'Root command';
 
   @override
-  String get phoneToolFrida => 'Frida';
-
-  @override
   String get phoneToolAction => 'Action';
 
   @override
@@ -10377,6 +10374,9 @@ class L10nEn extends L10n {
   @override
   String get phoneDndConnectPortHint =>
       'On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.';
+
+  @override
+  String get phoneToolFrida => 'Frida';
 
   @override
   String get phoneTaskResultReady => 'Task complete · View result';

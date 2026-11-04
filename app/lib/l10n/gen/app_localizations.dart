@@ -15980,9 +15980,6 @@ abstract class L10n {
   /// **'root 命令'**
   String get phoneToolShell;
 
-  /// Action log label for the frida tool.
-  String get phoneToolFrida;
-
   /// No description provided for @phoneToolAction.
   ///
   /// In zh, this message translates to:
@@ -18178,6 +18175,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。'**
   String get phoneDndConnectPortHint;
+
+  /// Action log label for the frida tool.
+  ///
+  /// In zh, this message translates to:
+  /// **'Frida'**
+  String get phoneToolFrida;
 
   /// No description provided for @phoneTaskResultReady.
   ///

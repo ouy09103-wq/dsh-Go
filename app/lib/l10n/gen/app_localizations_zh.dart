@@ -8679,9 +8679,6 @@ class L10nZh extends L10n {
   String get phoneToolShell => 'root 命令';
 
   @override
-  String get phoneToolFrida => 'Frida';
-
-  @override
   String get phoneToolAction => '操作';
 
   @override
@@ -9852,6 +9849,9 @@ class L10nZh extends L10n {
 
   @override
   String get phoneDndConnectPortHint => '在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。';
+
+  @override
+  String get phoneToolFrida => 'Frida';
 
   @override
   String get phoneTaskResultReady => '任务完成 · 查看结果';
