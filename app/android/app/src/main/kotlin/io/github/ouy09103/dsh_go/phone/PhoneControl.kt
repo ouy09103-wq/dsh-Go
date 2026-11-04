@@ -227,8 +227,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             return false
         }
         return try {
-            PhoneGuest.writeFiles(rootfs)
             val ep = bridge.start(withTcp = prefs.getBoolean(K_TCP_FALLBACK, false))
+            // The overlay carries the token (as the relay child's environment), the config file
+            // only the socket name: a token on disk would be readable by everything in the guest.
+            PhoneGuest.writeFiles(rootfs, ep.token)
             PhoneGuest.writeConfig(rootfs, ep)
             registerScreenOff()
             tasks.clearStop()
@@ -269,7 +271,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         logger("[dsh-app] phone control: DSH did not reach the unix socket; adding the loopback fallback")
         try {
             val next = bridge.addTcp() ?: return
-            rootfs?.let { PhoneGuest.writeConfig(it, next) }
+            rootfs?.let {
+                PhoneGuest.writeConfig(it, next)
+                // The overlay's args point at the config, but keep the token in step with it.
+                PhoneGuest.writeFiles(it, next.token)
+            }
             prefs.edit().putBoolean(K_TCP_FALLBACK, true).apply()
         } catch (e: Exception) {
             logger("[dsh-app] phone control: loopback fallback failed: ${e.message}")

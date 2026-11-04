@@ -91,6 +91,13 @@ internal object Frida {
             return fail("root 没授权成功：" + (probe.stderr.ifBlank { "uid=${probe.uid}" }))
         }
 
+        // One frida-server per device, whoever started it. Two DSH Go builds can be installed
+        // side by side (that is the point of the separate package name), and each has its own
+        // root channel — but there is only one 27042. Replacing the other instance's server would
+        // silently break its session, so say whose it is and stop.
+        val busy = foreignServer(context, port)
+        if (busy != null) return fail(busy)
+
         val chosen = version?.trim()?.takeIf { it.isNotEmpty() }
             ?: clientVersion(context)
             ?: FALLBACK_VERSIONS.first()
@@ -219,6 +226,28 @@ internal object Frida {
             "env" to env.keys.joinToString(" "),
             "stdout" to output,
         )
+    }
+
+    /**
+     * A sentence when something already serves [port] and it isn't ours, null otherwise.
+     *
+     * Two DSH Go builds can be installed side by side — that is the point of the separate package
+     * name — and each has its own root channel, but there is only one 27042. Replacing the other
+     * instance's server would silently break its session, so say whose it is and stop.
+     *
+     * In `/proc/net/tcp` the eighth column is the socket owner's uid, and a listening socket
+     * belongs to the process that opened it. Any DSH Go build runs as its own `u0_a*` uid, so a
+     * uid that isn't ours is another instance.
+     */
+    private fun foreignServer(context: Context, port: Int): String? {
+        val hex = "%04X".format(port)
+        val owner = RootExec.run(
+            "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | awk '{print \$8}' | sort -u | head -1",
+            15_000,
+        ).stdout.trim().toIntOrNull() ?: return null
+        if (owner == context.applicationInfo.uid) return null
+        return "端口 $port 已经被另一个 DSH Go 实例的 frida-server 占着（uid $owner）。" +
+            "同一台手机只能有一个：先去那边关掉，再在这里装。"
     }
 
     /** Turns the server's own output into something a person can act on. */
