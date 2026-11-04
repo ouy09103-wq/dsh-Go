@@ -45,9 +45,10 @@ function lookupError(hostname, causes) {
 }
 
 /**
- * One independent resolver per process/worker. Both A and AAAA are queried for
- * family=0. `verbatim` preserves each RR response's order, A then AAAA: c-ares
- * cannot reproduce NSS's cross-family ordering. The app default is ipv4first.
+ * Independent resolvers per process/worker, one per address family. Both A and
+ * AAAA are queried for family=0. `verbatim` preserves each RR response's order,
+ * A then AAAA: c-ares cannot reproduce NSS's cross-family ordering. The app
+ * default is ipv4first.
  * The returned refresh/close seams are also used by the local UDP tests.
  */
 export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, watch = true } = {}) {
@@ -56,10 +57,15 @@ export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, w
   const refresh = () => {
     try {
       const config = readDnsConfig(fs.readFileSync(resolvConf, 'utf8'), fs.readFileSync(hostsFile, 'utf8'));
-      const resolver = new Resolver({ timeout: 2000, tries: 2 });
-      resolver.setServers(config.servers);
-      // In-flight requests retain their old resolver. Never cancel another lookup.
-      current = { ...config, resolver };
+      const resolver = () => {
+        const instance = new Resolver({ timeout: 2000, tries: 2 });
+        instance.setServers(config.servers);
+        return instance;
+      };
+      // One c-ares channel per family: a network that rejects every AAAA send
+      // must not fail the A query sharing its channel (#55, #152).
+      // In-flight requests retain their old resolvers. Never cancel another lookup.
+      current = { ...config, resolvers: { 4: resolver(), 6: resolver() } };
       configurationError = undefined;
     } catch (error) {
       configurationError = error;
@@ -98,7 +104,7 @@ export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, w
     if (hostEntries) answers = hostEntries.filter((entry) => families.includes(entry.family));
     else {
       const responses = await Promise.all(families.map((value) => new Promise((done) => {
-        snapshot.resolver[value === 4 ? 'resolve4' : 'resolve6'](domainToASCII(hostname) || hostname, (error, addresses) => {
+        snapshot.resolvers[value][value === 4 ? 'resolve4' : 'resolve6'](domainToASCII(hostname) || hostname, (error, addresses) => {
           if (error) { failures.push(error); done([]); }
           else done(addresses.map((address) => ({ address, family: value })));
         });

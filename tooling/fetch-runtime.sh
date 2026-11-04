@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ABI=${1:-arm64-v8a}
-VERSION=${2:-${DSH_RUNTIME_VERSION:-1.0.8}}
+VERSION=${2:-${DSH_RUNTIME_VERSION:-1.0.10}}
 FORCE=${FORCE:-0}
 
 case "$ABI" in
@@ -31,7 +31,7 @@ mkdir -p "$CACHE" "$OUT"
 APK="$CACHE/dsh-go-$VERSION-$apk_suffix.apk"
 
 if [[ ! -s $APK ]]; then
-  url="https://github.com/ccch1mneyyy/dsh-Go/releases/download/v$VERSION/dsh-go-$VERSION-$apk_suffix.apk"
+  url="https://github.com/ccch1mneyyy/dsh-go/releases/download/v$VERSION/dsh-go-$VERSION-$apk_suffix.apk"
   echo "fetch-runtime: $url"
   if command -v curl >/dev/null 2>&1; then
     curl_headers=()

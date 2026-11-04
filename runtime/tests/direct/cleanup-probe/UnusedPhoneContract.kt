@@ -1,3 +1,3 @@
-package io.github.ccch1mneyyy.dsh_app.phone
+package io.github.ouy09103.dsh_go.phone
 
 object PhoneGuest { fun launchArg(arg: String): String? = null }

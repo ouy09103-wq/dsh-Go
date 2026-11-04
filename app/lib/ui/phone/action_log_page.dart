@@ -28,6 +28,7 @@ String phoneToolLabel(String tool) {
     'intent' => appL10n.phoneToolIntent,
     'notify' => appL10n.phoneToolNotify,
     'clipboard' => appL10n.phoneToolClipboard,
+    'shell' => appL10n.phoneToolShell,
     '' => appL10n.phoneToolAction,
     _ => name,
   };

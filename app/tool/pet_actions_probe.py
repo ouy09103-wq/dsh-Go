@@ -98,7 +98,7 @@ def main():
     args = parser.parse_args()
     if not re.fullmatch(r'emulator-\d+', args.serial):
         parser.error('Only an explicit emulator-NNNN serial is supported')
-    package = 'io.github.ccch1mneyyy.dsh_app'
+    package = 'io.github.ouy09103.dsh_go'
 
     def adb(*command):
         return subprocess.check_output(['adb', '-s', args.serial, *command], text=True, timeout=20)

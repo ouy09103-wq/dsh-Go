@@ -11,7 +11,7 @@ const replayViewerPage = r'''<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Gw3LL/2m4J0afC3hYrvmCKg2BDbGYRnu7xIIMnAPC78='; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-6es7kjeYBZPdSUYZIkF8d9gLDmXLnwrvyGEJ6J7/ZYs='; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
 <title>__DSHGO_TITLE__</title>
 <style>/* dsh-go conversation viewer (viewer.js). Shared by the landing page and the
@@ -1209,7 +1209,7 @@ const replayViewerPage = r'''<!doctype html>
     }
     if (opts.download !== false) {
       var dl = el('a', 'dv-btn ' + (opts.appLink ? 'dv-secondary' : 'dv-primary'), tr('download'));
-      dl.href = opts.download || 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
+      dl.href = opts.download || 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
       dl.rel = 'noopener';
       dl.target = '_blank';
       actions.appendChild(dl);
@@ -1841,7 +1841,7 @@ const replayViewerPage = r'''<!doctype html>
       opener(host);
     } catch (e) {
       var dl = el('a', 'dv-btn dv-secondary', tr('download'));
-      dl.href = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
+      dl.href = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
       dl.rel = 'noopener';
       card(host, errorText(e), null, dl);
     }
@@ -1883,4 +1883,4 @@ DshgoViewer.boot();
 ''';
 
 /// What the page was built from (test/share_code/replay_viewer_sync_test.dart).
-const replayViewerSourceHash = '35748a3100c0a7de6fb2dce49ac11659e7e67e6a100d9eb5a6e9d4c983cf4b35';
+const replayViewerSourceHash = '6d66f6b801548f6602534d05dcee3a85acc12a16d7e8be4400b4194c78cc68c2';

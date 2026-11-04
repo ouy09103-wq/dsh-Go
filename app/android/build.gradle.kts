@@ -1,10 +1,11 @@
 allprojects {
     repositories {
-        // Upstream first; the China mirrors stay as fallback (see settings.gradle.kts).
+        if (System.getenv("DSH_MAVEN_MIRRORS") != "0") {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+        }
         google()
         mavenCentral()
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
         // libadb-android (不打扰模式 self-ADB path) is published on JitPack only.
         maven { url = uri("https://jitpack.io") }
     }

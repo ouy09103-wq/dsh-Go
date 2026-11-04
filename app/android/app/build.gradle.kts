@@ -26,7 +26,7 @@ fun buildMinuteVersionCode(): Int {
 }
 
 android {
-    namespace = "io.github.ccch1mneyyy.dsh_app"
+    namespace = "io.github.ouy09103.dsh_go"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        applicationId = "io.github.ouy09103.dsh_go"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
@@ -135,7 +135,7 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")       // MIT
     implementation("dev.rikka.shizuku:provider:13.1.5")  // MIT
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1") // used under its Apache-2.0 option; pulls in spake2-android (LGPL-3.0)
-    implementation("org.conscrypt:conscrypt-android:2.5.3")         // Apache-2.0: libadb TLS/pairing
+    implementation("org.conscrypt:conscrypt-android:2.8.0")         // Apache-2.0: libadb TLS/pairing
     // MIT: self-signed adb client cert. The same jdk15to18 family libadb-android
     // pulls in (bcprov-jdk15to18:1.81); adding jdk18on next to it duplicates every class.
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")

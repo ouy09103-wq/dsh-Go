@@ -38,10 +38,10 @@ tooling/build-apk.sh --debug -f x64 -t lib/dev/pet_actions_probe_main.dart
 
 # 只对明确指定的模拟器安装。下例假设它已经启动。
 adb -s emulator-5556 install -r app/build/app/outputs/flutter-apk/app-x64-debug.apk
-adb -s emulator-5556 shell appops set io.github.ccch1mneyyy.dsh_app SYSTEM_ALERT_WINDOW allow
-adb -s emulator-5556 shell pm grant io.github.ccch1mneyyy.dsh_app android.permission.RECORD_AUDIO
-adb -s emulator-5556 shell am force-stop io.github.ccch1mneyyy.dsh_app
-adb -s emulator-5556 shell monkey -p io.github.ccch1mneyyy.dsh_app -c android.intent.category.LAUNCHER 1
+adb -s emulator-5556 shell appops set io.github.ouy09103.dsh_go SYSTEM_ALERT_WINDOW allow
+adb -s emulator-5556 shell pm grant io.github.ouy09103.dsh_go android.permission.RECORD_AUDIO
+adb -s emulator-5556 shell am force-stop io.github.ouy09103.dsh_go
+adb -s emulator-5556 shell monkey -p io.github.ouy09103.dsh_go -c android.intent.category.LAUNCHER 1
 
 python3 app/tool/pet_actions_probe.py --serial emulator-5556 --output /tmp/pet-actions-probe-result.json
 ```

@@ -79,7 +79,7 @@ class _ProbeState extends State<_Probe> {
       _log('models: ${models.groups.map((g) => '${g.id}(${g.models.length})').join(', ')}');
 
       // Optional real turn: a key pushed with `run-as … files/probe-key` (deleted after reading).
-      final keyFile = File('/data/user/0/io.github.ccch1mneyyy.dsh_app/files/probe-key');
+      final keyFile = File('/data/user/0/io.github.ouy09103.dsh_go/files/probe-key');
       if (keyFile.existsSync()) {
         final key = keyFile.readAsStringSync().trim();
         keyFile.deleteSync();

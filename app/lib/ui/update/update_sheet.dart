@@ -124,8 +124,8 @@ class UpdateSheet extends ConsumerWidget {
         ),
       );
     }
-    final asset = update.asset;
-    final size = asset?.size;
+    // The patch's size when one applies: what the download really is.
+    final size = update.downloadSize;
     final facts = [
       l10n.updateCurrentVersion(update.current.name),
       ?(size == null ? null : formatUpdateSize(size)),

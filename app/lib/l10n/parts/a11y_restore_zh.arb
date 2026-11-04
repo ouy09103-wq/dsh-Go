@@ -8,7 +8,7 @@
   "a11yRestoreGrantShizuku": "通过 Shizuku 授予",
   "a11yRestoreGrantShizukuPermission": "先授权 Shizuku，再授予权限",
   "a11yRestoreGrantAdb": "通过自连 ADB 授予",
-  "a11yRestoreRootNote": "以 root 执行一次 pm grant，只授予这一项权限。",
+  "a11yRestoreRootNote": "通过已授权的 root 连接，只授予这一项权限。",
   "a11yRestoreSetup": "配置 Shizuku 或无线调试",
   "a11yRestoreWaiting": "请在 Shizuku 中允许授权",
   "a11yRestoreWaitingSui": "请在 Sui 中允许授权",

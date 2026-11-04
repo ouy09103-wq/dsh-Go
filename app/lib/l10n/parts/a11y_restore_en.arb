@@ -8,7 +8,7 @@
   "a11yRestoreGrantShizuku": "Grant with Shizuku",
   "a11yRestoreGrantShizukuPermission": "Authorize Shizuku, then grant",
   "a11yRestoreGrantAdb": "Grant with Direct ADB",
-  "a11yRestoreRootNote": "Runs pm grant once as root, for this one permission only.",
+  "a11yRestoreRootNote": "Uses the authorized root connection to grant only this permission.",
   "a11yRestoreSetup": "Set up Shizuku or wireless debugging",
   "a11yRestoreWaiting": "Allow the request in Shizuku",
   "a11yRestoreWaitingSui": "Allow the request in Sui",

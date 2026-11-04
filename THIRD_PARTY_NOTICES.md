@@ -18,7 +18,7 @@
 | 许可 | 经作者许可使用 |
 | 用途 | 手机操控：无障碍读屏与操作、控制浮层，以及「不打扰模式」的特权虚拟屏 |
 
-上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/`。
+上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go/phone/`。
 
 | 本仓库文件 | 上游来源 |
 |---|---|
@@ -125,7 +125,7 @@ DS Bot 的 NOTICE 原文附在文末。
 | 版权人 | Copyright (c) 2026 DSH Remote contributors |
 | 许可 | MIT（全文另见 `packages/dsh_remote/LICENSE-ds-harness-remote`） |
 | 用途 | 远程连接：协议、分帧、校验、加密信道、直连（WebRTC）与连接逻辑 |
-| 对应上游版本 | `7e387df`（Host 插件 0.6.0） |
+| 对应上游版本 | `7e387df`（Host 插件 0.6.0）；工作区上传协议参考 `479b94341c0d0de63846f21d0fcca26997d158d1`（Host 插件 0.6.2） |
 
 路径均相对 `packages/dsh_remote/`：
 
@@ -133,7 +133,7 @@ DS Bot 的 NOTICE 原文附在文末。
 |---|---|
 | `lib/src/server/server_api.dart` | `apps/android/src/services/api.ts`（`RemoteServerApi`，含 `turnCredentials`）、`docs/protocol.md`、`docs/plugin-integration.md` |
 | `lib/src/account/remote_account.dart` | `apps/android/src/services/server-session-manager.ts`、`device-directory.ts`、`connection.ts`（含直连失败后另开纯 Relay 连接）、`packages/plugin/src/cli.ts` |
-| `lib/src/carrier/tunnel_carrier.dart` | `packages/client-core/src/remote-gateway.ts`；白名单来自 `packages/plugin/src/harness-remote-bridge.ts`、`terminal-policy.ts` |
+| `lib/src/carrier/tunnel_carrier.dart` | `packages/client-core/src/remote-gateway.ts`；白名单来自 `packages/plugin/src/harness-remote-bridge.ts`、`terminal-policy.ts`；工作区上传协议与文件名校验参考 `docs/protocol.md`、`packages/plugin/src/workspace-upload.ts`、`rpc-router.ts`（`479b943`），Dart 重写，遵守协议绝对上限，具体路径/版本限制以主机回复为准 |
 | `lib/src/crypto/noise_ik.dart` | `packages/crypto/src/noise.ts`、`packages/crypto/src/index.ts`（会话封装）；Noise IK 状态机为本项目自行实现，经上游作者同意 |
 | `lib/src/channel/secure_channel.dart` | `packages/plugin/src/client-secure-transport.ts`、`packages/plugin/src/server-connection.ts` |
 | `lib/src/channel/rpc_client.dart` | `packages/client-core/src/index.ts`（`RemoteClientCore`） |
@@ -156,7 +156,7 @@ DS Bot 的 NOTICE 原文附在文末。
 | 版权人 | Copyright (c) 2026 qiannianhuanxiang |
 | 许可 | MIT |
 | 用途 | 不打扰模式特权进程的 `app_process` 入口 |
-| 文件 | `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt` |
+| 文件 | `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go/phone/background/PrivilegedDisplayEntry.kt` |
 
 ### discourse_docker（MIT）
 
@@ -223,7 +223,7 @@ DS Bot 的 NOTICE 原文附在文末。
 | Shizuku-API（`dev.rikka.shizuku:api`、`provider`） | 13.1.5 | MIT | Copyright (c) 2021 RikkaW | 不打扰模式经 Shizuku 获得 shell 权限 |
 | libadb-android | 3.1.1 | Apache-2.0（GPL-3.0-or-later 与 Apache-2.0 双许可，按 Apache-2.0 使用） | Copyright 2021 Muntashir Al-Islam | 无线调试配对、ADB 协议与 mDNS |
 | spake2-android（libadb-android 的依赖） | 2.2.1 | LGPL-3.0 | Copyright 2021 Muntashir Al-Islam | 无线调试配对的 SPAKE2 |
-| Conscrypt（`org.conscrypt:conscrypt-android`） | 2.5.3 | Apache-2.0 | Copyright 2016 The Android Open Source Project | libadb 的 TLS；NOTICE 原文见文末 |
+| Conscrypt（`org.conscrypt:conscrypt-android`） | 2.8.0 | Apache-2.0 | Copyright 2016 The Android Open Source Project | libadb 的 TLS；NOTICE 原文见文末 |
 | Bouncy Castle（`bcprov`、`bcpkix-jdk15to18`） | 1.81 | Bouncy Castle Licence（MIT 条款） | Copyright (c) 2000-2023 The Legion of the Bouncy Castle Inc. | 自签名 ADB 客户端证书 |
 | XZ for Java（`org.tukaani:xz`） | 1.10 | 0BSD | Copyright (C) The XZ for Java authors and contributors | 解压 `.tar.xz` 运行时包 |
 | AndroidX WebKit | 1.15.0 | Apache-2.0 | The Android Open Source Project | 网页插件的深色模式 |
@@ -660,7 +660,7 @@ their ideas; it does not contain their code.
     before it calls the plugin's speech service.
 ```
 
-### NOTICE：Conscrypt 2.5.3（原文照录）
+### NOTICE：Conscrypt 2.8.0（原文照录）
 
 ```text
 Copyright 2016 The Android Open Source Project

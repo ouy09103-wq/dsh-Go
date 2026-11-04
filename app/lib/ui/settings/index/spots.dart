@@ -74,6 +74,7 @@ enum SettingsPageId {
   performance,
   background,
   systemAccess,
+  rootAccess,
   privacy,
   sharedLinks,
   engine,
@@ -457,6 +458,13 @@ final _pages = <SettingsPageMeta>[
     links: const ['privacy'],
   ),
   SettingsPageMeta(
+    SettingsPageId.rootAccess,
+    title: (l) => l.hubRootAccess,
+    group: _general,
+    keywords: (l) => l.searchKwRoot,
+    links: const ['root'],
+  ),
+  SettingsPageMeta(
     SettingsPageId.sharedLinks,
     title: (l) => l.remoteHostedMyLinks,
     parent: SettingsPageId.privacy,
@@ -780,6 +788,12 @@ abstract final class Spots {
     title: (l) => l.hubHardwareEnterSends,
     keywords: (l) => l.hubHardwareEnterSendsHint,
   );
+  static final quickPanel = SettingSpot(
+    'quick-panel',
+    page: SettingsPageId.interface,
+    title: (l) => l.hubQuickPanel,
+    keywords: (l) => l.searchKwQuickPanel,
+  );
   static final tableTint = SettingSpot(
     'table-tint',
     page: SettingsPageId.interface,
@@ -1056,6 +1070,7 @@ final _rows = <SettingSpot>[
   Spots.petDisplayWhen,
   Spots.uiMode,
   Spots.hardwareEnterSends,
+  Spots.quickPanel,
   Spots.tableTint,
   Spots.webApp,
   Spots.openWeb,

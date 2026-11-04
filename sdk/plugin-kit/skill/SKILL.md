@@ -158,6 +158,17 @@ ctx.dshGo.on('translate', (scope) => ({
 
 一棵 JSON 组件树。任何值都可以写绑定 `{ "$": "data.a.b" }`，从推来的数据里取，取不到显示「—」；工具卡没有数据，直接写值。
 
+**先选视图版本**：根节点不写 `v` 或写 `v: 1` 时使用 v1 组件和原样式；需要新增控件、结构组件或有界样式时，在根节点写 `v: 2`。清单的 `dshGo.v` 仍为 `1`，与视图版本分开。
+
+下表只列 v1 的基础组件。v2 的完整组件与字段见自带的 `kit/schema/view.schema.json`；App 仓库的 `docs/plugins/components.md`、`styles.md`、`inputs.md` 说明新增组件、样式和表单。不要因为组件不在下表就拒绝 v2。兼容旧 App 时按 `caps.components` / SDK 的 `adaptView` 降级，文字保留 `text` 等基础字段。
+
+```json
+{"v":2,"type":"stack","accent":"teal","children":[
+  {"type":"text","text":"示例","style":{"size":"title","weight":"bold"}},
+  {"type":"emptyState","title":"暂时没有内容"}
+]}
+```
+
 | 组件 | 字段 |
 |---|---|
 | `stack` / `row` | `children`（row 窄屏自动折行）；根节点可带 `title` |
@@ -208,8 +219,8 @@ ctx.dshGo.onCapability((scope, { event }) => {})   // audio.ended / voice.speech
 
 ## 规矩
 
-- 不能自定义颜色、字体、尺寸、动画；只有组件和语义色调。观感由 App 决定。
+- v1 保留原样式；v2 可用文档列出的颜色、语义字号、字重、spans 和容器样式。不要写任意 CSS、字体文件、尺寸、透明度、渐变或动画参数；实际几何、可读色和内容边界仍由 App 决定。
 - 文案短、全角标点；报错像人话（「剪贴板里没有文字」），不写英文异常。
 - 不在视图、清单、代码里放密钥和令牌；读到的剪贴板 / 消息只用于这一次点按。
 - 不在没有点按时做有副作用的事；`insert` 永远不发送。
-- 不要编造字段；不在上面表里的 App 不认识。完整说明在 App 仓库的 `docs/plugins/`。
+- 按所选视图版本的 schema 和组件目录写字段，用自带检查器验证；不要编造未支持的字段。完整说明在 App 仓库的 `docs/plugins/`。

@@ -11,13 +11,15 @@ pluginManagement {
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
     repositories {
-        // Upstream first: a China mirror that answers 502 fails the whole resolve,
-        // and Gradle does not fall through to the next repository for a 5xx.
+        // Keep local mirror defaults; cloud CI can use the official upstreams.
+        if (System.getenv("DSH_MAVEN_MIRRORS") != "0") {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/central") }
     }
 }
 

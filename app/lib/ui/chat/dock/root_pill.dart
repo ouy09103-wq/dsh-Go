@@ -65,3 +65,17 @@ class RootPill extends ConsumerWidget {
     await ref.read(phoneProvider.notifier).setRootShell(!on);
   }
 }
+
+/// 「root 已启用」胶囊的插槽：跟着待办 / 目标 / 状态条一起进 `DockStack` 的卡片列表。
+///
+/// 只在开着的时候出现：关着（默认）时聊天页和原版一模一样，开着这一行就是个
+/// 提醒——现在模型能以 root 身份动手。开关在 设置 › Root 权限。
+class RootDockSlot extends ConsumerWidget {
+  const RootDockSlot({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(phoneProvider.select((s) => s.status.rootShell));
+    return DockSlot(key: const ValueKey('root'), child: on ? const RootPill() : null);
+  }
+}

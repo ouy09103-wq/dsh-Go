@@ -54,7 +54,7 @@ void main() {
         'a11yKeeper': {
           'granted': false,
           'path': 'shizuku',
-          'command': 'adb shell pm grant io.github.ccch1mneyyy.dsh_app android.permission.WRITE_SECURE_SETTINGS',
+          'command': 'adb shell pm grant io.github.ouy09103.dsh_go android.permission.WRITE_SECURE_SETTINGS',
         },
       },
     ),

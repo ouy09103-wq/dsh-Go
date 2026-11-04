@@ -48,7 +48,7 @@ If a task stopped midway: turning the screen off, locking the phone, or DSH maki
 
 ## The floating bar is in the way
 
-Tap the dot at the bar's left end (or **Shrink to a ball** in its card) to shrink it to a ball you can drag out of the way, or turn on **Collapse when idle** on the phone control page. The ball fades when idle; lower **Idle opacity** to fade it more.
+Tap the dot at the bar's left end (or **Shrink to a ball** in its card) to shrink it to a ball you can drag out of the way, or turn on **Collapse when idle** on the phone control page. The capsule and the ball fade when idle; lower **Idle opacity** to fade them more.
 
 ## The pet is gone
 

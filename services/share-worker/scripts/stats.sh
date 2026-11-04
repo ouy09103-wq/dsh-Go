@@ -37,12 +37,8 @@ cd "$(dirname "$0")/.."
 die() { echo "stats: $*" >&2; exit 1; }
 API=${CF_API_BASE:-https://api.cloudflare.com/client/v4}
 # The public tree's wrangler.jsonc has a placeholder account (tooling/oss-redact.txt).
-ACCOUNT=${CF_ACCOUNT_ID:-}
-ACCOUNT_FILE=${CF_ACCOUNT_ID_FILE:-$HOME/keys/dshgo-cloudflare-account-id}
-[[ -n "$ACCOUNT" || ! -r "$ACCOUNT_FILE" ]] || ACCOUNT=$(tr -d '[:space:]' <"$ACCOUNT_FILE")
-[[ -n "$ACCOUNT" ]] || ACCOUNT=$(sed -n 's/^ *"account_id": *"\([0-9a-f]*\)".*/\1/p' wrangler.jsonc)
-[[ "$ACCOUNT" =~ ^[0-9a-f]{32}$ && "$ACCOUNT" != 00000000000000000000000000000000 ]] ||
-  die "no Cloudflare account id: set CF_ACCOUNT_ID or write it to $ACCOUNT_FILE"
+source scripts/cloudflare.sh
+real_id "$ACCOUNT" || die "no Cloudflare account id: set CF_ACCOUNT_ID or write it to $ACCOUNT_FILE"
 if [[ $DRY == 0 ]]; then
   [[ -r "${CF_TOKEN_FILE:-}" && -s "${CF_TOKEN_FILE:-}" ]] || die "set CF_TOKEN_FILE to a token that can read Account Analytics"
   command -v curl >/dev/null && command -v python3 >/dev/null || die "needs curl and python3"

@@ -5,20 +5,22 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../root/root_channel.dart';
+import '../../state/phone_state.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'settings_widgets.dart';
 
-class RootPage extends StatefulWidget {
+class RootPage extends ConsumerStatefulWidget {
   const RootPage({super.key});
 
   @override
-  State<RootPage> createState() => _RootPageState();
+  ConsumerState<RootPage> createState() => _RootPageState();
 }
 
-class _RootPageState extends State<RootPage> {
+class _RootPageState extends ConsumerState<RootPage> {
   static const _root = RootChannel();
 
   final _command = TextEditingController(text: 'id');
@@ -105,6 +107,13 @@ class _RootPageState extends State<RootPage> {
     }
   }
 
+  /// 聊天页 `shell` 工具的总开关：写进 SharedPreferences，引擎每次调用时现查。
+  Future<void> _setAgentRoot(bool on) async {
+    final ok = await ref.read(phoneProvider.notifier).setRootShell(on);
+    if (!mounted) return;
+    if (!ok) _log('root 开关没有写进去：原生通道没接通。');
+  }
+
   Future<void> _toggleShell() async {
     if (_shellId > 0) {
       _poller?.cancel();
@@ -158,6 +167,18 @@ class _RootPageState extends State<RootPage> {
               ? '${status.manager.isEmpty ? 'su' : status.manager} · ${status.abi} · Android ${status.sdk}'
               : '未检测到 su'),
       children: [
+        SettingsSection(
+          title: '模型能用 root 吗',
+          children: [
+            SettingsSwitchTile(
+              icon: AppIcons.command,
+              title: '允许模型执行 root 命令',
+              subtitle: '开着时模型可以调 shell 工具，以 root 身份执行任意命令：无确认、无预览。',
+              value: ref.watch(phoneProvider.select((s) => s.status.rootShell)),
+              onChanged: (on) => _setAgentRoot(on),
+            ),
+          ],
+        ),
         SettingsSection(
           title: '状态',
           children: [

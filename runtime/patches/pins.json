@@ -1,5 +1,13 @@
 {
   "patches": {
+    "file-upload-resolver-dispose.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js": {
+          "after": "b24297ec812d1c21b8038fac94616213da6f030552faf6d138492b244d598050",
+          "before": "5dd5bd2d20656a1edeb1366e6b878afb04db519d2ba400135cb020ef037912fb"
+        }
+      }
+    },
     "fs-create-exclusive.diff": {
       "0.2.1-rc.2": {
         "node_modules/@deepseek-ai/dsh-fs-local/lib/index.js": {
@@ -130,7 +138,7 @@
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
           "before": "a745dd51bcb72dc3202dbc167f727b5acd0b59fc760b24b908072d4374b7363f",
-          "after": "6b0e64cd9b89923988d1219b9c1a6c650e00dfd4cca9f92d35cbaaddd7932d3b"
+          "after": "f980fc8d8a21c7c93da3c77a4c511bd968702c815bf61cc709a6b1b7643daccd"
         },
         "node_modules/@deepseek-ai/dsh-session-projection-cache/lib/index.js": {
           "before": "faf307dce5db2fb7ff58b4c7d9e544fc7cad5de2f270a89326a8d7bb2bda9c80",
@@ -138,11 +146,11 @@
         },
         "node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js": {
           "before": "a54f7664d2f64fe04a08c7058ca5bff4fc69ed6a0d30c2bc11561b620698ef16",
-          "after": "e6633fb0f4b9ce3420383777fcc07cb5a3cbd32ab73ba5a6a371fb5b895aaee9"
+          "after": "8964715e236171af953101d3767c2403b6a9faa7768f9a0d44a9d8c58ec6da93"
         },
         "node_modules/@deepseek-ai/dsh-storage-json/lib/index.js": {
           "before": "0a6b75d5569db3379edd93e863570170e1f4121b6c9fabd856f5b476cffe8df4",
-          "after": "07e123e2fbbc29a5995ceb988eb3f0e9abd1dbe5899b88e81a805b650606a8d0"
+          "after": "c1b83a1eb07cd6c5c2534038125dbeeb2e60a55deccd5827563379005240814f"
         }
       }
     },
@@ -190,7 +198,7 @@
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js": {
           "before": "973dd78679b2661d6f492343bc22b124ae958aa597d3b36c698a2c650f909984",
-          "after": "bf3ac4eae2d0c7f474d71b3a1fb3bb265cb4ae287c4ab5e60fbc6aa9f8514d6a"
+          "after": "58dd786b79137604d4e330185d009a34337bd9b53efab59e32ed2cdfbcd3f73e"
         },
         "node_modules/@deepseek-ai/dsh-session/lib/index.js": {
           "before": "2f5dd07cb5c744a29abbb8003a8a4cefd9e582c6e2538074ca299a0ddd02a3bf",
@@ -221,8 +229,44 @@
           "after": "a26b396baee3c353b5bd55c932e30f2653b083a136e7a8f9f596e9fe4c1222b0"
         },
         "node_modules/@deepseek-ai/dsh-storage-json/lib/index.js": {
-          "before": "07e123e2fbbc29a5995ceb988eb3f0e9abd1dbe5899b88e81a805b650606a8d0",
-          "after": "164a848270827b1a778aee27afc2e6513f636fae7b9d90ff4059bf445c00b99f"
+          "before": "c1b83a1eb07cd6c5c2534038125dbeeb2e60a55deccd5827563379005240814f",
+          "after": "6321a31f51f28ba948a01064fafd1ec473440a5feb4390041c64141098c0be04"
+        }
+      }
+    },
+    "zzzzzzzz-schedule-authorization.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-schedule/lib/index.js": {
+          "before": "5bf01f38768cd3d47b7dca7ea6da577ec96aa9505e79324016dfb96a7a4300e2",
+          "after": "0bdbe273eeacc724ba6551557278b74dde5ba924a7bed705d61860eaa85fb33b"
+        },
+        "node_modules/@deepseek-ai/dsh-tool-schedule/lib/index.js": {
+          "before": "172100bf8a53e45ce3cb8fb476bf8bdd51c208e28135ceca59897fab4edc7929",
+          "after": "f63f894b89473af887b7f19e8b0acbb2763ccf3b0c223145406056b8b4a45130"
+        }
+      }
+    },
+    "zzzzzzz-input-recovery.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js": {
+          "before": "83e26a1b11be4d40532fd7ce6192490f5b595de4f795459c7b27723d56eb9711",
+          "after": "8dd7f5f0e0b7e875a9547cd16672827f1c9f493d9d849f53f189130e7b0a5ce1"
+        },
+        "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
+          "before": "f980fc8d8a21c7c93da3c77a4c511bd968702c815bf61cc709a6b1b7643daccd",
+          "after": "253e1339e3f7172aa6f272c5209f45cc69519a2509e9684242ee004c22a50f88"
+        }
+      }
+    },
+    "zzzzzzzz-model-defaults.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-agent-default-model/lib/index.js": {
+          "before": "3685a0d4665007cfd377f6555a2a0eeea061cd9e7eb87102430771858ac0bbcb",
+          "after": "0ae601df6d8e7eb66264f6a554c4abb87f45c8d94c6411f0de2f32d02e169acc"
+        },
+        "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
+          "before": "253e1339e3f7172aa6f272c5209f45cc69519a2509e9684242ee004c22a50f88",
+          "after": "ff1c3fc024dfc3520c8b3a89cefae95e3e71b38e5437abb42553681eb1d89cc2"
         }
       }
     }

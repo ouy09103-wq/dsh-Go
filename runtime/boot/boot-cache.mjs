@@ -9,8 +9,8 @@
 //
 // ROOTS only holds trees nothing writes to while DSH runs (the runtime replaces them only while
 // DSH is stopped; the app's own files under /opt/dsh-app are written before the launch, and are
-// not cached anyway). Symbolic links are followed only as the last component and only into
-// ROOTS; anything else falls back to node:fs, so results match it.
+// not cached anyway). Symbolic links are followed only into ROOTS; ambiguous path
+// spellings and links outside those trees fall back to node:fs.
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { resolve } from 'node:path';
@@ -21,25 +21,24 @@ export const ROOTS = ['/opt/dsh/', '/opt/node/', '/opt/dsh-go/'];
 /** Answer for "not cacheable here": the caller uses node:fs. */
 export const PASS = Symbol('pass');
 
-const MAX_LINKS = 32;
-
 /**
- * The cache itself, over an fs-like object (lstatSync, readlinkSync, readFileSync).
+ * The cache itself, over an fs-like object (lstatSync, realpathSync and its native, readFileSync).
  * `real(p)` returns the canonical path, `{code, at}` when component `at` is missing, or PASS.
  */
 export function createBootCache({ roots = ROOTS, fsImpl = fs } = {}) {
   const lstat = fsImpl.lstatSync.bind(fsImpl);
-  const readlink = fsImpl.readlinkSync.bind(fsImpl);
+  const canonical = fsImpl.realpathSync.native.bind(fsImpl.realpathSync);
+  const logical = fsImpl.realpathSync.bind(fsImpl);
   // "<canonical parent>/<name>" -> its canonical path (key itself unless a link) | {link} | {code, at}
   const components = new Map();
   const manifests = new Map(); // package.json path -> text
   const inRoots = (p) => roots.some((r) => (p + '/').startsWith(r));
   // Components inside ROOTS, and the directories above them (/opt).
   const cacheable = (p) => inRoots(p) || roots.some((r) => r.startsWith(p + '/'));
-  const eligible = (p) => typeof p === 'string' && p.startsWith('/') && !p.endsWith('/') && inRoots(p);
+  const eligible = (p) => typeof p === 'string' && p.startsWith('/') && !p.endsWith('/') &&
+    !/(?:^|\/)\.{1,2}(?:\/|$)/u.test(p) && inRoots(p);
 
-  function real(p, depth = 0) {
-    if (depth > MAX_LINKS) return PASS;
+  function real(p) {
     const parts = resolve(p).split('/');
     const last = parts.length - 1;
     let cur = '';
@@ -57,8 +56,11 @@ export function createBootCache({ roots = ROOTS, fsImpl = fs } = {}) {
           return hit;
         }
         if (st.isSymbolicLink()) {
-          const target = real(resolve(cur || '/', readlink(key)), depth + 1);
-          if (typeof target !== 'string' || !inRoots(target)) return PASS;
+          let target;
+          try {
+            target = canonical(key);
+            if (!inRoots(target) || logical(key) !== target) return PASS;
+          } catch { return PASS; }
           hit = { link: target };
         } else {
           hit = key;
@@ -67,9 +69,8 @@ export function createBootCache({ roots = ROOTS, fsImpl = fs } = {}) {
       }
       if (typeof hit === 'object') {
         if (hit.code !== undefined) return hit;
-        // Links are followed only as the last component: through a directory link, `..`
-        // (already resolved lexically) would no longer match the kernel's answer.
-        return i === last ? hit.link : PASS;
+        cur = hit.link;
+        continue;
       }
       cur = hit;
     }
@@ -85,6 +86,7 @@ export function createBootCache({ roots = ROOTS, fsImpl = fs } = {}) {
       if (!eligible(p) || !p.endsWith('/package.json')) return PASS;
       let text = manifests.get(p);
       if (text === undefined) {
+        if (typeof real(p) !== 'string') return PASS;
         text = read();
         manifests.set(p, text);
       }
@@ -192,7 +194,8 @@ export function install({ roots = ROOTS, fsImpl = fs, stdout = process.stdout, m
 // Preloaded by the shim for `dsh web` only; inert anywhere else (workers, other commands).
 if (isMainThread && process.argv[2] === 'web' && process.env.DSH_GO_BOOT_CACHE !== '0') {
   try {
-    install();
+    const root = globalThis[Symbol.for('dsh.go.direct')]?.root;
+    install({ roots: root ? ROOTS.map((path) => root + path) : ROOTS });
   } catch {
     // Never in the way of the launch: without the cache DSH just boots slower.
   }

@@ -89,9 +89,9 @@ test('answers match node:fs for every shape', () => {
     native: outcome(() => fs.realpathSync.native(q)),
     exists: fs.existsSync(q),
   }));
-  // Shapes the cache must answer itself; the rest (links out of the roots or through a
-  // directory link, dangling links, trailing slashes, other trees) go to node:fs.
-  const cached = new Set(queries(t).filter((q, i) => [0, 1, 2, 3, 4, 5, 8, 10, 12].includes(i)));
+  // Shapes the cache must answer itself; links out of the roots, dangling links,
+  // trailing slashes and other trees go to node:fs.
+  const cached = new Set(queries(t).filter((q, i) => [0, 1, 2, 3, 4, 5, 8, 9, 10, 12].includes(i)));
   const { calls } = spyFsCalls(f);
   const uninstall = install({ roots: t.roots, fsImpl: f, stdout: out });
   try {
@@ -102,7 +102,10 @@ test('answers match node:fs for every shape', () => {
         assert.deepEqual(outcome(() => f.realpathSync.native(e.q)), e.native, `native ${e.q}`);
         assert.equal(f.existsSync(e.q), e.exists, `existsSync ${e.q}`);
         const asked = calls.realpath + calls.native + calls.exists - before;
-        assert.equal(asked, cached.has(e.q) ? 0 : 3, `node:fs asked ${asked}x for ${e.q}`);
+        const index = queries(t).indexOf(e.q);
+        const firstLink = round === 0 && [5, 8].includes(index) ? 2 : 0;
+        const expectedCalls = cached.has(e.q) ? firstLink : [6, 7].includes(index) ? 6 : 3;
+        assert.equal(asked, expectedCalls, `node:fs asked ${asked}x for ${e.q}`);
       }
     }
   } finally {
@@ -236,4 +239,107 @@ test('a URL line written as bytes ends it too', () => {
   install({ roots: t.roots, fsImpl: f, stdout: out });
   out.write(new TextEncoder().encode('dsh web: http://127.0.0.1:3080/?token=abc\n'));
   assert.equal(f.existsSync, original);
+});
+
+
+test('raw dot parent slash and relative spellings preserve each original API', () => {
+  const t = tree();
+  fs.writeFileSync(t.nm + '/marker', 'lexical');
+  fs.writeFileSync(t.nm + '/@scope/marker', 'physical');
+  fs.symlinkSync('@scope/pkg/package.json', t.nm + '/file-link');
+  const raw = [
+    t.nm + '/pkg-dir-link/../marker', t.nm + '/dep/package.json/.',
+    t.nm + '/dep/package.json/', t.nm + '/file-link/child',
+    t.nm + '/pkg-dir-link/./package.json', './' + path.relative(process.cwd(), t.nm + '/dep/package.json'),
+  ];
+  const { f } = spyFs(); const stop = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
+  try {
+    for (const q of raw) {
+      assert.deepEqual(outcome(() => f.realpathSync(q)), outcome(() => fs.realpathSync(q)), q);
+      assert.deepEqual(outcome(() => f.realpathSync.native(q)), outcome(() => fs.realpathSync.native(q)), q);
+      assert.equal(f.existsSync(q), fs.existsSync(q), q);
+    }
+    assert.notEqual(fs.realpathSync(raw[0]), fs.realpathSync.native(raw[0]), 'fixture retains the native/JS difference');
+  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+});
+
+test('pnpm links compare original API results once then reuse components', () => {
+  const t = tree();
+  const target = t.nm + '/.pnpm/x@1/node_modules/x';
+  fs.mkdirSync(target, { recursive: true }); fs.writeFileSync(target + '/package.json', '{"name":"x"}');
+  fs.symlinkSync('.pnpm/x@1/node_modules/x', t.nm + '/x');
+  const { f, calls } = spyFs(); const stop = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
+  try {
+    const q = t.nm + '/x/package.json';
+    assert.equal(f.realpathSync.native(q), fs.realpathSync.native(q));
+    assert.equal(calls.native, 1, 'only the first native canonicalization');
+    assert.equal(calls.realpath, 1, 'only the first JS agreement check');
+    const first = calls.lstat;
+    for (let i = 0; i < 20; i++) {
+      assert.equal(f.realpathSync.native(q), target + '/package.json'); assert.equal(f.existsSync(q), true);
+      assert.equal(f.readFileSync(q, 'utf8'), '{"name":"x"}');
+    }
+    assert.equal(calls.native, 1); assert.equal(calls.realpath, 1); assert.equal(calls.exists, 0); assert.equal(calls.lstat, first); assert.equal(calls.read, 1);
+  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+});
+
+test('outside target manifests and dangling or cyclic links stay on original fs', () => {
+  const t = tree();
+  fs.writeFileSync(t.base + '/outside/package.json', '{"v":1}');
+  fs.symlinkSync(t.base + '/outside', t.nm + '/outside-dir'); fs.symlinkSync('cycle', t.nm + '/cycle');
+  const { f } = spyFs(); const stop = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
+  try {
+    const q = t.nm + '/outside-dir/package.json'; assert.equal(f.readFileSync(q, 'utf8'), '{"v":1}');
+    fs.writeFileSync(t.base + '/outside/package.json', '{"v":2}'); assert.equal(f.readFileSync(q, 'utf8'), '{"v":2}');
+    for (const raw of [t.nm + '/cycle/package.json', t.nm + '/.bin/dangling/child']) {
+      assert.deepEqual(outcome(() => f.realpathSync(raw)), outcome(() => fs.realpathSync(raw)));
+      assert.deepEqual(outcome(() => f.realpathSync.native(raw)), outcome(() => fs.realpathSync.native(raw)));
+      assert.equal(f.existsSync(raw), fs.existsSync(raw));
+    }
+  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+});
+
+test('automatic preload maps read-only roots from the actual Direct paths adapter', () => {
+  const t = tree(); const file = path.join(t.base, 'direct-probe.mjs');
+  fs.writeFileSync(file, `import fs from 'node:fs';
+import { createPaths } from ${JSON.stringify(new URL('../direct/paths.mjs', import.meta.url).href)};
+const root = ${JSON.stringify(t.base)};
+globalThis[Symbol.for('dsh.go.direct')] = Object.freeze(createPaths(root, []));
+let stats = 0; const lstat = fs.lstatSync; fs.lstatSync = (...args) => { stats++; return lstat(...args); };
+await import(${JSON.stringify(new URL('../boot/boot-cache.mjs', import.meta.url).href)});
+const q = ${JSON.stringify(t.nm + '/dep/package.json')};
+const value = fs.realpathSync.native(q); const first = stats;
+fs.realpathSync.native(q); fs.existsSync(q);
+console.log(JSON.stringify({ value, first, final: stats }));
+console.log('dsh web: http://127.0.0.1:1/?token=test');
+`);
+  try {
+    const result = spawnSync(process.execPath, [file, 'web'], { encoding: 'utf8', env: { ...process.env, DSH_GO_BOOT_CACHE: '1' } });
+    assert.equal(result.status, 0, result.stderr); const data = JSON.parse(result.stdout.split('\n')[0]);
+    assert.equal(data.value, t.nm + '/dep/package.json'); assert.ok(data.first > 0); assert.equal(data.final, data.first);
+  } finally { fs.rmSync(t.base, { recursive: true, force: true }); }
+});
+
+
+test('dot segments hidden in link targets preserve JS and native results with suffixes', () => {
+  const t = tree();
+  fs.mkdirSync(t.dsh + '/store/deep', { recursive: true });
+  for (const dir of [t.dsh, t.dsh + '/store']) {
+    fs.writeFileSync(dir + '/marker', dir);
+    fs.mkdirSync(dir + '/branch'); fs.writeFileSync(dir + '/branch/leaf', dir);
+  }
+  fs.symlinkSync('store/deep', t.dsh + '/dir');
+  fs.symlinkSync('dir/../marker', t.dsh + '/hidden-dot-file');
+  fs.symlinkSync('dir/../branch', t.dsh + '/hidden-dot-dir');
+  const { f } = spyFs(); const stop = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
+  try {
+    for (const q of [t.dsh + '/hidden-dot-file', t.dsh + '/hidden-dot-dir', t.dsh + '/hidden-dot-dir/leaf']) {
+      assert.notEqual(fs.realpathSync(q), fs.realpathSync.native(q), 'fixture retains distinct original API results');
+      for (let round = 0; round < 2; round++) {
+        assert.deepEqual(outcome(() => f.realpathSync(q)), outcome(() => fs.realpathSync(q)), q);
+        assert.deepEqual(outcome(() => f.realpathSync.native(q)), outcome(() => fs.realpathSync.native(q)), q);
+        assert.equal(f.existsSync(q), fs.existsSync(q), q);
+      }
+    }
+  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
 });

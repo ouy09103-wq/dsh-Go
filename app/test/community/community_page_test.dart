@@ -91,7 +91,7 @@ void main() {
   testWidgets('without the forum hook the lead card is the project', (tester) async {
     await pump(tester);
     expect(find.text('论坛'), findsNothing);
-    expect(find.text('DSH Go'), findsOneWidget);
+    expect(find.text('DSH Go Root'), findsOneWidget);
     expect(find.text('开源项目，欢迎点星'), findsOneWidget);
     // The brand glyph sits on its visual centre in the avatar circle.
     final mark = tester.getRect(find.byType(BrandMark));

@@ -9,7 +9,7 @@
   "a11yRestoreGrantShizuku": "通过 Shizuku 授予",
   "a11yRestoreGrantShizukuPermission": "先授权 Shizuku，再授予权限",
   "a11yRestoreGrantAdb": "通过自连 ADB 授予",
-  "a11yRestoreRootNote": "以 root 执行一次 pm grant，只授予这一项权限。",
+  "a11yRestoreRootNote": "通过已授权的 root 连接，只授予这一项权限。",
   "a11yRestoreSetup": "配置 Shizuku 或无线调试",
   "a11yRestoreWaiting": "请在 Shizuku 中允许授权",
   "a11yRestoreWaitingSui": "请在 Sui 中允许授权",
@@ -2033,6 +2033,9 @@
   "chatChats": "对话列表",
   "chatViewChatDetails": "查看对话详情",
   "chatUnsent": "未发送",
+  "chatFailedSubmission": "未送达 · 已保留",
+  "chatEditFailedSubmission": "编辑后重发",
+  "chatErrReasoningEffortUnsupported": "当前模型不支持此推理档位，请调整档位或换模型",
   "chatSteerNextStep": "插话 · 下一步生效",
   "chatQueuedAfterTurn": "排队中 · 本轮结束后发送",
   "chatSteering": "插话中",
@@ -2849,6 +2852,18 @@
       }
     }
   },
+  "engineNewChatDefaultsLast": "新对话默认（上次选择）",
+  "engineNewChatDefaultsFixed": "新对话默认（固定）",
+  "engineNewChatUseLast": "沿用上次",
+  "engineNewChatUseFixed": "固定默认",
+  "engineNewChatDefaultsHint": "保存在当前主机，只影响新对话的模型和思考深度。权限仍用独立默认，不继承临时会话授权。",
+  "engineNewChatDefaultsLegacy": "此引擎仅支持沿用上次选择；不支持固定默认，也无法确认切换时默认值是否保存成功。",
+  "engineNewChatDefaultsUnsupported": "此主机没有可编辑的默认模型设置",
+  "engineNewChatDefaultsSelectionUnavailable": "此模型或思考深度已不可用，请重新选择。",
+  "engineNewChatDefaultsInheritedEffort": "主机基础配置指定了思考深度，不能在这里为无思考模型清除。请先调整主机配置。",
+  "engineNewChatDefaultsSaving": "正在保存并确认默认值…",
+  "engineNewChatDefaultsUnconfirmed": "没能确认完整默认值，请刷新后检查模型和思考深度。主机基础配置或其他客户端可能已改变它们。",
+  "engineModelDefaultSaveFailed": "当前对话的模型已切换，但新对话默认未保存。请到设置 › 模型检查并重试。",
   "engineAccountSignedIn": "已登录 DeepSeek 账号",
   "engineAccountSignOutTitle": "退出 DeepSeek 账号？",
   "engineAccountSignOutBusy": "有任务正在使用账号模型，退出会立即中断它们。对话和文件都会保留。",
@@ -4446,6 +4461,8 @@
   "fileImageName": "图片",
   "fileSharedText": "分享的文字.txt",
   "fileChatFallback": "对话",
+  "hostDetailsConnectionType": "连接方式",
+  "hostDetailsSshNetworkHint": "通过 SSH 隧道连接。此连接不提供 LAN / P2P 路径检测或延迟测量。",
   "hubSessionDetails": "对话详情",
   "hubTerminal": "终端",
   "hubSessionNoTurns": "还没有完整的一轮",
@@ -4733,6 +4750,7 @@
   "hubPersonalizationReplies": "回答",
   "hubPersonalizationWorkStyle": "工作方式",
   "hubPrivacy": "隐私与分享",
+  "hubRootAccess": "Root 权限",
   "hubPrivacySharing": "分享",
   "hubInterfaceHome": "首页",
   "hubInterfaceWebHint": "DSH 官方网页版",
@@ -4746,6 +4764,10 @@
   "hubTableTintFollowHint": "表头浅底，表身跟随正文",
   "hubTableTintNoneHint": "只剩网格线，最轻",
   "hubAbout": "关于 DSH Go",
+  "hubAboutAuthor": "DSH Go 原作者",
+  "hubAboutBilibili": "B站主页",
+  "hubAboutX": "X 主页",
+  "hubAboutGithub": "GitHub 主页",
   "hubAboutNewVersion": "有新版本",
   "hubValueSet": "已设置",
   "hubValueOff": "未开启",
@@ -4775,6 +4797,11 @@
   "hubPermissionPhoneConfirm": "手机操控确认",
   "hubHardwareEnterSends": "外接键盘按 Enter 发送",
   "hubHardwareEnterSendsHint": "开启后，Shift+Enter 换行。屏幕键盘仍换行；Ctrl/⌘+Enter 始终可发送。",
+  "hubQuickPanel": "左滑快捷入口",
+  "hubQuickPanelSwipe": "左滑打开",
+  "hubQuickPanelSwipeHint": "在对话里从右向左滑。代码块、表格这些能横向滚动的内容不受影响。",
+  "hubQuickPanelItems": "显示的入口",
+  "hubQuickPanelItemsNone": "没有选择，左滑不会打开",
   "launchScreenTitle": "启动画面",
   "launchDefault": "默认",
   "launchCustom": "自定义",
@@ -5401,6 +5428,7 @@
   "phoneToolIntent": "系统动作",
   "phoneToolNotify": "发通知",
   "phoneToolClipboard": "剪贴板",
+  "phoneToolShell": "root 命令",
   "phoneToolAction": "操作",
   "phoneDecisionContinued": "你点了继续",
   "phoneDecisionDone": "已执行",
@@ -5474,7 +5502,8 @@
   "phoneDndSuiAllSet": "Sui 这边准备好了。",
   "phoneDndSuiPermissionFailed": "没能请求 Sui 授权。确认 Sui 模块已启用后再试。",
   "phoneDndRootWaiting": "正在等待 root 授权，请在 root 管理器的弹窗里选择。",
-  "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次，DSH Go 不会自己重新申请。",
+  "phoneDndRootConnected": "root 已连接。断开后要回到这里再选一次；打开上面的「保持 root 通道」，DSH Go 才会自己再去申请。",
+  "phoneDndRootConnectedKept": "root 已连接。断开后 DSH Go 会自己向 root 管理器再次申请。",
   "phoneDndRootRetry": "重新申请 root 授权",
   "phoneDndInstallShizuku": "先装 Shizuku（免费、开源）。已经在用冰箱、黑阈这类工具的话，多半已经装了。",
   "phoneDndOpenShizukuSite": "打开 Shizuku 官网",
@@ -6010,7 +6039,25 @@
   "phonePrivilegedGrantSuiPermission": "先授权 Sui，再授予权限",
   "phonePrivilegedSuggested": "建议",
   "phonePrivilegedRootRiskTitle": "给 DSH Go root 权限？",
-  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；连接断开后不会自己重新申请。",
+  "phonePrivilegedRootRiskBody": "root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。",
+  "phoneKeepTitle": "{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}",
+  "@phoneKeepTitle": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneKeepRootDescription": "断开、重开 App 或重启手机后，DSH Go 会自己再向 root 管理器申请；给不给仍由管理器决定。",
+  "phoneKeepSharedDescription": "断开、重开 App 或重启手机后，DSH Go 用已有的授权自己连回去，不会替你申请授权。",
+  "phoneKeepAdbDescription": "断开、重开 App 或重启手机后，DSH Go 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。",
+  "phoneKeepRestoring": "正在重新连接",
+  "phoneKeepWaiting": "等通道可用后再连",
+  "phoneKeepWaitingService": "等所选服务运行后再连",
+  "phoneKeepWaitingPermission": "还没有授权；授权后会自己连上",
+  "phoneKeepWaitingNetwork": "等连上 Wi‑Fi 后再连",
+  "phoneKeepNotPaired": "还没有配对，请先完成无线调试配对",
+  "phoneKeepFailed": "没连上；下次打开 App 或开始操控时再试",
   "phoneModeTitle": "选择确认方式",
   "phoneModeMessage": "随时可在设置里更改",
   "phoneModeAsk": "关键步骤先问我",
@@ -8519,6 +8566,13 @@
   "remoteNetworkFallbackPathUnverified": "尚未确认 WebRTC 路径类型",
   "remoteNetworkSnapshotHint": "显示最近一次确认的路径与延迟，刷新可重新检测。",
   "remoteNetworkObservedAt": "最近观测",
+  "stateWorkspaceFilesHint": "已上传到当前工作区的文件：",
+  "stateRemoteUploadNameInvalid": "文件名不受主机支持，请去掉特殊字符或缩短后再试",
+  "stateRemoteUploadWorkspaceUnavailable": "当前对话没有可写的工作目录",
+  "stateRemoteUploadWorkspaceChanged": "工作目录已变化，请确认后重新上传",
+  "stateRemoteUploadLimit": "主机拒绝了上传，请检查文件大小或稍后重试",
+  "stateRemoteUploadUnsupported": "这台主机不支持文件上传，请更新主机上的 Remote 插件后重连",
+  "stateRemoteUploadTooLarge": "文件超过远程上传协议的大小上限",
   "riskDontShowAgain": "不再提示",
   "riskAskAi": "不确定？问 AI",
   "riskConfirmAlwaysAction": "始终免确认",
@@ -8686,6 +8740,7 @@
   "searchKwPersonalization": "个性化,偏好,风格,习惯",
   "searchKwInterface": "原生,网页,网页模式,网页版,通用设置",
   "searchKwPrivacy": "隐私,数据,日志,分享,统计",
+  "searchKwRoot": "root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行",
   "searchKwAbout": "关于,版本,更新,许可,dsh-go",
   "searchKwPhoneConfirmEntry": "确认方式,手机操控,免确认",
   "searchKwWebCodingView": "代码视图,工作视图,网页版",
@@ -8693,6 +8748,7 @@
   "searchKwWebBusySend": "发送,排队,插话,AI 工作时",
   "searchKwPluginsMarket": "插件市场,安装插件,市场,获取插件",
   "searchKwUsageStats": "统计,使用统计,匿名,隐私,数据,改进,遥测,分析",
+  "searchKwQuickPanel": "左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口",
   "shellDeletePermanently": "永久删除",
   "shellDeleteNoUndo": "无法撤销，与归档不同",
   "shellDeleteChecking": "正在检查此主机是否支持永久删除…",
@@ -9359,6 +9415,15 @@
       }
     }
   },
+  "shellQuickPanel": "快捷入口",
+  "shellQuickPanelHint": "在「{path}」里调整",
+  "@shellQuickPanelHint": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
   "starPromptTitle": "{hours, plural, =0{本鱼已经在 DSH Go 里陪你半个小时啦⁠~} =1{本鱼已经在 DSH Go 里陪你一个小时啦⁠~} other{本鱼已经在 DSH Go 里陪你 {hours} 个小时啦⁠~}}",
   "@starPromptTitle": {
     "description": "The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.",
@@ -9488,9 +9553,9 @@
   "stateCommandMissing": "没有这个指令",
   "stateCommandFailed": "指令没有执行",
   "stateChatStopSteered": "没能停下本轮，已作为插话发送",
-  "stateChatTextOnlyModel": "当前模型只能读文字，图片已作为文件发给 AI。想让 AI 直接看图，请换成 V4.1 Flash",
+  "stateChatTextOnlyModel": "当前模型未声明支持图片，已按文件发送。可换模型，或把自定义模型的输入类型设为「文本和图片」",
   "stateAttachmentUploadFailed": "附件上传失败",
-  "stateChatImageModelRequired": "当前模型看不了图片，换成 V4.1 Flash 再发",
+  "stateChatImageModelRequired": "当前模型未声明支持图片。请换模型，或把自定义模型的输入类型设为「文本和图片」再发",
   "stateSendFailed": "发送失败",
   "stateChatStopFailed": "没能停下，再试一次",
   "stateChatTurnEnded": "这一轮已经结束，消息会作为新一轮发送",
@@ -9827,7 +9892,7 @@
       }
     }
   },
-  "stateAttachmentFileLimit": "文件「{name}」超过 30 MB",
+  "stateAttachmentFileLimit": "文件「{name}」超过 200 MB",
   "@stateAttachmentFileLimit": {
     "placeholders": {
       "name": {
@@ -9835,6 +9900,7 @@
       }
     }
   },
+  "stateAttachmentTotalLimit": "附件总大小超过 400 MB",
   "stateBotFinished": "{name} 完成了工作",
   "@stateBotFinished": {
     "placeholders": {

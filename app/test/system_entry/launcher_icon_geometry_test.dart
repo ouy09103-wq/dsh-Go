@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/vector_drawable.dart';
 
-const _kotlin = 'android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app';
+const _kotlin = 'android/app/src/main/kotlin/io/github/ouy09103/dsh_go';
 
 String _source(String relative) => File('$_kotlin/$relative').readAsStringSync();
 
@@ -137,6 +137,7 @@ void main() {
     final shortcuts = _source('shortcuts/ShortcutsPlugin.kt');
     expect(int.parse(_constant(share, 'MAX_ITEMS')), maxAttachments);
     expect(_bytes(_constant(share, 'MAX_FILE_BYTES')), maxFileBytes);
+    expect(_bytes(_constant(share, 'MAX_TOTAL_BYTES')), maxMessageBytes);
     expect(int.parse(_constant(shortcuts, 'MAX_RECENT')), maxRecentShortcuts);
   });
 }

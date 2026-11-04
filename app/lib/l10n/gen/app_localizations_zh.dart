@@ -37,7 +37,7 @@ class L10nZh extends L10n {
   String get a11yRestoreGrantAdb => '通过自连 ADB 授予';
 
   @override
-  String get a11yRestoreRootNote => '以 root 执行一次 pm grant，只授予这一项权限。';
+  String get a11yRestoreRootNote => '通过已授权的 root 连接，只授予这一项权限。';
 
   @override
   String get a11yRestoreSetup => '配置 Shizuku 或无线调试';
@@ -3233,6 +3233,15 @@ class L10nZh extends L10n {
   String get chatUnsent => '未发送';
 
   @override
+  String get chatFailedSubmission => '未送达 · 已保留';
+
+  @override
+  String get chatEditFailedSubmission => '编辑后重发';
+
+  @override
+  String get chatErrReasoningEffortUnsupported => '当前模型不支持此推理档位，请调整档位或换模型';
+
+  @override
   String get chatSteerNextStep => '插话 · 下一步生效';
 
   @override
@@ -4451,6 +4460,42 @@ class L10nZh extends L10n {
   String commonMonthDay(String month, int day) {
     return '$month月$day日';
   }
+
+  @override
+  String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
+
+  @override
+  String get engineNewChatDefaultsFixed => '新对话默认（固定）';
+
+  @override
+  String get engineNewChatUseLast => '沿用上次';
+
+  @override
+  String get engineNewChatUseFixed => '固定默认';
+
+  @override
+  String get engineNewChatDefaultsHint => '保存在当前主机，只影响新对话的模型和思考深度。权限仍用独立默认，不继承临时会话授权。';
+
+  @override
+  String get engineNewChatDefaultsLegacy => '此引擎仅支持沿用上次选择；不支持固定默认，也无法确认切换时默认值是否保存成功。';
+
+  @override
+  String get engineNewChatDefaultsUnsupported => '此主机没有可编辑的默认模型设置';
+
+  @override
+  String get engineNewChatDefaultsSelectionUnavailable => '此模型或思考深度已不可用，请重新选择。';
+
+  @override
+  String get engineNewChatDefaultsInheritedEffort => '主机基础配置指定了思考深度，不能在这里为无思考模型清除。请先调整主机配置。';
+
+  @override
+  String get engineNewChatDefaultsSaving => '正在保存并确认默认值…';
+
+  @override
+  String get engineNewChatDefaultsUnconfirmed => '没能确认完整默认值，请刷新后检查模型和思考深度。主机基础配置或其他客户端可能已改变它们。';
+
+  @override
+  String get engineModelDefaultSaveFailed => '当前对话的模型已切换，但新对话默认未保存。请到设置 › 模型检查并重试。';
 
   @override
   String get engineAccountSignedIn => '已登录 DeepSeek 账号';
@@ -6836,6 +6881,12 @@ class L10nZh extends L10n {
   String get fileChatFallback => '对话';
 
   @override
+  String get hostDetailsConnectionType => '连接方式';
+
+  @override
+  String get hostDetailsSshNetworkHint => '通过 SSH 隧道连接。此连接不提供 LAN / P2P 路径检测或延迟测量。';
+
+  @override
   String get hubSessionDetails => '对话详情';
 
   @override
@@ -7272,6 +7323,9 @@ class L10nZh extends L10n {
   String get hubPrivacy => '隐私与分享';
 
   @override
+  String get hubRootAccess => 'Root 权限';
+
+  @override
   String get hubPrivacySharing => '分享';
 
   @override
@@ -7309,6 +7363,18 @@ class L10nZh extends L10n {
 
   @override
   String get hubAbout => '关于 DSH Go';
+
+  @override
+  String get hubAboutAuthor => 'DSH Go 原作者';
+
+  @override
+  String get hubAboutBilibili => 'B站主页';
+
+  @override
+  String get hubAboutX => 'X 主页';
+
+  @override
+  String get hubAboutGithub => 'GitHub 主页';
 
   @override
   String get hubAboutNewVersion => '有新版本';
@@ -7358,6 +7424,21 @@ class L10nZh extends L10n {
 
   @override
   String get hubHardwareEnterSendsHint => '开启后，Shift+Enter 换行。屏幕键盘仍换行；Ctrl/⌘+Enter 始终可发送。';
+
+  @override
+  String get hubQuickPanel => '左滑快捷入口';
+
+  @override
+  String get hubQuickPanelSwipe => '左滑打开';
+
+  @override
+  String get hubQuickPanelSwipeHint => '在对话里从右向左滑。代码块、表格这些能横向滚动的内容不受影响。';
+
+  @override
+  String get hubQuickPanelItems => '显示的入口';
+
+  @override
+  String get hubQuickPanelItemsNone => '没有选择，左滑不会打开';
 
   @override
   String get launchScreenTitle => '启动画面';
@@ -8595,6 +8676,9 @@ class L10nZh extends L10n {
   String get phoneToolClipboard => '剪贴板';
 
   @override
+  String get phoneToolShell => 'root 命令';
+
+  @override
   String get phoneToolAction => '操作';
 
   @override
@@ -8814,7 +8898,10 @@ class L10nZh extends L10n {
   String get phoneDndRootWaiting => '正在等待 root 授权，请在 root 管理器的弹窗里选择。';
 
   @override
-  String get phoneDndRootConnected => 'root 已连接。断开后要回到这里再选一次，DSH Go 不会自己重新申请。';
+  String get phoneDndRootConnected => 'root 已连接。断开后要回到这里再选一次；打开上面的「保持 root 通道」，DSH Go 才会自己再去申请。';
+
+  @override
+  String get phoneDndRootConnectedKept => 'root 已连接。断开后 DSH Go 会自己向 root 管理器再次申请。';
 
   @override
   String get phoneDndRootRetry => '重新申请 root 授权';
@@ -9831,7 +9918,49 @@ class L10nZh extends L10n {
 
   @override
   String get phonePrivilegedRootRiskBody =>
-      'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；连接断开后不会自己重新申请。';
+      'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。';
+
+  @override
+  String phoneKeepTitle(String mode) {
+    String _temp0 = intl.Intl.selectLogic(mode, {
+      'shizuku': '保持 Shizuku 通道',
+      'sui': '保持 Sui 通道',
+      'root': '保持 root 通道',
+      'adb': '保持自连 ADB 通道',
+      'other': '保持这个通道',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneKeepRootDescription => '断开、重开 App 或重启手机后，DSH Go 会自己再向 root 管理器申请；给不给仍由管理器决定。';
+
+  @override
+  String get phoneKeepSharedDescription => '断开、重开 App 或重启手机后，DSH Go 用已有的授权自己连回去，不会替你申请授权。';
+
+  @override
+  String get phoneKeepAdbDescription => '断开、重开 App 或重启手机后，DSH Go 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。';
+
+  @override
+  String get phoneKeepRestoring => '正在重新连接';
+
+  @override
+  String get phoneKeepWaiting => '等通道可用后再连';
+
+  @override
+  String get phoneKeepWaitingService => '等所选服务运行后再连';
+
+  @override
+  String get phoneKeepWaitingPermission => '还没有授权；授权后会自己连上';
+
+  @override
+  String get phoneKeepWaitingNetwork => '等连上 Wi‑Fi 后再连';
+
+  @override
+  String get phoneKeepNotPaired => '还没有配对，请先完成无线调试配对';
+
+  @override
+  String get phoneKeepFailed => '没连上；下次打开 App 或开始操控时再试';
 
   @override
   String get phoneModeTitle => '选择确认方式';
@@ -13359,6 +13488,27 @@ class L10nZh extends L10n {
   String get remoteNetworkObservedAt => '最近观测';
 
   @override
+  String get stateWorkspaceFilesHint => '已上传到当前工作区的文件：';
+
+  @override
+  String get stateRemoteUploadNameInvalid => '文件名不受主机支持，请去掉特殊字符或缩短后再试';
+
+  @override
+  String get stateRemoteUploadWorkspaceUnavailable => '当前对话没有可写的工作目录';
+
+  @override
+  String get stateRemoteUploadWorkspaceChanged => '工作目录已变化，请确认后重新上传';
+
+  @override
+  String get stateRemoteUploadLimit => '主机拒绝了上传，请检查文件大小或稍后重试';
+
+  @override
+  String get stateRemoteUploadUnsupported => '这台主机不支持文件上传，请更新主机上的 Remote 插件后重连';
+
+  @override
+  String get stateRemoteUploadTooLarge => '文件超过远程上传协议的大小上限';
+
+  @override
   String get riskDontShowAgain => '不再提示';
 
   @override
@@ -13762,6 +13912,9 @@ class L10nZh extends L10n {
   String get searchKwInterface => '原生,网页,网页模式,网页版,通用设置';
 
   @override
+  String get searchKwRoot => 'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行';
+
+  @override
   String get searchKwPrivacy => '隐私,数据,日志,分享,统计';
 
   @override
@@ -13784,6 +13937,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwUsageStats => '统计,使用统计,匿名,隐私,数据,改进,遥测,分析';
+
+  @override
+  String get searchKwQuickPanel => '左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口';
 
   @override
   String get shellDeletePermanently => '永久删除';
@@ -14764,6 +14920,14 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get shellQuickPanel => '快捷入口';
+
+  @override
+  String shellQuickPanelHint(String path) {
+    return '在「$path」里调整';
+  }
+
+  @override
   String starPromptTitle(int hours) {
     String _temp0 = intl.Intl.pluralLogic(
       hours,
@@ -15136,13 +15300,13 @@ class L10nZh extends L10n {
   String get stateChatStopSteered => '没能停下本轮，已作为插话发送';
 
   @override
-  String get stateChatTextOnlyModel => '当前模型只能读文字，图片已作为文件发给 AI。想让 AI 直接看图，请换成 V4.1 Flash';
+  String get stateChatTextOnlyModel => '当前模型未声明支持图片，已按文件发送。可换模型，或把自定义模型的输入类型设为「文本和图片」';
 
   @override
   String get stateAttachmentUploadFailed => '附件上传失败';
 
   @override
-  String get stateChatImageModelRequired => '当前模型看不了图片，换成 V4.1 Flash 再发';
+  String get stateChatImageModelRequired => '当前模型未声明支持图片。请换模型，或把自定义模型的输入类型设为「文本和图片」再发';
 
   @override
   String get stateSendFailed => '发送失败';
@@ -15813,8 +15977,11 @@ class L10nZh extends L10n {
 
   @override
   String stateAttachmentFileLimit(String name) {
-    return '文件「$name」超过 30 MB';
+    return '文件「$name」超过 200 MB';
   }
+
+  @override
+  String get stateAttachmentTotalLimit => '附件总大小超过 400 MB';
 
   @override
   String stateBotFinished(String name) {

@@ -34,6 +34,7 @@ import '../performance_page.dart';
 import '../personalization_page.dart';
 import '../privacy_page.dart';
 import '../reply_prefs_page.dart';
+import '../root_page.dart';
 import '../settings_screen.dart';
 import '../system_access_page.dart';
 import '../voice_settings_page.dart';
@@ -77,6 +78,7 @@ Widget settingsPage(SettingsPageId id, {String? sessionId}) => switch (id) {
   SettingsPageId.agentPresets => const AgentPresetsPage(),
   SettingsPageId.personalization => const PersonalizationPage(),
   SettingsPageId.interface => const InterfacePage(),
+  SettingsPageId.rootAccess => const RootPage(),
   SettingsPageId.privacy => const PrivacyPage(),
   SettingsPageId.about => const AboutPage(),
 };

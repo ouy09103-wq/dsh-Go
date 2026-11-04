@@ -11,7 +11,7 @@ try {
  const {DomainFacility, defineDomain,domainTable}=await import(pathToFileURL(pkg+'dsh-storage-domain/lib/index.js'));
  const {z}=await import(pathToFileURL(prefix+'/node_modules/zod/index.js'));
  let raw={title:'old'}, pause, writes=0,reads=0;
- const unit={loadAll:async()=>({tables:{sessions:{s:raw}},global:null}),readRecord:async()=>{reads++;return raw},putRecord:async(t,k,v)=>{writes++;if(pause)await pause;raw=v},close:async()=>{}};
+ const unit={loadAll:async()=>({tables:{sessions:{s:raw}},global:null}),readRecord:async()=>{reads++;return raw},statRecord:async()=>undefined,putRecord:async(t,k,v)=>{writes++;if(pause)await pause;raw=v},close:async()=>{}};
  const ctx={emit(){},logger:{warn(){},error(){}},storage:{backend:{get:()=>({kv:{open:async()=>unit}})}}};
  const facility=new DomainFacility(ctx,{backend:'json'});
  const domain=await facility.open(defineDomain({name:'cache_test',version:1,tables:{sessions:domainTable(z.object({title:z.string()}))}}));

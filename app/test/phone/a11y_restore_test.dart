@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'harness.dart';
 import 'support.dart';
 
-const command = 'adb shell pm grant io.github.ccch1mneyyy.dsh_app android.permission.WRITE_SECURE_SETTINGS';
+const command = 'adb shell pm grant io.github.ouy09103.dsh_go android.permission.WRITE_SECURE_SETTINGS';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -106,11 +106,11 @@ void main() {
     });
   }
 
-  testWidgets('root grants with one pm grant, and only on the tap', (tester) async {
+  testWidgets('root grants over its connection, and only on the tap', (tester) async {
     final n = modern(grantPath: 'root', rootSelected: true);
     await pumpPhone(tester, sheet, native: n);
     expect(find.widgetWithText(FilledButton, '通过 root 授予'), findsOneWidget);
-    expect(find.text('以 root 执行一次 pm grant，只授予这一项权限。'), findsOneWidget);
+    expect(find.text('通过已授权的 root 连接，只授予这一项权限。'), findsOneWidget);
     expect(n.callsOf('grantSecureSettings'), isEmpty);
     await tester.tap(find.byKey(const Key('a11y-restore-grant')));
     await tester.pumpAndSettle();

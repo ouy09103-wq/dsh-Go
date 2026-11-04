@@ -1,162 +1,390 @@
-> ## ⚠️ 这是原版的修改版本
+> ## ⚠️ 这是原版的修改版本（个人 fork）
 >
-> 本仓库是**个人 fork**，在原版 DSH Go 上新增了一个 **root 级 `shell` 工具**：模型能以 root 身份执行任意命令，**无确认、无预览**。
+> 本仓库是个人 fork，在原版 DSH Go 上新增了一个 **root 级 `shell` 工具**：模型能以 root 身份执行任意命令，**无确认、无预览**。
 >
 > **可能导致：变砖、数据永久丢失、隐私完全暴露、账号封禁、保修失效。**
 >
 > **仅供测试与学习使用。请勿安装在存有重要数据、或你唯一的手机上。**
 >
-> 👉 **原版在这里：[ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)**
+> 安装包名已改为 `io.github.ouy09103.dsh_go`，**可以和原版同时安装**；应用名显示为「DSH Go Root」。
+>
+> 👉 **原版在这里：[ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)**（本文档以下内容均来自原版）
 
----
+<p align="center">
+  <b>简体中文</b> · <a href="README.en.md">English</a>
+</p>
 
-# DSH Go（个人 fork · 含 root shell 工具）
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-zh-dark.webp">
+    <img src="docs/assets/hero-zh-light.webp" alt="DSH Go：把 DeepSeek Harness 装进口袋" width="100%">
+  </picture>
+</p>
 
-把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 装进口袋：在手机上运行 DSH 引擎与 Ubuntu 环境，通过聊天界面使用 AI。
+<p align="center">
+  DeepSeek Harness 的 Android 客户端。手机上直接跑，也能遥控你电脑上的 DSH。
+</p>
 
-**第三方修改版本，非原版。** 原项目由 [ccch1mneyyy](https://github.com/ccch1mneyyy) 维护，本仓库只做了一处功能改动，其余代码均来自上游。
+<p align="center">
+  <a href="https://github.com/ccch1mneyyy/dsh-go/releases/latest"><img alt="Android 8+" src="https://img.shields.io/badge/Android-8%2B-4B67B4?style=flat-square&logo=android&logoColor=white&labelColor=2B3245"></a>
+  <a href="LICENSE"><img alt="许可证 AGPL-3.0" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-AGPL--3.0-4B67B4?style=flat-square&labelColor=2B3245"></a>
+  <a href="https://forum.dshtui.com"><img alt="论坛" src="https://img.shields.io/badge/%E8%AE%BA%E5%9D%9B-forum.dshtui.com-4B67B4?style=flat-square&labelColor=2B3245"></a>
+  <a href="https://qm.qq.com/q/OEy2RqZnqY"><img alt="QQ 群 1132118290" src="https://img.shields.io/badge/QQ%20%E7%BE%A4-1132118290-4B67B4?style=flat-square&logo=tencentqq&logoColor=white&labelColor=2B3245"></a>
+</p>
 
-## 这个 fork 改了什么
+<p align="center">
+  <a href="https://trendshift.io/repositories/319451"><img src="https://trendshift.io/api/badge/trendshift/repositories/319451/daily" alt="DSH Go：Trendshift 全语言日榜第一（2026-10-30）" width="250" height="55"></a><br>
+  <sub>Trendshift 全语言日榜 #1 · 2026-10-30</sub>
+</p>
 
-### 1. 手机工具 `shell`
+<br>
 
-以 root 身份执行命令，核心就一行 `ProcessBuilder("su","-c",command)`。绕开 SafetyGate / 敏感词 / 点击确认，也不受无障碍开关限制。
+<h3 align="center">Deepy 和鲸娘，陪你干活</h3>
 
-### 2. 聊天页的「启用 root」开关
+<p align="center">干活时敲代码，做完来个空翻，等你确认会举手。打开「App 外显示」，它们还会跟你到桌面。</p>
 
-输入框上方一条玻璃胶囊，和待办、目标同款：
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-deepy-typing-zh-dark.gif"><img src="docs/assets/pet-deepy-typing-zh-light.gif" width="168" alt="Deepy 敲代码"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-deepy-happy-zh-dark.gif"><img src="docs/assets/pet-deepy-happy-zh-light.gif" width="168" alt="Deepy 完成"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-deepy-notification-zh-dark.gif"><img src="docs/assets/pet-deepy-notification-zh-light.gif" width="168" alt="Deepy 等你确认"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-deepy-sleeping-zh-dark.gif"><img src="docs/assets/pet-deepy-sleeping-zh-light.gif" width="168" alt="Deepy 睡觉"></picture>
+</p>
 
-```
-[ ▣  启用 root              点击开启 ]   灰色，默认关
-[ ▣  root 已启用            点击关闭 ]   橙色，开着
-```
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-girl-typing-zh-dark.gif"><img src="docs/assets/pet-girl-typing-zh-light.gif" width="168" alt="鲸娘 敲代码"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-girl-happy-zh-dark.gif"><img src="docs/assets/pet-girl-happy-zh-light.gif" width="168" alt="鲸娘 完成"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-girl-notification-zh-dark.gif"><img src="docs/assets/pet-girl-notification-zh-light.gif" width="168" alt="鲸娘 等你确认"></picture> <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/pet-girl-sleeping-zh-dark.gif"><img src="docs/assets/pet-girl-sleeping-zh-light.gif" width="168" alt="鲸娘 睡觉"></picture>
+</p>
 
-- 点一下给 root，再点一下收回，不用去 root管理器 翻授权
-- 开启前弹一次确认，写明后果
-- **关着时 `shell` 直接拒绝**，返回「root 未启用，请先在聊天页打开」
-- 开关不重启引擎，状态存在 SharedPreferences，换会话也保持
+<br>
 
-### 3. 它控制的是哪一层
+<a id="download"></a>
+<h3 align="center">下载 DSH Go</h3>
 
-**App 层是否放行。** 关着的时候，模型无法通过 App 调用 root，`shell` 直接返回「root 未启用」——连命令有没有执行都拿不到。
+<p align="center">从 GitHub Releases 或官网下载页获取最新版 APK，常见手机选 arm64 包。</p>
 
-**root 授权本身由 root管理器（ksu以及magisk等） 管理。** 这个开关不改变系统层的授权状态。要真正切断，去 root管理器 里收回。
+<p align="center">
+  <a href="https://github.com/ccch1mneyyy/dsh-go/releases/latest"><img alt="从 GitHub Releases 下载" src="https://img.shields.io/badge/GitHub%20Releases-%E4%B8%8B%E8%BD%BD%20APK-4B67B4?style=for-the-badge&logo=github&logoColor=white&labelColor=2B3245"></a>&emsp;<a href="https://go.dshtui.com/download"><img alt="从官网下载页下载" src="https://img.shields.io/badge/go.dshtui.com-%E5%AE%98%E7%BD%91%E4%B8%8B%E8%BD%BD-4B67B4?style=for-the-badge&labelColor=2B3245"></a>
+</p>
 
-### 4. 工具集不变
+<p align="center">
+  <b>感谢大家对 DSH Go 的支持和喜爱，我将尽快适配 iOS 和鸿蒙！大家 Star 点得越多，我适配得越快哦 hhh</b>
+</p>
 
-`shell` 一直在工具列表里，开关只决定放不放行（上游要求工具集固定，否则 KV cache 全失效）。
+<p align="center">
+  <a href="https://github.com/ccch1mneyyy/dsh-go/stargazers"><img alt="GitHub Star 数" src="https://img.shields.io/github/stars/ccch1mneyyy/dsh-go?style=flat-square&logo=github&label=Star&color=4B67B4&labelColor=2B3245"></a>
+</p>
 
+<p align="center">
+  <sub>第一次用可以先看<a href="docs/guide/README.md">使用指南</a>，遇到问题欢迎来<a href="#community">论坛和 QQ 群</a>。</sub><br>
+  <sub>手机上装过签名不同的早期测试包时不能直接覆盖安装，需要先卸载旧版；卸载会清空对话、Linux 环境和设置。</sub>
+</p>
 
-## 能做什么
+<br>
 
-- **本机运行**：App 内安装 Ubuntu、Node.js 与 DSH，无需另装 Termux
-- **远程连接**：SSH / DSH Remote 接电脑或服务器
-- **聊天与工具**：模型切换、图片、语音、工具审批与提问
-- **插件界面**：原生工具卡、表单、面板
-- **手机操控**：读屏、点按、输入；**本 fork 另可用 root 直接执行**
-- **外观**：主题、图标、桌宠
+<h3 align="center">本机运行，也能遥控电脑</h3>
 
-细节与限制见[原项目文档](https://github.com/ccch1mneyyy/dsh-go)。
+<p align="center">内置 Linux 环境，免 Root、免 Termux。电脑上的 DSH，也能一键切过去接着用。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-remote-zh-dark.webp">
+    <img src="docs/assets/f-remote-zh-light.webp" width="100%" alt="本机对话、切换主机、电脑上的对话">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">插话、打断，过程自动收好</h3>
+
+<p align="center">回复中途也能插话，排队的消息随时「立即发送」。做完的过程折叠成一行。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-steer-zh-dark.webp">
+    <img src="docs/assets/f-steer-zh-light.webp" width="100%" alt="生成中排队一条消息；完成后过程折叠">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">原生界面，也有网页版</h3>
+
+<p align="center">和官方网页版一键切换，停在同一段对话，下次打开还是你上次用的那个。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-web-zh-dark.webp">
+    <img src="docs/assets/f-web-zh-light.webp" width="100%" alt="同一段对话的原生界面与网页版">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">分享卡、对话回放和链接</h3>
+
+<p align="center">回复一键做成分享卡。整段对话生成链接，对方在浏览器里回放，链接端到端加密。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-share-zh-dark.webp">
+    <img src="docs/assets/f-share-zh-light.webp" width="100%" alt="分享卡、对话回放、我的分享链接">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">横屏与平板</h3>
+
+<p align="center">横屏手机和平板重新排版：侧栏常驻，内容居中，弹出键盘也不挤。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-adaptive-zh-dark.webp">
+    <img src="docs/assets/f-adaptive-zh-light.webp" width="100%" alt="平板与横屏手机">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">主题配色与桌面图标</h3>
+
+<p align="center">六套主题色，也能跟随壁纸或自选颜色。四款桌面图标，三种功能图标风格。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-theme-zh-dark.webp">
+    <img src="docs/assets/f-theme-zh-light.webp" width="100%" alt="主题设置与两种主题色">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">中文，也说 English</h3>
+
+<p align="center">全部界面支持英文，在设置里切换，默认跟随系统。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-lang-dark.webp">
+    <img src="docs/assets/f-lang-light.webp" width="100%" alt="同一段对话的中文与英文界面">
+  </picture>
+</p>
+
+<br>
+
+<h3 align="center">手机操控</h3>
+
+<p align="center">看屏幕、帮你点，三档确认随你选。敏感操作默认交还给你；放宽应用规则或解除限制前，请先了解风险。</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/f-phone-zh-dark.webp">
+    <img src="docs/assets/f-phone-zh-light.webp" width="100%" alt="手机操控与确认方式">
+  </picture>
+</p>
+
+<br>
+
+## 可以做什么
+
+DSH Go 提供聊天界面、本机运行环境和远程连接，是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的第三方项目。运行在手机上的是 DSH 引擎；模型请求仍由你配置的模型提供方处理。
+
+- **本机运行**：在 App 内安装 Ubuntu、Node.js 与 DSH 运行环境，无需 Root 或另装 Termux。
+- **远程连接**：通过 SSH 或李国宝老师开发的 [DSHarness Remote](https://github.com/liguobao/ds-harness-remote) 使用电脑、服务器上的 DSH。
+- **聊天与工具**：切换模型，发送图片、使用语音输入，处理工具审批和提问；支持聊天界面与网页模式。
+- **插件界面**：使用适配 DSH Go 的原生工具卡、表单和面板；仓库提供 SDK、教程和示例。
+- **手机操控**：在你开启权限后，让本机引擎读取屏幕、点按和输入，并可随时停止。
+- **分享与外观**：分享、导出和回放对话，调整主题、图标和桌宠。
+
+功能随主机和连接方式不同。DSHarness Remote 当前只支持图片附件，不能在 App 内打开网页版，插件管理限于开关，且不支持 DS Bot 和对话日志导出。详见[本机引擎与远程主机](docs/guide/zh/03-engine-hosts.md)。
 
 ## 安装
 
-安装要求 Android 8.0（API 26）及以上，本仓库只提供 **arm64** 包；x86_64 设备请用[原版](https://github.com/ccch1mneyyy/dsh-go/releases)。
+安装要求为 Android 8.0（API 26）及以上。Release 页面上的 **arm64** 安装包适用于常见的 64 位 Android 手机；x86_64 设备和模拟器用的 x64 包在发布说明末尾的「其他版本下载」里。仓库没有 32 位 ARM 构建。
 
-1. 从 [GitHub Releases](https://github.com/ghjicb/dsh-Go/releases/latest) 下载 `app-arm64-release.apk`
-2. 覆盖原版包需要同签名，或自行绕过签名校验（本包为 **debug 签名**）
-3. **装之前先备份**，本包的行为与原版不同，出问题不可逆
+1. 从 [GitHub Releases](https://github.com/ccch1mneyyy/dsh-go/releases/latest) 或[官网下载页](https://go.dshtui.com/download)下载对应架构的 APK，并按系统提示允许该安装来源。
+2. 首次启动时，选择在本机安装运行环境，或连接远程主机。
+3. 为所选主机配置模型和所需凭据，再开始对话；部分远程渠道需要在主机侧配置。
 
----
+仅连接远程主机时，不必在手机上安装本机运行环境。手机操控只对正常模式下的本机引擎开放，需要按界面说明开启无障碍等权限；不打扰模式另外要求 Android 14 及以上，以及 Shizuku 或自连 ADB。首次使用可按[使用指南](docs/guide/README.md)逐项配置。
 
-# ⚠️ Root / shell 工具免责声明
+本地引擎默认使用 PRoot 兼容启动。开发者选项中的直接启动默认关闭，开启后的兼容性和回退方式见[常见问题](docs/guide/zh/11-faq.md)。当前 Android 构建以 APK 侧载为目标，不是 Google Play 发布配置。
 
-## 一、你会承担的风险
+## 数据与权限
 
-### 1. 设备变砖
-root 权限下一条命令就能让手机无法开机，例如但不限于：
+模型请求会发送给你配置的提供方。开启手机操控后，任务需要的屏幕文字可能发送给模型，支持看图的模型也可能收到截图；请先阅读 App 的权限说明。
 
-- 写错块设备（`dd` 目标指到 `boot`、`recovery`、`vbmeta`、分区表）
-- 误删 `/system`、`/vendor`、`/data` 下的关键文件
-- 修改 `build.prop`、`init.rc`、SELinux 策略
-- `mount -o rw,remount /system` 后未恢复只读
+“发送匿名使用统计”默认开启，可在首次引导或“设置 → 隐私与分享”关闭。采集范围和关闭后的处理见[常见问题](docs/guide/zh/11-faq.md)。分享内容前，请检查预览；收到链接或文件的人可以保存其中的内容。
 
-砖了之后可能需要电脑线刷、甚至送修。**数据可能永久丢失。**
+## 风险提示与免责声明
 
-### 2. 数据丢失
-`rm -rf`、格式化、`pm clear`、覆盖写入，都可能在你没看清内容时执行完。**没有回收站，没有撤销。**
+DSH Go 是社区开发的非官方项目，与 DeepSeek 无关联，也不代表 DeepSeek。使用前请了解：
 
-### 3. 隐私暴露
-root 能读：
+- **AI 并非万无一失**：回答、代码和操作可能出错，也可能被网页、消息或文件中的恶意指令误导。请核验重要结果；医疗、法律、投资等高风险决策不应仅依赖 AI 输出。
+- **工具会产生真实影响**：本机或远程主机上的命令、文件修改及手机操控可能导致数据丢失、隐私泄露、账号、资金或设备损失。免确认、放宽应用规则或解除限制会减少保护；确认与拦截机制不能保证消除所有风险。建议保留默认保护，只授予必要权限，不在存有支付或银行信息的设备上解除限制。详见[手机操控指南](docs/guide/zh/04-phone-control.md)。
+- **第三方服务与费用**：模型、远程主机和插件等按各自条款运行；相关数据处理、服务可用性和费用取决于你选择的服务与配置。本机运行不等于模型离线，也不代表数据不会离开设备。
+- **使用前做好防护**：备份重要数据，只连接可信主机、安装可信插件，留意模型用量与费用；不要让 AI 无人值守地处理不可逆或高风险任务。
+- **无担保与责任范围**：在适用法律允许的范围内，本软件按“现状”提供，不保证准确性、持续可用性或满足特定用途；相关无担保及责任限制见 [LICENSE](LICENSE) 第 15–17 条。本声明不排除或限制依法不得排除或限制的责任，也不减损你依法享有的权利。
 
-- 全部 App 私有目录（聊天记录、照片缓存、登录态、数据库）
-- 剪贴板、通知、账号令牌
-- 银行、支付类 App 的本地数据
+## 常见问题
 
-**这不是"可能"，是"本来就能"。** 本 fork 没有为这些数据加任何保护。
+<details>
+<summary><b>和 DeepSeek 官方是什么关系？</b></summary>
+<br>
 
-### 4. 模型幻觉导致的破坏
-生成命令的是大语言模型，它会：
+没有关系。DSH Go 是社区开发的非官方客户端，基于开源的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建。手机上运行的是 DSH 本身；模型请求发给你配置的模型提供方，需要联网，按你在提供方的账户计费。
 
-- 自信地给出错误命令
-- 在路径、变量、引号上出错
-- 误解你的意图
-- **没有"这步很危险，我停下"的稳定能力**
+</details>
 
-**不要把它当成可靠的操作员。** 它每一次"成功"都不保证下一次不出错。
+<details>
+<summary><b>安全吗？</b></summary>
+<br>
 
-### 5. 账号与平台风险
-用一个能 root 的自动化工具去操作社交、电商、游戏等 App，可能触发：
+本机网页版只接受 App 自己的访问。分享链接端到端加密，密钥只在链接里，服务器看不到内容，但获得完整链接的人可以读取并保存内容。手机操控默认保留敏感操作保护；放宽应用规则或开启「解除限制」会减少这些保护。安全机制不能保证零风险，详见[风险提示与免责声明](#风险提示与免责声明)和[手机操控指南](docs/guide/zh/04-phone-control.md)。
 
-- 平台风控、账号封禁
-- 违反用户协议
-- 支付纠纷（自动化下单、误购）
+</details>
 
-**这些后果由账号持有人承担。**
+<details>
+<summary><b>切到后台会被杀吗？</b></summary>
+<br>
 
-### 6. 保修与合规
-- 解锁 BL、root 可能导致**保修失效**
-- 部分行业/单位对设备合规有要求，root 后可能不合规
-- 使用本工具从事的任何行为，需符合所在地法律法规
+部分系统的省电策略会拦住后台。DSH Go 发现后会提醒你，并直达对应的放行设置，vivo、小米、华为、荣耀、OPPO 都有。
 
----
+</details>
 
-## 二、免责条款
+<details>
+<summary><b>对手机有什么要求？</b></summary>
+<br>
 
-1. **按"现状"提供，无任何担保。** 不担保可用性、稳定性、安全性、适用于特定目的。
-2. **使用即自担风险。** 因使用本仓库代码或构建产物导致的设备损坏、数据丢失、信息泄露、账号封禁、财产损失、人身损害或任何间接损失，作者不承担任何责任。
-3. **不对模型行为负责。** `shell` 执行的是模型生成的命令，作者无法控制、无法审计、无法召回。
-4. **与原项目无关。** 本仓库是个人 fork，非原项目发布，不代表上游作者（`ccch1mneyyy/dsh-go`）的立场，也不受原项目支持。
-5. **不提供任何技术支持与数据恢复协助。** 出问题请自行解决或寻求专业维修。
-6. **随时可能变更或删除。** 本仓库与本文档可在不通知的情况下修改、停止维护或删除。
-7. **不得用于非法用途。** 禁止用于未授权访问他人设备、窃取数据、绕过安全机制、实施诈骗等违法行为。
+Android 8 及以上。手机直接下载 Release 页面上的安装包即可，模拟器用的 x86_64 版在发布说明末尾的「其他版本下载」里。在手机上运行 DSH 要先准备内置的运行环境，请预留约 1 GB 空间；只连电脑或服务器上的 DSH 可以不装。
 
----
+</details>
 
-## 三、如果你仍然要用，请至少做到
+<details>
+<summary><b>开源吗？</b></summary>
+<br>
 
-- **不要在主力机上装。** 用备用机、测试机。
-- **先备份。** 至少把照片、聊天记录、通讯录导出到别处。
-- **不要给支付、银行类 App 配 root。** 它们在 root 环境下风险最高。
-- **看不懂的命令不要批准。** 哪怕模型说"这只是只读的"。
-- **明确要求"先说明再执行"**，并且真的去读它说的每一步。
-- **保留一次可回滚的完整备份**（包括 boot 分区）。
-- **用完就收。** 不需要的时候把 root 权限收回去，或者直接卸载。
+开源，代码就在这个仓库，以 [AGPL-3.0](LICENSE) 发布，`sdk/` 和 `examples/` 为 MIT。DSH Go 的名称和标识，以及 Deepy、鲸娘两位吉祥物，不在开源授权范围内，见 [ASSETS.md](ASSETS.md)。再发布和 fork 时的署名要求见[授权范围与再发布](#授权范围与再发布)。
 
----
+</details>
 
-## 四、一句话总结
+## 从源码构建
 
-**这不是一个"更聪明的助手"，这是一个"能单手拆你家房子"的工具。**
+以下流程面向 **Linux x86_64**。当前工具链脚本默认安装 JDK 17、Flutter 3.47.7 和 Android SDK/NDK；App 要求 Dart `^3.13.5`。准备 Bash、Git、curl、tar、unzip、xz、Python 3、zstd（Python 未提供 `compression.zstd` 时用于解包 zstd 压缩的 deb）、file 和常见 GNU 命令；重新解析 Ubuntu 软件包锁时还需要 gpgv。
 
-它能不能帮到你，取决于你愿不愿意承担它随时可能拆错墙的代价。
+先取得完整源码和项目资源。`app/pubspec.yaml` 声明的字体、图片等都是构建输入，运行时包由下面的脚本生成。
 
-如果你只想要一个安稳的手机，**请不要装它。**
+```bash
+git clone https://github.com/ccch1mneyyy/dsh-go.git
+cd dsh-go
 
----
+bash tooling/setup-toolchain.sh
+source tooling/env.sh
+flutter --version
+java -version
+
+bash runtime/build-runtime.sh arm64-v8a
+DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f arm64 --keep-daemon
+```
+
+工具链脚本会下载 SDK/NDK 与模拟器镜像，并执行 Android SDK 许可接受步骤。默认安装到 `~/dev`；可通过 `DEV_ROOT` 指定独立目录。脚本会复用已有安装，构建前请核对版本。
+
+产物为 `app/build/app/outputs/flutter-apk/app-arm64-release.apk`。运行时构建使用仓库固定的版本与校验信息，并需要联网下载依赖。示例中的 `DSH_BETA_TOKEN_FILE=` 不嵌入维护者的内测通道令牌；`--keep-daemon` 保留 Gradle daemon，适合同时开发其他 Android 项目的环境。
+
+构建 x86_64 包时，先生成对应运行时：
+
+```bash
+bash runtime/build-runtime.sh x86_64
+DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f x64 --keep-daemon
+```
+
+未配置 `app/android/key.properties` 时，本地 release 构建使用 debug 签名。它不能直接覆盖不同签名的官方安装包；请在测试设备上安装，保留已有数据，不要为解决签名冲突直接卸载正在使用的 App。发布签名与密钥文件不要提交到仓库。
+
+只查看 APK 构建命令，可运行：
+
+```bash
+DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh --dry-run -f all
+```
+
+## 目录
+
+| 路径 | 内容 |
+| --- | --- |
+| `app/` | Flutter 界面与 Android Kotlin 平台实现 |
+| `packages/dsh_client/` | DSH Web API 的 Dart 客户端 |
+| `packages/dsh_remote/` | DSH Remote 的 Dart 客户端 |
+| `runtime/` | Linux 运行时打包、引擎补丁与 App 桥接 |
+| `sdk/plugin-kit/` | 原生插件作者工具包；在仓库中使用，未发布到 npm |
+| `examples/plugins/` | 插件示例 |
+| `docs/guide/`、`docs/plugins/` | 用户指南与插件开发文档 |
+| `docs/assets/` | 本页用到的展示图、桌宠动图和社群二维码 |
+| `tooling/` | 工具链、APK 构建与诊断脚本 |
+| `services/`、`site/`、`infra/` | 配套分享服务、网站和部署材料 |
+
+## 参与贡献
+
+问题反馈和改进建议可提交到 [Issues](https://github.com/ccch1mneyyy/dsh-go/issues)。代码、文档和翻译贡献请先看 [CONTRIBUTING.md](CONTRIBUTING.md)。插件作者可以从[插件教程](docs/plugins/README.md)和 [SDK](sdk/plugin-kit/README.md)开始。
+
+安全问题请按 [SECURITY.md](SECURITY.md) 报告，避免在公开 Issue 中提交漏洞细节或凭据。
+
+<a id="community"></a>
+
+## 社区
+
+- **论坛**：[forum.dshtui.com](https://forum.dshtui.com)
+- **QQ 群**：`1132118290`（[点此加群](https://qm.qq.com/q/OEy2RqZnqY)）
+- **微信群**：扫下方二维码，过期请加 QQ 群
+<!-- Telegram：链接待定，拿到后加一行 -->
+
+<p align="center">
+  <a href="https://qm.qq.com/q/OEy2RqZnqY"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/qr-qq-zh-dark.webp"><img src="docs/assets/qr-qq-zh-light.webp" width="300" alt="QQ 群 DSH-Go！！，群号 1132118290"></picture></a>&emsp;&emsp;<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/qr-wechat-zh-dark.webp"><img src="docs/assets/qr-wechat-zh-light.webp" width="300" alt="微信群 DSHGo 2群"></picture>
+</p>
+
+<p align="center">
+  <sub>QQ 群号 <code>1132118290</code>，电脑上可<a href="https://qm.qq.com/q/OEy2RqZnqY">直接点此加群</a>。微信群二维码每周更新，过期请加 QQ 群。</sub>
+</p>
+
+## 友情链接
+
+- **[DSH-TUI](https://dshtui.com/)**：同一作者的作品，面向 DeepSeek Harness 的交互式终端界面。手机上用 DSH Go，电脑上就用它——像素鲸鱼、实时状态、时间回溯，装上即开工（[GitHub](https://github.com/ccch1mneyyy/dsh-TUI)）。
+
+## 授权范围与再发布
+
+代码以 [AGPL-3.0](LICENSE) 开源，欢迎 fork 学习、自用和二次开发。请尊重原作者和项目来源：
+
+- **改造前请提前联系作者**：如需基于本项目进行改造、二次开发或衍生产品发布，请先通过 [Issues](https://github.com/ccch1mneyyy/dsh-go/issues) 或[社区](#community)联系原作者 ccch1mneyyy，说明用途与计划。
+- **fork 请标注主仓库与作者**：基于本仓库改造并发布时，请在仓库说明、应用「关于」页和发布页面清楚标注主仓库 <https://github.com/ccch1mneyyy/dsh-go> 与原作者 [ccch1mneyyy](https://github.com/ccch1mneyyy)，并按适用许可证保留版权、许可及修改声明。
+- **禁止未授权商业化套皮**：不得未经授权将本项目的品牌标识、Deepy、鲸娘等受保护素材用于套皮售卖、收费分发或其他商业产品；不得违反适用许可证，删除应保留的版权与许可声明、闭源分发衍生代码，或冒充原作者、官方版本。
+- **名称与素材另有限制**：DSH Go 的名称、标识，以及 Deepy、鲸娘形象不在 AGPL 授权范围内，以修改版身份发布时请换成自己的名称和素材，见 [ASSETS.md](ASSETS.md)。
+
+**许可说明**：AGPL-3.0 允许符合其条款的修改、再发布和商业使用；上述提前联系及署名位置是作者的协作请求，不是对代码许可证追加的限制。品牌与素材须遵守各自的授权条件；本说明不改变 `sdk/`、`examples/` 及第三方内容的许可。
+
+## 本 fork 的改动
+
+相对上游 [1.0.10](https://github.com/ccch1mneyyy/dsh-go/releases/tag/v1.0.10)，本仓库只有下面这些差别：
+
+| 改动 | 位置 |
+| --- | --- |
+| 包名 `io.github.ouy09103.dsh_go`，可与原版并存 | `app/android/app/build.gradle.kts` |
+| 应用名「DSH Go Root」 | `AndroidManifest.xml`、`AppStrings.kt`、`AppInfo.name` |
+| 手机工具 `shell`（root 执行，经 su） | `phone/PhoneToolCatalog.kt`、`phone/PhoneCore.kt`、`phone/background/RootShell.kt` |
+| 聊天页「启用 root」胶囊 | `app/lib/ui/chat/dock/root_pill.dart` |
+| 设置 › Root 权限页（真 root 通道、rootfs、frida-server） | `root/RootPlugin.kt`、`app/lib/root/root_channel.dart`、`app/lib/ui/settings/root_page.dart` |
+| 应用内更新指向本仓库 | `app/lib/update/update_config.dart` |
+
+`shell` 一直在工具列表里，开关只决定放不放行（上游要求工具集固定，否则 KV cache 全失效）；关着时连命令有没有执行都拿不到。
+
+安装包只提供 **arm64**，需要 Android 8.0（API 26）以上。**装之前先备份**：root 命令不可逆。
 
 ## 许可证与致谢
 
-- 代码来自 [ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)，版权归原作者
-- 许可证见 [LICENSE](LICENSE)，本 fork 遵循同一许可证
-- 本仓库改动仅为上述 `shell` 工具与本文档
-- **非原项目发布，不受原项目支持**
+本项目采用 [AGPL-3.0](LICENSE)；`sdk/` 和 `examples/` 保持 **MIT**。第三方代码和素材以各自声明为准。
+
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：DSH Go 运行和连接的就是它。
+- [DSH-TUI](https://github.com/ccch1mneyyy/dsh-TUI)：吉祥物 Deepy 小鲸鱼和鲸娘来自这里。
+
+Phase 相关代码经作者许可使用。DeepSeek Harness、PiPilot、DS Bot、DSH Remote 及其他第三方组件、素材保留各自的许可证和署名。具体来源和条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+DSH Go 的名称、标识、Deepy 小鲸鱼和鲸娘等形象不在 AGPL 授权范围内，使用条款见 [ASSETS.md](ASSETS.md)。
+
+<sub>远程连接参考了 [ds-harness-remote](https://github.com/liguobao/ds-harness-remote) 的项目和服务器，感谢作者李国宝。</sub>
+
+<br>
+
+<p align="center"><sub>DSH Go 是社区开发的非官方客户端，与 DeepSeek 没有关联，也不代表 DeepSeek。DeepSeek 名称与标识归其所有者所有。</sub></p>

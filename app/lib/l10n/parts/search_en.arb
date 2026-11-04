@@ -107,11 +107,13 @@
   "searchKwPersonalization": "personalization,preferences,style",
   "searchKwInterface": "native,web,web mode,web app,general",
   "searchKwPrivacy": "privacy,data,logs,sharing,statistics",
+  "searchKwRoot": "root,su,superuser,privilege escalation,root shell,rootfs,frida,shell command,terminal",
   "searchKwAbout": "about,version,update,licenses",
   "searchKwPhoneConfirmEntry": "confirmation,phone control,don't ask",
   "searchKwWebCodingView": "coding view,work view,web",
   "searchKwWebCollapse": "work steps,collapse,web",
   "searchKwWebBusySend": "send,queue,while AI works",
   "searchKwPluginsMarket": "plugin market,install plugins,marketplace",
-  "searchKwUsageStats": "statistics,stats,usage data,analytics,telemetry,anonymous,privacy,data"
+  "searchKwUsageStats": "statistics,stats,usage data,analytics,telemetry,anonymous,privacy,data",
+  "searchKwQuickPanel": "swipe,left swipe,shortcuts,gesture,quick panel,quick access"
 }

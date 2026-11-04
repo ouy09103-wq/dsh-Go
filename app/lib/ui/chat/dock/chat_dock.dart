@@ -10,8 +10,6 @@ import '../../../state/goal_dock_state.dart';
 import 'dock_pill.dart';
 import 'goal_bar.dart';
 import 'goal_sheet.dart';
-import '../../../state/phone_state.dart';
-import 'root_pill.dart';
 import 'todo_bar.dart';
 
 /// 输入条上方的停靠区:待办在上、目标在下(官方的顺序:Todo、Goal),再往下
@@ -20,13 +18,13 @@ import 'todo_bar.dart';
 /// 放在输入条那一列里(和横幅、思考胶囊同一列),列表的下沿、底色遮罩
 /// 跟着整列的高度走,不需要另外的插槽。聊天页把两根条分开交给
 /// `DockStack`(dock_stack.dart,可以叠成一摞),这里是不叠的那一列。
-class ChatDock extends ConsumerWidget {
+class ChatDock extends StatelessWidget {
   const ChatDock({super.key, required this.sessionId});
 
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     // Both bars blur the same backdrop and never overlap: one sample.
     return BackdropGroup(
       child: Column(
@@ -35,7 +33,6 @@ class ChatDock extends ConsumerWidget {
         children: [
           TodoDockSlot(sessionId: sessionId),
           GoalDockSlot(sessionId: sessionId),
-          const RootDockSlot(),
         ],
       ),
     );
@@ -70,19 +67,6 @@ class GoalDockSlot extends ConsumerWidget {
     return DockSlot(
       key: const ValueKey('goal'),
       child: goal == null ? null : GoalBar(goal: goal, onTap: () => runGoalActions(context, ref, sessionId)),
-    );
-  }
-}
-
-/// 「启用 root」胶囊的插槽：手机控制就绪时挂上，关着也显示（能点开）。
-class RootDockSlot extends ConsumerWidget {
-  const RootDockSlot({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DockSlot(
-      key: const ValueKey('root'),
-      child: const RootPill(),
     );
   }
 }

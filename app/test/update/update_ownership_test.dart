@@ -23,11 +23,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support.dart';
 
 const _sources = UpdateSources(mirrors: [UpdateMirror.github]);
-const _manifest = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest/download/update.json';
+const _manifest = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest/download/update.json';
 
 String _apkName(String version) => 'dsh-go-$version-arm64.apk';
 String _apkUrl(String version) =>
-    'https://github.com/ccch1mneyyy/dsh-go/releases/download/v$version/${_apkName(version)}';
+    'https://github.com/ouy09103-wq/dsh-Go/releases/download/v$version/${_apkName(version)}';
 
 /// Different bytes per version, so the hashes differ too.
 List<int> _apk(String version) => utf8.encode('PK pretend this is DSH $version for arm64');
@@ -268,7 +268,7 @@ void main() {
       http.routes[_apkUrl('1.2.0')] = fileRoute(_apk('1.2.0'));
       installer.inspection = const ApkInspection(
         valid: true,
-        packageName: 'io.github.ccch1mneyyy.dsh_app',
+        packageName: 'io.github.ouy09103.dsh_go',
         versionName: '1.1.0',
         versionCode: 9,
         signatureMatches: true,
@@ -283,7 +283,7 @@ void main() {
 
       installer.inspection = const ApkInspection(
         valid: true,
-        packageName: 'io.github.ccch1mneyyy.dsh_app',
+        packageName: 'io.github.ouy09103.dsh_go',
         versionName: '1.2.0',
         versionCode: 9,
         signatureMatches: true,

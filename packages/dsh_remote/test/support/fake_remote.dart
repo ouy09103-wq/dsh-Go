@@ -284,8 +284,10 @@ class FakeRemoteServer {
       });
     }
     if (request.method == 'GET' && path == '/api/v1/turn/credentials') {
-      turnRequests.add(request.uri.queryParameters['connection_id'] ?? '');
-      return json(200, {'iceServers': iceServers});
+      final connectionId = request.uri.queryParameters['connection_id'] ?? '';
+      turnRequests.add(connectionId);
+      final servers = await (iceServersForRequest?.call(connectionId) ?? Future.value(iceServers));
+      return json(200, {'iceServers': servers});
     }
     final presenceMatch = RegExp(r'^/api/v1/devices/([^/]+)/presence$').firstMatch(path);
     if (request.method == 'GET' && presenceMatch != null) {
@@ -334,6 +336,9 @@ class FakeRemoteServer {
   /// `GET /api/v1/turn/credentials` answer, and the connection ids asked.
   List<Map<String, Object?>> iceServers = [];
   final List<String> turnRequests = [];
+
+  /// Optional per-request response/gate, allowing concurrent credential fetches.
+  Future<List<Map<String, Object?>>> Function(String connectionId)? iceServersForRequest;
 
   // --- Relay node (`transport.relay.attach`) ---------------------------------
 
@@ -787,6 +792,9 @@ class FakeRemoteHost {
   final List<Map<String, Object?>> openedStreamParams = [];
   Future<Map<String, Object?>> Function(Map<String, Object?>)? transferRead;
 
+  /// Independent top-level workspace upload RPCs (plugin 0.6.2).
+  Future<Object?> Function(String method, Map<String, Object?> params)? workspaceUpload;
+
   /// Responses above this many bytes answer RESPONSE_TOO_LARGE on the
   /// direct path (forces the transfer path).
   int? directResponseLimit;
@@ -1054,6 +1062,10 @@ class FakeRemoteHost {
         if (stallDescribe) return;
         if (describeUnsupported) return reject('METHOD_NOT_FOUND', 'Unknown method.');
         respond({'capabilities': capabilities});
+      case 'workspace.upload.open' || 'workspace.upload.chunk' || 'workspace.upload.commit' || 'workspace.upload.abort':
+        final upload = workspaceUpload;
+        if (upload == null) return reject('FEATURE_NOT_SUPPORTED', 'No workspace upload handler.');
+        respond(await upload(method, params));
       case 'harness.remote.call':
         final endpoint = params['endpoint']! as String;
         if (!harnessRemoteAllowlist.contains(endpoint)) {

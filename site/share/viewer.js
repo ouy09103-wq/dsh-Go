@@ -963,7 +963,7 @@
     }
     if (opts.download !== false) {
       var dl = el('a', 'dv-btn ' + (opts.appLink ? 'dv-secondary' : 'dv-primary'), tr('download'));
-      dl.href = opts.download || 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
+      dl.href = opts.download || 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
       dl.rel = 'noopener';
       dl.target = '_blank';
       actions.appendChild(dl);
@@ -1595,7 +1595,7 @@
       opener(host);
     } catch (e) {
       var dl = el('a', 'dv-btn dv-secondary', tr('download'));
-      dl.href = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
+      dl.href = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
       dl.rel = 'noopener';
       card(host, errorText(e), null, dl);
     }

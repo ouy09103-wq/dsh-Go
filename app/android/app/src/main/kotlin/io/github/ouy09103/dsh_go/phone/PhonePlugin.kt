@@ -1,0 +1,263 @@
+package io.github.ouy09103.dsh_go.phone
+
+import io.github.ouy09103.dsh_go.i18n.AppStrings
+import io.github.ouy09103.dsh_go.R
+import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import io.github.ouy09103.dsh_go.phone.a11y.OverlayPrefs
+import io.github.ouy09103.dsh_go.phone.background.PrivilegedActionGate
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.Executors
+
+/**
+ * Flutter bridge for phone control: MethodChannel `dsh/phone`, EventChannel `dsh/phone/events`.
+ * Anything that may block runs off the main thread.
+ */
+class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler, EventChannel.StreamHandler, PluginRegistry.NewIntentListener {
+    private lateinit var methods: MethodChannel
+    private lateinit var events: EventChannel
+    private lateinit var appContext: Context
+    private lateinit var control: PhoneControl
+    private var activity: ActivityPluginBinding? = null
+    private var sink: ((Map<String, Any?>) -> Unit)? = null
+    private val main = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-phone-plugin").apply { isDaemon = true } }
+    private val controlIo = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-phone-control").apply { isDaemon = true } }
+    @Volatile private var promptOwner = Any()
+    @Volatile private var attached = false
+    private val privilegedActions = PrivilegedActionGate()
+
+    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        appContext = binding.applicationContext
+        control = PhoneControl.get(appContext)
+        promptOwner = Any()
+        attached = true
+        control.background.restoreKeptChannel()
+        methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
+        events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
+    }
+
+    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        attached = false
+        control.background.cancelUnwantedPending()
+        control.prompts.detachOwner(promptOwner)
+        activity?.removeOnNewIntentListener(this)
+        activity = null
+        methods.setMethodCallHandler(null)
+        events.setStreamHandler(null)
+        sink?.let { control.removeSink(it) }
+        sink = null
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding
+        binding.addOnNewIntentListener(this)
+        control.prompts.attachActivity(promptOwner, binding.activity)
+        control.prompts.handleOpenIntent(binding.activity.intent)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
+
+    override fun onDetachedFromActivity() {
+        activity?.removeOnNewIntentListener(this)
+        control.prompts.attachActivity(promptOwner, null)
+        activity = null
+    }
+
+    override fun onNewIntent(intent: Intent): Boolean = attached && control.prompts.handleOpenIntent(intent)
+
+    /** Runs [block] on the plugin thread and answers on the main thread. */
+    private fun async(result: MethodChannel.Result, shortControl: Boolean = false, block: () -> Any?) {
+        (if (shortControl) controlIo else io).execute {
+            val value = try {
+                Result.success(block())
+            } catch (e: Throwable) {
+                Result.failure(e)
+            }
+            main.post {
+                value.fold(
+                    onSuccess = { result.success(it) },
+                    onFailure = { result.error("phone_failed", it.message ?: it.javaClass.simpleName, null) },
+                )
+            }
+        }
+    }
+
+    private fun startActivity(intent: Intent): Boolean {
+        val host = activity?.activity
+        return try {
+            if (host != null) host.startActivity(intent) else appContext.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "status" -> async(result, shortControl = true) { control.status() }
+            "setBackgroundKeep" -> {
+                val selected = call.argument<String>("mode").orEmpty()
+                val enabled = call.argument<Boolean>("enabled") == true
+                val (ticket, failure) = control.background.changeKeep(selected, enabled)
+                if (ticket == null) result.success(control.background.keepFailure(failure!!))
+                else async(result, shortControl = true) { control.background.saveKeep(ticket) }
+            }
+            // A newer choice drops a queued grant: it must not run through whatever is chosen then.
+            "grantSecureSettings" -> {
+                val live = stillWanted(privilegedActions.snapshot())
+                async(result) {
+                    when {
+                        !live() -> cancelledSelection()
+                        control.background.rootGrantSelected() -> control.background.grantRootSecureSettings()
+                        else -> control.grantSecureSettings()
+                    }
+                }
+            }
+            "setEnabled" -> {
+                val enabled = call.argument<Boolean>("enabled") == true
+                if (!enabled) {
+                    privilegedActions.select()
+                    val cleared = control.background.clearKeep()
+                    controlIo.execute { control.background.saveKeep(cleared) }
+                    control.background.cancelRootSelection()
+                }
+                async(result) {
+                    val ok = (!enabled || control.background.preparePhoneEnable()) && control.setEnabled(enabled)
+                    if (ok && !enabled) control.background.setBackgroundMode("off")["ok"] == true else ok
+                }
+            }
+            "openAccessibilitySettings" -> result.success(startActivity(control.accessibilitySettingsIntent()))
+            "openAppDetails" -> result.success(startActivity(control.appDetailsIntent()))
+            "testScreen" -> async(result) { control.testScreen() }
+            "setBackgroundMode" -> {
+                val mode = call.argument<String>("mode") ?: "off"
+                val live = stillWanted(privilegedActions.select())
+                // A mode intent revokes keep before it waits behind any older long operation.
+                control.background.clearKeepForMode(mode)?.let { cleared ->
+                    controlIo.execute { control.background.saveKeep(cleared) }
+                }
+                if (mode != "root") control.background.cancelRootSelection()
+                async(result) { if (live()) control.background.setBackgroundMode(mode, live) else cancelledSelection() }
+            }
+            "requestShizukuPermission" -> {
+                val live = stillWanted(privilegedActions.snapshot())
+                val provider = call.argument<String>("provider")
+                async(result) { live() && control.background.requestShizukuPermission(provider) }
+            }
+            "prepareRoot" -> {
+                val live = stillWanted(privilegedActions.select())
+                async(result) { if (live()) control.background.prepareRoot(live) else cancelledSelection() }
+            }
+            "adbStartPairing" -> async(result) { control.background.adbStartPairing() }
+            "adbPair" -> async(result) {
+                val code = call.argument<String>("code")?.trim().orEmpty()
+                if (code.isEmpty()) mapOf("ok" to false, "reason" to AppStrings.get(appContext, R.string.pairing_enter_code_error)) else control.background.adbPair(code, call.argument<Int>("port"))
+            }
+            "adbConnect" -> {
+                val live = stillWanted(privilegedActions.snapshot())
+                async(result) { control.background.adbConnect(call.argument<Int>("port"), live) }
+            }
+            "getPolicies" -> async(result) { control.policiesMap() }
+            "setPolicies" -> async(result) { control.setPolicies(call.arguments as? Map<*, *>) }
+            "actionLog" -> result.success(control.log.toMaps(call.argument<Int>("limit") ?: 100))
+            // l10n:keep agent stop reason
+            "stopTask" -> result.success(control.stopTask("用户在 App 里停止"))
+            "finishTask" -> finishTask(call, result)
+            "presentPrompt" -> {
+                val owner = promptOwner
+                val request = EnginePhonePrompt.parse(call.arguments as? Map<*, *>)
+                if (!attached) result.success(PhonePrompts.unavailable("stale"))
+                else if (request == null) result.success(PhonePrompts.unavailable("invalid"))
+                else control.prompts.present(request, owner, { attached && promptOwner === owner }) {
+                    if (attached && promptOwner === owner) result.success(it)
+                }
+            }
+            "cancelPrompt" -> {
+                val id = call.argument<String>("requestId")
+                result.success(id != null && id.length in 1..200 && control.prompts.cancel(id))
+            }
+            // 设置 → 手机操控 → 悬浮条: {idleOpacity 0.3–1, autoCollapse}; a showing overlay follows at once.
+            "overlayPrefs" -> result.success(OverlayPrefs.read(appContext).toMap())
+            "setOverlayPrefs" -> result.success(OverlayPrefs.write(appContext, call.arguments as? Map<*, *>).toMap())
+            // 聊天页输入框上方的「启用 root」胶囊：{on: bool}。只影响之后对 shell 的调用。
+            "setRootShell" -> {
+                val on = call.argument<Boolean>("on") ?: false
+                control.setRootShell(on)
+                result.success(true)
+            }
+            else -> result.notImplemented()
+        }
+        if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {
+            control.emitStatus()
+        }
+    }
+
+    private fun cancelledSelection(): Map<String, Any?> =
+        mapOf("ok" to false, "reason" to AppStrings.get(appContext, R.string.background_selection_cancelled))
+
+    /** Whether the UI action that took [ticket] still counts when the worker reaches it. */
+    private fun stillWanted(ticket: Long): () -> Boolean = { attached && privilegedActions.current(ticket) }
+
+    /**
+     * `finishTask {taskId, sessionId?, host?, reopen}`: the linked turn ended. Closes the
+     * overlay; with [reopen] and the app in the background, brings it forward on that conversation
+     * and waits up to 3 seconds to see its real host resumed. Answers also include `notified`
+     * and `current`: closed remains a fact if a successor retires delayed return permission.
+     * `busy` — not closed while a phone call runs (not proof of ownership); `opened` — the app
+     * is on screen now; `launched` — the start adapter returned true, not proof of visibility.
+     */
+    private fun finishTask(call: MethodCall, result: MethodChannel.Result) {
+        val pluginOwner = promptOwner
+        val rawTask = call.argument<Any>("taskId")
+        val taskId = when (rawTask) { is Int -> rawTask.toLong(); is Long -> rawTask; else -> null }?.takeIf { it > 0 }
+        val session = call.argument<String>("sessionId")?.takeIf { it.isNotEmpty() }
+        val host = call.argument<String>("host")
+        val reopen = call.argument<Boolean>("reopen") == true
+        io.execute {
+            if (!attached || promptOwner !== pluginOwner) {
+                main.post { result.success(mapOf("closed" to false, "busy" to false, "opened" to false,
+                    "launched" to false, "notified" to false, "current" to false, "reason" to "stale")) }
+                return@execute
+            }
+            val scope = taskId?.let { runCatching { control.finishTaskScope(it) }.getOrNull() }
+            val closed = scope != null
+            val busy = !closed && control.tasks.callsInFlight > 0
+            val waitingOwner = scope ?: taskId?.let { control.tasks.activeOwner(it) }
+            main.post {
+                PhoneTaskReturn(
+                    current = { attached && promptOwner === pluginOwner && waitingOwner != null && control.tasks.isCurrent(waitingOwner) },
+                    visible = control.prompts::appResumed,
+                    launch = { control.reopen(session, host) },
+                    notify = { taskId != null && control.notificationGate.notifyFinished(taskId, session, host) },
+                    schedule = { delay, block -> main.postDelayed(block, delay) },
+                    clock = SystemClock::elapsedRealtime,
+                ).start(closed, busy, reopen, result::success)
+            }
+        }
+    }
+
+    override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+        sink?.let { control.removeSink(it) }
+        val s: (Map<String, Any?>) -> Unit = { events.success(it) }
+        sink = s
+        control.addSink(s)
+    }
+
+    override fun onCancel(arguments: Any?) {
+        sink?.let { control.removeSink(it) }
+        sink = null
+    }
+
+}

@@ -1,7 +1,11 @@
-# 构建带真 root 能力的 dsh-go APK。
+# 构建带真 root 能力的 DSH Go Root APK（arm64）。
 #
 # 与官方 tooling/build-apk.sh 的差别：构建前先用 tooling/fetch-runtime.sh 把
-# 预编译运行时（rootfs + proot jniLibs）取到 runtime/out，再走官方构建脚本。
+# 预编译运行时（rootfs + proot jniLibs，取自上游 1.0.10 的 release）取到
+# runtime/out，再走官方构建脚本，最后用 tooling/release_assets.py 生成应用内
+# 更新要用的 update.json / SHA256SUMS（并按 release 命名复制 APK）。
+#
+# 包名 io.github.ouy09103.dsh_go，可与原版同时安装；应用名「DSH Go Root」。
 #
 # 需要的 secrets：
 #   ANDROID_KEYSTORE_BASE64   release keystore（base64），没有则用 debug 签名
@@ -14,18 +18,28 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 版本名（如 1.0.8-root）
+        description: 版本名（如 1.0.10-root.1），发布为 tag v<版本>
         required: false
-        default: 1.0.8-root
+        default: 1.0.10-root.1
+      draft:
+        description: 发布为 draft release
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: build-root-apk
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   arm64:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      VERSION: ${{ github.event.inputs.version || '1.0.10-root.1' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,13 +60,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Fetch prebuilt runtime
+      - name: Fetch prebuilt runtime (upstream 1.0.10, revision r15)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
-          bash tooling/fetch-runtime.sh arm64-v8a
+          bash tooling/fetch-runtime.sh arm64-v8a 1.0.10
           ls -la runtime/out/arm64-v8a/assets/runtime
+          head -c 400 runtime/out/arm64-v8a/assets/runtime/manifest.json; echo
 
       - name: Pub get
         working-directory: app
@@ -80,21 +95,35 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
-      - name: Build
-        run: |
-          bash tooling/build-apk.sh -f arm64 --build-name "${{ github.event.inputs.version }}"
+      - name: Build APK
+        run: bash tooling/build-apk.sh -f arm64 --build-name "$VERSION"
 
-      - name: Upload APK
+      - name: Release assets (update.json, SHA256SUMS, renamed APK)
+        run: |
+          python3 tooling/release_assets.py --version "$VERSION" --delta-from 0 --out dist
+          ls -lh dist
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: dsh-go-root-arm64
-          path: app/build/app/outputs/flutter-apk/app-arm64-release.apk
+          path: dist/
           retention-days: 30
 
-      - name: Release
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: root-${{ github.run_number }}
-          name: dsh-go root ${{ github.event.inputs.version }}
-          files: app/build/app/outputs/flutter-apk/app-arm64-release.apk
+          tag_name: v${{ env.VERSION }}
+          name: DSH Go Root ${{ env.VERSION }}
+          draft: ${{ inputs.draft }}
+          prerelease: false
+          files: dist/*
+          body: |
+            DSH Go **Root** ${{ env.VERSION }} —— 个人 fork，含 root `shell` 工具。
+
+            - 包名 `io.github.ouy09103.dsh_go`，可与原版同时安装；应用名「DSH Go Root」
+            - 基于上游 1.0.10，运行时 r15
+            - arm64 · Android 8.0（API 26）以上
+
+            ⚠️ 开启「启用 root」后，模型能以 root 身份执行任意命令，无确认、无预览。
+            先备份，别装在主力机上。风险说明和本 fork 的改动见仓库 README。

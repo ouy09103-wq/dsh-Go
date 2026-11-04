@@ -15,9 +15,9 @@ import 'support.dart';
 
 const _m1 = UpdateMirror(id: 'm1', label: 'mirror-one.example', prefix: 'https://mirror-one.example/');
 const _sources = UpdateSources(mirrors: [UpdateMirror.github, _m1]);
-const _api = 'https://api.github.com/repos/ccch1mneyyy/dsh-go/releases/latest';
-const _manifest = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest/download/update.json';
-const _apkUrl = 'https://github.com/ccch1mneyyy/dsh-go/releases/download/v1.2.0/dsh-go-1.2.0-arm64.apk';
+const _api = 'https://api.github.com/repos/ouy09103-wq/dsh-Go/releases/latest';
+const _manifest = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest/download/update.json';
+const _apkUrl = 'https://github.com/ouy09103-wq/dsh-Go/releases/download/v1.2.0/dsh-go-1.2.0-arm64.apk';
 
 final _apk = utf8.encode('PK pretend this is DSH 1.2.0 for arm64');
 
@@ -127,7 +127,8 @@ void main() {
     });
 
     test('daily auto check: offers once, then waits a day; remembers the endpoint that answered', () async {
-      http.routes[_manifest] = (_, _) => textResponse(jsonEncode(_release()));
+      const m1 = 'https://mirror-one.example/$_manifest';
+      http.routes[m1] = (_, _) => textResponse(jsonEncode(_release()));
       final c = container();
       final controller = await ready(c);
 
@@ -136,7 +137,7 @@ void main() {
       expect(state.check, UpdateCheckPhase.available);
       expect(state.latest!.version.name, '1.2.0');
       expect(state.asset!.name, 'dsh-go-1.2.0-arm64.apk');
-      expect(http.urls, [_api, _manifest]);
+      expect(http.urls, [_manifest, m1]);
 
       now = now.add(const Duration(hours: 5));
       expect(await controller.autoCheckIfDue(), isFalse);
@@ -145,7 +146,7 @@ void main() {
       now = now.add(const Duration(hours: 20));
       http.requests.clear();
       expect(await controller.autoCheckIfDue(), isTrue);
-      expect(http.urls, [_manifest], reason: 'starts where it worked last time');
+      expect(http.urls, [m1], reason: 'starts where it worked last time');
     });
 
     test('switched off: no automatic check', () async {
