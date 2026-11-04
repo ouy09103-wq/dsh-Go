@@ -23,14 +23,12 @@ import kotlin.concurrent.thread
  * - `exec`     → one command through `su -c`: `{command, timeoutMs}`.
  * - `guest`    → the same command inside the bundled Ubuntu rootfs, under real root:
  *                 `{command, timeoutMs}`.
- * - `installFrida` → downloads frida-server for this ABI into /data/local/tmp and starts it:
- *                 `{version?, port?}`. The version defaults to the guest's own `frida` package,
- *                 so the server and the client agree (see [Frida]).
- * - `fridaStatus` → whether frida-server runs, on which port, and which build.
- * - `fridaClientVersion` → the guest's `frida` version, so the page can show both.
- * - `fridaInject` → `{package, script?, version?}`: frida-inject into one app, for when the
- *                 server can't create its VM. Refuses system_server and zygote.
  * - `shellOpen` / `shellWrite` / `shellPoll` / `shellClose` → one persistent root shell.
+ *
+ * There is no frida channel: the tool was removed after frida-server turned out to need an ART
+ * boot image this device's Android build doesn't provide, and the only build that did start
+ * injected an agent into system_server and restarted the phone. Run frida from the guest shell
+ * if you want it; this app doesn't manage it.
  *
  * Everything runs on one worker thread per call; the shell owns its own process.
  */
@@ -78,20 +76,6 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                             "stdout" to "", "stderr" to "rootfs is not unpacked yet")
                     RootExec.run(line, timeout).map()
                 }
-            }
-            "installFrida" -> {
-                val version = call.argument<String>("version")
-                val port = call.argument<Int>("port") ?: DEFAULT_PORT
-                background(result) { Frida.install(context, version, port) }
-            }
-            "fridaStatus" -> background(result) { Frida.status() }
-            "fridaClientVersion" -> background(result) { mapOf("ok" to true, "version" to Frida.clientVersion(context)) }
-            "fridaInject" -> {
-                val pkg = call.argument<String>("package")
-                if (pkg == null) { result.error("badArgs", "package is required", null); return }
-                val script = call.argument<String>("script")
-                val version = call.argument<String>("version")
-                background(result) { Frida.inject(context, pkg, script, version) }
             }
             "shellOpen" -> {
                 val su = RootExec.suPath() ?: run {
@@ -159,6 +143,5 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     companion object {
         const val CHANNEL = "dsh/root"
-        const val DEFAULT_PORT = 27042
     }
 }

@@ -47,7 +47,7 @@ class RootCommandPolicy(
         "uiautomator", "svc ", "setprop", "stop ", "start ", "kill", "pkill", "killall",
         "reboot", "shutdown", "wipe", "fastboot", ">", ">>", "curl ", "wget ", "git clone",
         "pip install", "pip3 install", "npm i", "apt install", "apt-get install", "su ",
-        "sh -c", "eval", "frida", "content ", "run-as",
+        "sh -c", "eval", "content ", "run-as",
     )
 
     /** Directories that belong to the system; read-only unless 系统设置 is lifted. */

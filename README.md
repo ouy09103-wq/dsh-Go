@@ -365,7 +365,7 @@ DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh --dry-run -f all
 | 应用名「DSH Go Root」 | `AndroidManifest.xml`、`AppStrings.kt`、`AppInfo.name` |
 | 手机工具 `shell`（root 执行，经 su） | `phone/PhoneToolCatalog.kt`、`phone/PhoneCore.kt`、`phone/background/RootShell.kt` |
 | 聊天页「启用 root」胶囊 | `app/lib/ui/chat/dock/root_pill.dart` |
-| 设置 › Root 权限页（真 root 通道、rootfs、frida-server） | `root/RootPlugin.kt`、`app/lib/root/root_channel.dart`、`app/lib/ui/settings/root_page.dart` |
+| 设置 › root 模式页（真 root 通道、rootfs） | `root/RootPlugin.kt`、`app/lib/root/root_channel.dart`、`app/lib/ui/settings/root_page.dart` |
 | 应用内更新指向本仓库 | `app/lib/update/update_config.dart` |
 
 `shell` 一直在工具列表里，开关只决定放不放行（上游要求工具集固定，否则 KV cache 全失效）；关着时连命令有没有执行都拿不到。

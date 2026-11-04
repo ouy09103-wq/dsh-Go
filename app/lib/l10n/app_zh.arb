@@ -8740,7 +8740,7 @@
   "searchKwPersonalization": "个性化,偏好,风格,习惯",
   "searchKwInterface": "原生,网页,网页模式,网页版,通用设置",
   "searchKwPrivacy": "隐私,数据,日志,分享,统计",
-  "searchKwRoot": "root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行",
+  "searchKwRoot": "root,su,提权,超级用户,root shell,rootfs,shell 命令,命令行",
   "searchKwAbout": "关于,版本,更新,许可,dsh-go",
   "searchKwPhoneConfirmEntry": "确认方式,手机操控,免确认",
   "searchKwWebCodingView": "代码视图,工作视图,网页版",
