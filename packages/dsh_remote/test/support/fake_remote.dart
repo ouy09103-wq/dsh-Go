@@ -791,6 +791,8 @@ class FakeRemoteHost {
   final List<String> rpcMethods = [];
   final List<Map<String, Object?>> openedStreamParams = [];
   Future<Map<String, Object?>> Function(Map<String, Object?>)? transferRead;
+  /// Holds an open reply after the Host has registered its incoming transfer.
+  Future<void> Function(String transferId)? beforeTransferOpenResponse;
 
   /// Independent top-level workspace upload RPCs (plugin 0.6.2).
   Future<Object?> Function(String method, Map<String, Object?> params)? workspaceUpload;
@@ -1116,6 +1118,8 @@ class FakeRemoteHost {
           'totalChunks': params['totalChunks'],
           'chunks': <List<int>>[],
         };
+        final beforeOpenResponse = beforeTransferOpenResponse;
+        if (beforeOpenResponse != null) await beforeOpenResponse(params['transferId']! as String);
         respond({'opened': true, 'transferId': params['transferId']});
       case 'harness.remote.transfer.chunk':
         final transfer = connection.transfers[params['transferId']]!;

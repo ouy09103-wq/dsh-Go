@@ -28,7 +28,7 @@ FAKE_GH = """#!{python}
 import json, os, shutil, sys
 args = sys.argv[1:]
 open(os.environ["FAKE_LOG"], "a").write(" ".join(args) + "\\n")
-assert args[:1] == ["release"] and args[args.index("--repo") + 1] == "ouy09103-wq/dsh-Go", args
+assert args[:1] == ["release"] and args[args.index("--repo") + 1] == "ccch1mneyyy/dsh-go", args
 if args[1] == "list":
     print(os.environ["FAKE_RELEASES"])
 elif args[1] == "download":

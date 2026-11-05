@@ -18,6 +18,53 @@ const manifest = {
   },
 }
 
+test('newer places: tools, chat actions and turn notes run as the bridge does', async () => {
+  const host = createTestHost({
+    pkg: pkg({
+      v: 1,
+      wants: ['draft'],
+      contributes: {
+        panels: [{ id: 'main', title: '面板', presentation: 'sheet', placement: ['plugin'] }],
+        'composer.tools': [{ id: 'open', label: '打开', panel: 'main' }, { id: 'count', label: '数字' }],
+        'session.actions': [{ id: 'export', label: '导出' }],
+        'turn.note': [{ id: 'cost' }],
+      },
+    }),
+    dir: '/nonexistent',
+  })
+  host.ctx.inject(['dshGo'], (ctx) => {
+    ctx.dshGo.panel('main', { view: { type: 'text', text: 'x' } })
+    ctx.dshGo.on('count', (scope) => ({ toast: scope.draft }))
+    ctx.dshGo.on('export', (scope) => ({ toast: scope.sessionId }))
+    ctx.dshGo.turnNote('cost', (scope, emit) => {
+      emit({ 1: { text: '一二三四五六七八九十一二三四五六七', tone: 'good' }, 2: { text: ' ' }, 3: 'junk' })
+      return () => {}
+    })
+  })
+  const row = host.contributions()
+  assert.deepEqual(row.issues, [])
+  assert.deepEqual(row.contributes['composer.tools'][0].effect, [{ type: 'open', page: 'panel:main' }])
+  assert.equal(row.contributes.panels[0].presentation, 'sheet')
+  assert.deepEqual(row.contributes.panels[0].placement, ['plugin'])
+  assert.deepEqual(row.contributes['turn.note'], [{ id: 'cost', ready: true }])
+  const count = await host.invoke('count', { surface: 'composer.tools', context: { draft: '草稿' } })
+  assert.equal(count.effects[0].text, '草稿')
+  const exported = await host.invoke('export', { surface: 'session.actions', scope: { sessionId: 's1' } })
+  assert.equal(exported.effects[0].text, 's1')
+  const feed = host.subscribe('cost', { sessionId: 's1' })
+  assert.deepEqual(feed.data, { 1: { text: '一二三四五六七八九十一二三四五六', tone: 'good' } })
+  feed.stop()
+})
+
+test('an app without a newer placement gets the panel where it can draw it', () => {
+  const host = createTestHost({
+    pkg: pkg({ v: 1, contributes: { panels: [{ id: 'main', title: '面板', view: undefined, placement: ['plugin'] }] } }),
+    dir: '/nonexistent',
+  })
+  const row = host.contributions({ surfaces: ['panels'] })
+  assert.deepEqual(row.contributes.panels[0].placement, ['session.tab'])
+})
+
 test('ready flags and runtime issues follow registrations', () => {
   const host = createTestHost({ pkg: pkg(manifest), dir: '/nonexistent' })
   let row = host.contributions()

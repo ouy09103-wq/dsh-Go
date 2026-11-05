@@ -231,7 +231,7 @@ class _ComposerStripSlotState extends ConsumerState<ComposerStripSlot> with Widg
     final plugin = ref.read(nativeContributionsProvider).plugin(strip.package);
     final panel = plugin?.panels.where((p) => p.id == strip.panel).firstOrNull;
     if (panel != null) {
-      unawaited(Navigator.of(context).push(NativePanelPage.route(panel: panel, sessionId: widget.sessionId)));
+      unawaited(openNativePanel(context, panel, sessionId: widget.sessionId));
     } else if (strip.tappable) {
       unawaited(
         runNativeTap(

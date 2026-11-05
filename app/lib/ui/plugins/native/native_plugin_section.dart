@@ -3,6 +3,7 @@
 // problems, the last view's size, the last tap's round trip — that opens the
 // problems with their paths. Plugins without a native part get nothing here.
 
+import 'package:dsh_client/dsh_client.dart' show DshGoPanel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +16,7 @@ import '../../common/empty_view.dart';
 import '../../common/list_page_row.dart';
 import '../../shell/page_frame.dart';
 import '../../theme/app_icons.dart';
+import 'native_panel.dart';
 
 /// `3.2 KB`, `860 B`.
 String nativeBytes(int bytes) =>
@@ -31,7 +33,39 @@ IconData _surfaceIcon(NativeSurface surface) => switch (surface) {
   NativeSurface.messageActions => AppIcons.chat,
   NativeSurface.composerStrip => AppIcons.info,
   NativeSurface.panel => AppIcons.panel,
+  NativeSurface.composerTools => AppIcons.add,
+  NativeSurface.sessionActions => AppIcons.more,
+  NativeSurface.turnNote => AppIcons.info,
 };
+
+/// The panels [package] asked to show on its own detail page.
+class NativePluginPanels extends ConsumerWidget {
+  const NativePluginPanels({super.key, required this.package});
+
+  final String package;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(nativeSurfaceOnProvider((package, NativeSurface.panel)))) return const SizedBox.shrink();
+    final panels = ref.watch(
+      nativeContributionsProvider.select(
+        (c) => c.plugin(package)?.panels.where((p) => p.placement.contains(DshGoPanel.pluginPage)).toList(),
+      ),
+    );
+    if (panels == null || panels.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final panel in panels)
+          Padding(
+            key: ValueKey('plugin-page-panel|$package|${panel.id}'),
+            padding: const EdgeInsets.only(top: 12),
+            child: NativePanelView(panel: panel),
+          ),
+      ],
+    );
+  }
+}
 
 /// The rows in the plugin's sheet; nothing for a plugin without a native
 /// part.

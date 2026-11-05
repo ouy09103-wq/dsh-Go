@@ -1,6 +1,6 @@
 # 手机操控的悬浮条（小球 · 胶囊 · 卡片）
 
-DSH 用无障碍服务操作手机时，浮在其他应用上面的控制条。代码在 `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go/phone/a11y/`：`ControlOverlay.kt`（窗口、确认卡、交还卡、形态之间的编排）、`OverlayCapsule.kt`（胶囊和卡片）、`OverlayBall.kt`（小球）、`OverlayLook.kt`（颜色、图形、标记）、`OverlayModel.kt` 和 `FoldClock.kt`（纯 Kotlin 的状态与尺寸，JVM 单测覆盖）。
+DSH 用无障碍服务操作手机时，浮在其他应用上面的控制条。代码在 `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/a11y/`：`ControlOverlay.kt`（窗口、确认卡、交还卡、形态之间的编排）、`OverlayCapsule.kt`（胶囊和卡片）、`OverlayBall.kt`（小球）、`OverlayLook.kt`（颜色、图形、标记）、`OverlayModel.kt` 和 `FoldClock.kt`（纯 Kotlin 的状态与尺寸，JVM 单测覆盖）。
 
 ## 0. 结论
 

@@ -30,7 +30,7 @@ dsh-app/
         engine/                引擎状态与日志
         web/                   官方 DSH Web 的 WebView 兜底
         remote/                远程
-    android/app/src/main/kotlin/io/github/ouy09103/dsh_go/
+    android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/
       MainActivity.kt
       runtime/                 RuntimeInstaller / DshProcess / DshService / RuntimePlugin
   packages/dsh_client/         纯 Dart 的 DSH Web API 客户端

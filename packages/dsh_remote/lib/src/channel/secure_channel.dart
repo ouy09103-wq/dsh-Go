@@ -105,6 +105,8 @@ class SecureChannel {
 
   Future<void> _handshake(Duration timeout) async {
     final done = _handshakeDone = Completer<void>();
+    // listen may synchronously replay closure before the awaited send starts.
+    done.future.ignore();
     _transport.listen(onData: _onData, onHandshake: _onHandshakeMessage, onClosed: _onTransportClosed);
     try {
       await _transport.sendHandshake(1, _noise.writeHandshake());
@@ -232,8 +234,12 @@ class SecureChannel {
     _onClosed?.call(reason);
   }
 
-  Future<void> close() async {
+  /// Closes the channel before notifying receivers, retaining an optional
+  /// local protocol failure instead of reporting it as a client shutdown.
+  Future<void> close({SecureChannelClosed? reason}) async {
     if (_closed) return;
-    _fail(const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false));
+    _fail(
+      reason ?? const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false),
+    );
   }
 }

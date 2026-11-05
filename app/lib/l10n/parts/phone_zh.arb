@@ -74,7 +74,6 @@
   "phoneToolIntent": "系统动作",
   "phoneToolNotify": "发通知",
   "phoneToolClipboard": "剪贴板",
-  "phoneToolShell": "root 命令",
   "phoneToolAction": "操作",
   "phoneDecisionContinued": "你点了继续",
   "phoneDecisionDone": "已执行",
@@ -663,6 +662,7 @@
   "phoneDndManualConnect": "按端口连接",
   "phoneDndConnectPortLabel": "连接端口",
   "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
+  "phoneToolShell": "root 命令",
   "phoneToolFrida": "Frida",
   "@phoneToolFrida": {
     "description": "Action log label for the frida tool."

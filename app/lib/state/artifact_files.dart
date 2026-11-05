@@ -145,18 +145,18 @@ class ArtifactFiles {
     // temporary directory, including cleanup after a failed read.
     final staging = await dir.createTemp('.part-');
     final part = File('${staging.path}/${_safeName(artifact.name)}');
-    final sink = part.openWrite();
     var received = 0;
     try {
+      final sink = await part.open(mode: FileMode.write);
       try {
         await client.readFile(
           sessionId,
           artifact.path,
           maxBytes: maxBytes,
-          onChunk: (chunk) {
+          onChunk: (chunk) async {
             received += chunk.length;
             if (received > maxBytes) throw const ArtifactError('workspace-file/too-large');
-            sink.add(chunk);
+            await sink.writeFrom(chunk);
           },
           onProgress: onProgress == null
               ? null

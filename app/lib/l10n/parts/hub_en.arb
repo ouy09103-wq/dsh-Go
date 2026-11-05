@@ -131,7 +131,6 @@
   "hubPersonalizationReplies": "Replies",
   "hubPersonalizationWorkStyle": "Working style",
   "hubPrivacy": "Privacy and sharing",
-  "hubRootAccess": "Root mode",
   "hubPrivacySharing": "Sharing",
   "hubInterfaceHome": "Home",
   "hubInterfaceWebHint": "DSH's own web app",
@@ -182,5 +181,6 @@
   "hubQuickPanelSwipe": "Open with a left swipe",
   "hubQuickPanelSwipeHint": "Swipe right to left over the chat. Code blocks, tables and other content that scrolls sideways aren’t affected.",
   "hubQuickPanelItems": "What it lists",
-  "hubQuickPanelItemsNone": "Nothing chosen: a left swipe won't open it"
+  "hubQuickPanelItemsNone": "Nothing chosen: a left swipe won't open it",
+  "hubRootAccess": "Root mode"
 }

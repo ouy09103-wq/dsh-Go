@@ -263,16 +263,24 @@
 
   function num(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ? Math.round(v) : null; }
 
+  // Keep the UTF-16 budget without cutting a valid surrogate pair.
+  function textPrefix(v, end) {
+    var last = v.charCodeAt(end - 1);
+    var next = v.charCodeAt(end);
+    if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
+    return v.slice(0, end);
+  }
+
   function str(v, max) {
     if (typeof v !== 'string' || !v) return null;
-    return v.length <= max ? v : v.slice(0, max) + '…';
+    return v.length <= max ? v : textPrefix(v, max) + '…';
   }
 
   function line(v, max) {
     if (typeof v !== 'string') return null;
     var t = v.replace(/\s+/g, ' ').trim();
     if (!t) return null;
-    return t.length <= max ? t : t.slice(0, max - 1) + '…';
+    return t.length <= max ? t : textPrefix(t, max - 1) + '…';
   }
 
   function readEntry(e) {
@@ -963,7 +971,7 @@
     }
     if (opts.download !== false) {
       var dl = el('a', 'dv-btn ' + (opts.appLink ? 'dv-secondary' : 'dv-primary'), tr('download'));
-      dl.href = opts.download || 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
+      dl.href = opts.download || 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
       dl.rel = 'noopener';
       dl.target = '_blank';
       actions.appendChild(dl);
@@ -1492,7 +1500,7 @@
 
 
   function fileName(title) {
-    var base = String(title || tr('chat')).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 40) || tr('chat');
+    var base = textPrefix(String(title || tr('chat')).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim(), 40) || tr('chat');
     return base + '.dshgo';
   }
 
@@ -1595,7 +1603,7 @@
       opener(host);
     } catch (e) {
       var dl = el('a', 'dv-btn dv-secondary', tr('download'));
-      dl.href = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest';
+      dl.href = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest';
       dl.rel = 'noopener';
       card(host, errorText(e), null, dl);
     }

@@ -28,7 +28,7 @@ class NativeSurfaceKey {
 
   final String package;
 
-  /// [NativeSurface.composerStrip] or [NativeSurface.panel].
+  /// [NativeSurface.composerStrip], [NativeSurface.panel] or [NativeSurface.turnNote].
   final NativeSurface surface;
   final String id;
   final DshGoScope scope;
@@ -54,6 +54,33 @@ class NativeSurfaceKey {
   @override
   String toString() => 'NativeSurfaceKey($package/$id, $scope)';
 }
+
+/// The plugins' note for one turn (`turn.note`), for its footnote; null without one. A
+/// conversation with no such plugin subscribes to nothing.
+final nativeTurnNoteProvider = Provider.autoDispose.family<String?, (String, int)>((ref, key) {
+  final (sessionId, turn) = key;
+  final plugins = ref.watch(nativeContributionsProvider).plugins;
+  final notes = <String>[];
+  for (final p in plugins) {
+    if (notes.length >= NativeLimits.turnNotesShown) break;
+    if (!ref.watch(nativeSurfaceOnProvider((p.package, NativeSurface.turnNote)))) continue;
+    for (final id in p.turnNotes) {
+      final data = ref.watch(
+        nativeSurfaceProvider(
+          NativeSurfaceKey(
+            package: p.package,
+            surface: NativeSurface.turnNote,
+            id: id,
+            scope: DshGoScope(sessionId: sessionId),
+          ),
+        ).select((s) => s.data),
+      );
+      final note = data is Map ? data['$turn'] : null;
+      if (note case {'text': final String text} when text.isNotEmpty) notes.add(text);
+    }
+  }
+  return notes.isEmpty ? null : notes.take(NativeLimits.turnNotesShown).join(' · ');
+});
 
 /// What a surface shows right now.
 @immutable
@@ -137,9 +164,11 @@ class NativeSurfaceController extends Notifier<NativeSurfaceState> {
       nativeContributionsProvider.select((contributions) {
         final plugin = contributions.plugin(key.package);
         if (plugin == null || !plugin.native) return false;
-        return _panel
-            ? plugin.panels.any((panel) => panel.id == key.id)
-            : plugin.strips.any((strip) => strip.id == key.id);
+        return switch (key.surface) {
+          NativeSurface.panel => plugin.panels.any((panel) => panel.id == key.id),
+          NativeSurface.turnNote => plugin.turnNotes.contains(key.id),
+          _ => plugin.strips.any((strip) => strip.id == key.id),
+        };
       }),
     );
     if (known && !available) {

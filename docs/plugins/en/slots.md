@@ -73,6 +73,7 @@ export function apply(ctx) {
 | `on(id, handler)` | Taps on capsules, menu items, the strip. `handler(scope, event)` returns effects; slow work returns a deferred result ([Actions and effects](actions.md)) |
 | `strip(id, dataFn)` | Strip content: `dataFn(scope, emit, caps)` calls `emit({ text, icon?, tone? })` and returns a cancel function |
 | `panel(id, { view, data?, actions? })` | A panel: `view` is a view or `(scope, caps) => view`; `data(scope, emit, caps)` pushes data; `actions` handle taps in the view |
+| `turnNote(id, dataFn)` | Turn notes: `dataFn(scope, emit, caps)` calls `emit({ [turn]: { text, tone? } })` and returns a cancel function. See [Newer places](#newer-places) |
 | `refresh(id, scope?)` | The view's structure changed: the app fetches it again |
 
 **Callback arguments**
@@ -105,7 +106,41 @@ The bridge contains throws, 3 s timeouts and malformed returns and counts a viol
 | `features` | All features | empty |
 | `chat.panel` | The chat page's Plugins sheet: the last capsule above the composer opens it, native panels first by plugin name, the web plugins' chat-page parts after them (see [Web panels](web-panels.md#the-chat-pages-plugins-sheet)) | with `sessionId` |
 
+| `plugin` | The plugin's detail page, below its settings and switches. Needs a newer app; an older app shows a panel placed only here in chat details | empty |
+
+**How it opens:** with `"presentation": "sheet"`, the strip, `open: "panel:<id>"` and `composer.tools` open it as a sheet without leaving the page. The default pushes a page. Older apps ignore the field and push a page.
+
 A panel may sit in several places; tell them apart by `scope.sessionId` (both `session.tab` and `chat.panel` carry one). The Plugins capsule shows only while the conversation has something for the sheet, outside the eight capsules.
+
+## Newer places
+
+These need a newer app. Check with `hasSurface(caps, 'composer.tools')`. Where the app lacks one it doesn't show, and everything else carries on.
+
+| Slot | Place | Entry fields | Per plugin | Text | Tap |
+|---|---|---|---|---|---|
+| `composer.tools` | The composer's plus panel, on the attachment tiles' grid | `id`, `label`, `icon?`, `effect?`, `panel?` | 2 (the panel shows at most 8) | `label` 8 | `panel` or `effect` runs in the app; with neither, invoke `on(id)`. Write `panel` or `effect`, not both |
+| `session.actions` | An action row in the side panel's Info, with the plugin's name on the right | `id`, `label`, `icon?`, `effect?` | 2 | `label` 12 | As capsules; `scope` has `sessionId` |
+| `turn.note` | The end of each turn's footnote | `id` | 1 (a turn shows at most 2 plugins) | 16 each | Not tappable; tapping the footnote still opens the trajectory |
+
+```jsonc
+"contributes": {
+  "panels": [{ "id": "stickers", "title": "Stickers", "placement": ["chat.panel"], "presentation": "sheet" }],
+  "composer.tools": [{ "id": "open-stickers", "label": "Stickers", "icon": "image", "panel": "stickers" }],
+  "session.actions": [{ "id": "export", "label": "Export notes", "icon": "archive" }],
+  "turn.note": [{ "id": "cost" }]
+}
+```
+
+**Turn notes** come from `turnNote(id, dataFn)` in the host half. There is one subscription per chat, and each push carries every turn to show in it, keyed by turn number:
+
+```js
+ctx.dshGo.turnNote('cost', (scope, emit) => watchCosts(scope.sessionId, (costs) =>
+  emit(Object.fromEntries(costs.map((c) => [c.turn, { text: `¥${c.yuan.toFixed(2)}` }])))))
+```
+
+- At most 64 turns per push, keeping the newest; text over 16 characters is cut; malformed entries are dropped.
+- When the footnote doesn't fit, the note goes first: duration, steps and cost come before it.
+- A plugin that doesn't declare `turn.note` creates no subscription.
 
 ## Static panels
 

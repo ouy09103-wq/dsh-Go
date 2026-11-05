@@ -121,7 +121,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                     when {
                         !live() -> cancelledSelection()
                         control.background.rootGrantSelected() -> control.background.grantRootSecureSettings()
-                        else -> control.grantSecureSettings()
+                        else -> control.grantSecureSettings(live)
                     }
                 }
             }
@@ -171,6 +171,21 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             }
             "getPolicies" -> async(result) { control.policiesMap() }
             "setPolicies" -> async(result) { control.setPolicies(call.arguments as? Map<*, *>) }
+
+            // 聊天页 root 胶囊：{on: bool}。只影响之后对 shell 的调用。
+            "setRootShell" -> {
+                val on = call.argument<Boolean>("on") ?: false
+                control.setRootShell(on)
+                result.success(true)
+            }
+            "setRootShellStrict" -> {
+                val on = call.argument<Boolean>("on") ?: false
+                control.setRootShellStrict(on)
+                result.success(true)
+            }
+            // 聊天页「Frida 已启用」胶囊的点击：装/启一次，或停掉。
+            "startFrida" -> async(result) { control.startFridaNow() }
+            "stopFrida" -> async(result) { control.stopFridaNow() }
             "actionLog" -> result.success(control.log.toMaps(call.argument<Int>("limit") ?: 100))
             // l10n:keep agent stop reason
             "stopTask" -> result.success(control.stopTask("用户在 App 里停止"))
@@ -191,20 +206,6 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             // 设置 → 手机操控 → 悬浮条: {idleOpacity 0.3–1, autoCollapse}; a showing overlay follows at once.
             "overlayPrefs" -> result.success(OverlayPrefs.read(appContext).toMap())
             "setOverlayPrefs" -> result.success(OverlayPrefs.write(appContext, call.arguments as? Map<*, *>).toMap())
-            // 聊天页输入框上方的「启用 root」胶囊：{on: bool}。只影响之后对 shell 的调用。
-            // 聊天页「Frida 已启用」胶囊的点击：装/启一次。
-            "startFrida" -> async(result) { control.startFridaNow() }
-            "stopFrida" -> async(result) { control.stopFridaNow() }
-            "setRootShellStrict" -> {
-                val on = call.argument<Boolean>("on") ?: false
-                control.setRootShellStrict(on)
-                result.success(true)
-            }
-            "setRootShell" -> {
-                val on = call.argument<Boolean>("on") ?: false
-                control.setRootShell(on)
-                result.success(true)
-            }
             else -> result.notImplemented()
         }
         if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {

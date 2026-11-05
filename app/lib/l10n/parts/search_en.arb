@@ -4,6 +4,7 @@
   "searchNeedsPhoneControl": "Available once phone control is on",
   "searchNeedsNativeUi": "Available in the native interface",
   "searchNeedsEngineField": "Available when the host has it",
+  "searchNeedsAnimations": "Available with animations on",
   "searchNeedsChat": "Available with a chat open",
   "searchKwTheme": "appearance,colors,colours,accent,icons",
   "searchKwPets": "pet,pets,companion,whale,overlay",
@@ -62,6 +63,7 @@
   "searchKwPetDisplayWhen": "pet display,when to show",
   "searchKwBlur": "blur,glass,frosted",
   "searchKwAnimations": "animation,motion,reduce motion",
+  "searchKwFluidMotion": "fluid,spring,bounce,glow,smooth",
   "searchKwNotifyEnabled": "notifications on,turn off notifications",
   "searchKwNotifyDone": "reply done,finished",
   "searchKwNotifyFailed": "error,failed,stopped",
@@ -107,7 +109,6 @@
   "searchKwPersonalization": "personalization,preferences,style",
   "searchKwInterface": "native,web,web mode,web app,general",
   "searchKwPrivacy": "privacy,data,logs,sharing,statistics",
-  "searchKwRoot": "root,su,superuser,privilege escalation,root shell,rootfs,frida,shell command,terminal",
   "searchKwAbout": "about,version,update,licenses",
   "searchKwPhoneConfirmEntry": "confirmation,phone control,don't ask",
   "searchKwWebCodingView": "coding view,work view,web",
@@ -115,5 +116,6 @@
   "searchKwWebBusySend": "send,queue,while AI works",
   "searchKwPluginsMarket": "plugin market,install plugins,marketplace",
   "searchKwUsageStats": "statistics,stats,usage data,analytics,telemetry,anonymous,privacy,data",
-  "searchKwQuickPanel": "swipe,left swipe,shortcuts,gesture,quick panel,quick access"
+  "searchKwQuickPanel": "swipe,left swipe,shortcuts,gesture,quick panel,quick access",
+  "searchKwRoot": "root,su,superuser,privilege escalation,root shell,rootfs,frida,shell command,terminal"
 }

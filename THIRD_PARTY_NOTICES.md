@@ -18,7 +18,7 @@
 | 许可 | 经作者许可使用 |
 | 用途 | 手机操控：无障碍读屏与操作、控制浮层，以及「不打扰模式」的特权虚拟屏 |
 
-上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go/phone/`。
+上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/`。
 
 | 本仓库文件 | 上游来源 |
 |---|---|
@@ -156,7 +156,7 @@ DS Bot 的 NOTICE 原文附在文末。
 | 版权人 | Copyright (c) 2026 qiannianhuanxiang |
 | 许可 | MIT |
 | 用途 | 不打扰模式特权进程的 `app_process` 入口 |
-| 文件 | `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go/phone/background/PrivilegedDisplayEntry.kt` |
+| 文件 | `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/background/PrivilegedDisplayEntry.kt` |
 
 ### discourse_docker（MIT）
 

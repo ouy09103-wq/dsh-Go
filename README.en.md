@@ -1,14 +1,14 @@
-> ## ⚠️ This is a modified fork of the original project
+> ## ⚠️ This is a modified copy (a personal fork)
 >
-> This repository is a personal fork of DSH Go that adds a **root-level `shell` tool**: the model can run arbitrary commands as root, **with no confirmation and no preview**.
+> This repository is a personal fork. It adds a **root-level `shell` tool** on top of upstream DSH Go: the model can run arbitrary commands as root, **with no confirmation and no preview**.
 >
-> **It can brick your device, destroy data, expose every app's private storage, get accounts banned and void your warranty.**
+> **It can brick your phone, lose your data permanently, expose your privacy, get your account banned, or void your warranty.**
 >
-> **Use it for testing and learning only. Do not install it on the phone you depend on.**
+> **For testing and study only. Do not install it on a phone that holds data you care about, or on your only phone.**
 >
-> The package name is now `io.github.ouy09103.dsh_go`, so it **installs alongside the original**; the app shows as "DSH Go Root".
+> The package name is `io.github.ouy09103.dsh_go`, so it installs **alongside** the original.
 >
-> 👉 **The original project: [ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)** (everything below is the original's)
+> 👉 **Upstream: [ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)** (everything below comes from upstream)
 
 <p align="center">
   <a href="README.md">简体中文</a> · <b>English</b>
@@ -354,23 +354,6 @@ The code is open source under [AGPL-3.0](LICENSE), and forking it to study, self
 - **The name and assets are separate.** The DSH Go name and logo, and the Deepy and Whale girl mascots, are not covered by AGPL-3.0. Ship a modified build under your own name and assets; see [ASSETS.md](ASSETS.md).
 
 **License clarification:** AGPL-3.0 permits modification, redistribution and commercial use subject to its terms. Advance contact and the requested credit locations above are collaboration requests from the author, not additional restrictions on the code license. Brand and asset use remains subject to their own terms; this notice does not change the licenses of `sdk/`, `examples/` or third-party content.
-
-## What this fork changes
-
-Compared with upstream [1.0.10](https://github.com/ccch1mneyyy/dsh-go/releases/tag/v1.0.10), only these differ:
-
-| Change | Where |
-| --- | --- |
-| Package `io.github.ouy09103.dsh_go`, installs alongside the original | `app/android/app/build.gradle.kts` |
-| App name "DSH Go Root" | `AndroidManifest.xml`, `AppStrings.kt`, `AppInfo.name` |
-| The `shell` phone tool (root, through su) | `phone/PhoneToolCatalog.kt`, `phone/PhoneCore.kt`, `phone/background/RootShell.kt` |
-| The 「Enable root」 pill above the composer | `app/lib/ui/chat/dock/root_pill.dart` |
-| Settings › Root access page (real root channel, rootfs, frida-server) | `root/RootPlugin.kt`, `app/lib/root/root_channel.dart`, `app/lib/ui/settings/root_page.dart` |
-| In-app updates point at this repository | `app/lib/update/update_config.dart` |
-
-`shell` always sits in the tool list; the switch only decides whether it runs (upstream requires a fixed tool set or every KV cache entry is invalidated). While it is off, not even whether a command ran comes back.
-
-Builds are **arm64 only** and need Android 8.0 (API 26) or later. **Back up first**: root commands do not undo.
 
 ## License and acknowledgments
 

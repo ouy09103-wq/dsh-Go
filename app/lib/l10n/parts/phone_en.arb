@@ -74,7 +74,6 @@
   "phoneToolIntent": "System action",
   "phoneToolNotify": "Send notification",
   "phoneToolClipboard": "Clipboard",
-  "phoneToolShell": "Root command",
   "phoneToolAction": "Action",
   "phoneDecisionContinued": "You continued",
   "phoneDecisionDone": "Executed",
@@ -448,6 +447,7 @@
   "phoneDndManualConnect": "Connect by port",
   "phoneDndConnectPortLabel": "Connection port",
   "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.",
+  "phoneToolShell": "Root command",
   "phoneToolFrida": "Frida",
   "@phoneToolFrida": {
     "description": "Action log label for the frida tool."

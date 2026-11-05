@@ -99,6 +99,20 @@ App                                   dsh-go-bridge（宿主）                 
 | `placement` | panels | `"session.tab"`（对话详情页页签，scope 带 `sessionId`）、`"features"`（全部功能，scope 为空）、`"chat.panel"`（聊天页面板，scope 带 `sessionId`）。缺省 `["session.tab"]`。重复值去重，不认识的值丢弃并记 `invalid-field` |
 | `view` | panels | 静态视图文件，相对包目录的 `.json`，≤ 32 KiB。宿主半侧用 `panel(id)` 注册了视图时以注册的为准 |
 
+### 1.2.1 较新的 surface 与位置
+
+v1 内新增，规则和取舍见 [plugin-platform.md](plugin-platform.md) §2、§3。
+
+| surface | 原生位置 | 条目字段 | 每插件上限 | 文字上限 |
+|---|---|---|---|---|
+| `composer.tools` | 加号面板 | `id`、`label`（必填）、`icon`、`effect`、`panel`、`requires`。`panel` 是打开本插件面板的简写，和 `effect` 互斥 | 2 | `label` 8 |
+| `session.actions` | 右侧栏「信息」 | `id`、`label`（必填）、`icon`、`effect`、`requires` | 2 | `label` 12 |
+| `turn.note` | 回合脚注 | `id` | 1 | 每段 16 |
+
+面板另有 `placement: "plugin"`（协商：App 的 `surfaces` 没有列出时，只放这里的面板退回 `session.tab`）和 `presentation: "page" | "sheet"`。
+
+`turn.note` 的数据走 §4.3 的流，`scope` 必须带 `sessionId`，否则 `end(not-found)`。数据是 `{ <回合序号>: { text, tone? } }`，桥接逐条清洗，最多保留最新的 `turnNotesPerFeed`（64）个。宿主注册用 `ctx.dshGo.turnNote(id, dataFn)`。
+
 ### 1.3 校验规则
 
 - **逐项校验**：每个条目独立判定，出错的条目丢弃，其余照常；问题记到插件的 `issues`（§3.3）。

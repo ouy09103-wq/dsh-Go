@@ -13,6 +13,7 @@
 // Without BETA_SECRET everything here is 404 (apart from that redirect).
 
 import type { Env } from './env';
+import { readCapped } from './api';
 import { channelAuthorized, grantActive, linkAuthorized, lookupKey, signLink } from './beta-auth';
 import { guard } from './beta-guard';
 import { PAGE_SCRIPT, asLang, lockPage, pageResponse, pickLang, releaseCard } from './download-page';
@@ -134,7 +135,10 @@ function toBuild(m: Manifest): Build | null {
 // ── Routes ───────────────────────────────────────────────────────────────
 
 async function readBody(request: Request): Promise<{ key?: unknown; lang?: unknown }> {
-  const text = await request.text().catch(() => '');
+  // A 1024-code-unit UTF-8 body fits below this bound, including its optional BOM.
+  const bytes = await readCapped(request, 4096).catch(() => null);
+  if (!bytes) return {};
+  const text = new TextDecoder().decode(bytes);
   if (text.length > 1024) return {};
   try {
     const body = JSON.parse(text) as unknown;

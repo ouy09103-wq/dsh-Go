@@ -279,10 +279,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             return false
         }
         return try {
+            PhoneGuest.writeFiles(rootfs)
             val ep = bridge.start(withTcp = prefs.getBoolean(K_TCP_FALLBACK, false))
-            // The overlay carries the token (as the relay child's environment), the config file
-            // only the socket name: a token on disk would be readable by everything in the guest.
-            PhoneGuest.writeFiles(rootfs, ep.token)
             PhoneGuest.writeConfig(rootfs, ep)
             registerScreenOff()
             tasks.clearStop()
@@ -323,11 +321,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         logger("[dsh-app] phone control: DSH did not reach the unix socket; adding the loopback fallback")
         try {
             val next = bridge.addTcp() ?: return
-            rootfs?.let {
-                PhoneGuest.writeConfig(it, next)
-                // The overlay's args point at the config, but keep the token in step with it.
-                PhoneGuest.writeFiles(it, next.token)
-            }
+            rootfs?.let { PhoneGuest.writeConfig(it, next) }
             prefs.edit().putBoolean(K_TCP_FALLBACK, true).apply()
         } catch (e: Exception) {
             logger("[dsh-app] phone control: loopback fallback failed: ${e.message}")
@@ -542,21 +536,27 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      * self-ADB. Shizuku without its own permission asks for that first (`pending`) and grants once
      * the person allows. Blocks; the plugin thread.
      */
-    fun grantSecureSettings(): Map<String, Any?> = when (val path = background.grantPath(A11yKeeper.granted(app))) {
-        SecureSettingsGrant.GRANTED -> mapOf("ok" to true)
-        SecureSettingsGrant.SHIZUKU, SecureSettingsGrant.ADB -> {
-            background.grantSecureSettings(path)
-            val ok = A11yKeeper.granted(app)
-            if (ok) ticker.execute(::keep)
-            emitStatus()
-            val failed = if (path == SecureSettingsGrant.ADB) R.string.background_adb_disconnected else R.string.a11y_keeper_grant_failed
-            mapOf("ok" to ok, "reason" to if (ok) null else AppStrings.get(app, failed))
+    fun grantSecureSettings(mayStart: () -> Boolean): Map<String, Any?> {
+        if (!mayStart()) return mapOf("ok" to false,
+            "reason" to AppStrings.get(app, R.string.background_selection_cancelled))
+        return when (val path = background.grantPath(A11yKeeper.granted(app))) {
+            SecureSettingsGrant.GRANTED -> mapOf("ok" to true)
+            SecureSettingsGrant.SHIZUKU, SecureSettingsGrant.ADB -> {
+                background.grantSecureSettings(path, mayStart)
+                val ok = A11yKeeper.granted(app)
+                if (ok) ticker.execute(::keep)
+                emitStatus()
+                val failed = if (path == SecureSettingsGrant.ADB) R.string.background_adb_disconnected else R.string.a11y_keeper_grant_failed
+                mapOf("ok" to ok, "reason" to if (ok) null else AppStrings.get(app, failed))
+            }
+            SecureSettingsGrant.SHIZUKU_PERMISSION -> {
+                // Permission may arrive after a new mode/off intent. Keep the original UI lease
+                // through both the manager callback and this worker's queue.
+                val asked = background.requestShizukuPermission { ticker.execute { grantSecureSettings(mayStart) } }
+                mapOf("ok" to false, "pending" to asked, "reason" to if (asked) null else AppStrings.get(app, R.string.background_shizuku_permission))
+            }
+            else -> mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.a11y_keeper_needs_setup))
         }
-        SecureSettingsGrant.SHIZUKU_PERMISSION -> {
-            val asked = background.requestShizukuPermission { ticker.execute { grantSecureSettings() } }
-            mapOf("ok" to false, "pending" to asked, "reason" to if (asked) null else AppStrings.get(app, R.string.background_shizuku_permission))
-        }
-        else -> mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.a11y_keeper_needs_setup))
     }
 
     private fun keep() {
@@ -613,40 +613,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     }
 
-    /**
-     * 低频重读 frida-server 的状态（最多每 [FRIDA_REFRESH_MS] 一次）。
-     *
-     * 只在 root 模式开着时读：关着时没有 su 可问，问了就是弹授权框。
-     * 读失败保留上一次的快照，而不是报「没在跑」——su 超时说明不了 frida 的事。
-     */
-    private fun refreshFrida() {
-        if (!rootShellEnabled()) {
-            if (fridaCache.isNotEmpty()) fridaCache = emptyMap()
-            return
-        }
-        val now = SystemClock.elapsedRealtime()
-        if (now - fridaCheckedAt < FRIDA_REFRESH_MS) return
-        fridaCheckedAt = now
-        val snapshot = runCatching { Frida.status(app) }.getOrNull() ?: return
-        if (snapshot["ok"] == true) fridaCache = snapshot
-    }
-
-    /** 胶囊的点击（关闭）：停掉 server，并立刻刷新快照。 */
-    fun stopFridaNow(): Boolean {
-        runCatching { Frida.stop() }
-        fridaCache = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
-        emitStatus()
-        return true
-    }
-
-    /** 胶囊的点击：现在就装/启一次，并立刻刷新快照。 */
-    fun startFridaNow(): Boolean {
-        val result = runCatching { Frida.install(app, Frida.DEFAULT_PORT) }.getOrNull() ?: return false
-        if (result["ok"] == true) fridaCache = runCatching { Frida.status(app) }.getOrDefault(fridaCache)
-        emitStatus()
-        return result["ok"] == true
-    }
-
     // ── ControlListener (the overlay's 暂停 / 停止 / 插话, the service's own stops) ──
 
     override fun onPauseChanged(paused: Boolean) = tasks.setPaused(paused)
@@ -663,84 +629,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
 
     override fun enabled(): Boolean = isEnabled()
-
-    /**
-     * 「root 模式开关」：关着时 shell 工具拒绝执行。默认关，而且开一次只算一段时间
-     * （[RootGrant.WINDOW_MS]），连续失败会把开关自己关掉——一个开着就再也不回来的 root
-     * 开关不该靠人记得关。
-     */
-    override fun rootShellEnabled(): Boolean = grant.enabled()
-
-    /** 严格模式：`shell` 是否也受手机操控规则约束。默认关。 */
-    override fun rootShellStrict(): Boolean = grant.strict()
-
-    fun setRootShellStrict(on: Boolean) {
-        grant.setStrict(on)
-        emitStatus()
-    }
-
-    /** 这个开关什么时候到期；关着是 null。 */
-    fun rootShellExpiresAt(): Long? = grant.expiresAt()
-
-    /** 上一次读成 false 的原因（expired / strikes），没有就是 null。 */
-    fun rootShellOffReason(): String? = grant.lastReason
-
-    /**
-     * A `shell` call that couldn't get root. After [RootGrant.MAX_STRIKES] the switch turns
-     * itself off, so the model is told to stop instead of retrying into a root manager that
-     * isn't answering.
-     */
-    override fun noteRootFailure(): Boolean {
-        val tripped = grant.recordFailure()
-        if (tripped) emitStatus()
-        return tripped
-    }
-
-    /** A `shell` call that worked: the grant is alive. */
-    override fun noteRootSuccess() { grant.recordSuccess() }
-
-    override fun appLabel(pkg: String): String? =
-        runCatching { app.packageManager.getApplicationInfo(pkg, 0) }
-            .map { app.packageManager.getApplicationLabel(it).toString() }
-            .getOrNull()
-
-    /**
-     * frida-server 的状态与起停（root/Frida.kt）。二进制随 App 分发，装到
-     * /data/local/tmp，监听 127.0.0.1:27042。
-     *
-     * 这些方法会 spawn su，所以 `start` / `stop` 在 PhoneCore 里先检查 root 开关；
-     * `status` 是只读的，但它也要 root 才能读 /proc，所以同样走 su。
-     */
-    override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
-
-    override fun fridaStart(): Map<String, Any?> = Frida.install(app, Frida.DEFAULT_PORT)
-
-    override fun fridaInject(pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> =
-        Frida.inject(app, pkg, script, timeoutMs)
-
-    override fun fridaStop(): Map<String, Any?> {
-        Frida.stop()
-        return Frida.status(app)
-    }
-
-    /**
-     * Only files the root tool itself spilled into this app's cache count: `shell_read` is a
-     * window onto a truncation, not a general file reader that would skip every rule the tool
-     * has. A path is accepted when it is directly inside [app].cacheDir and named `dsh-shell-*`.
-     */
-    override fun shellSpillFile(path: String): java.io.File? {
-        val file = runCatching { java.io.File(path).canonicalFile }.getOrNull() ?: return null
-        val dir = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
-        if (file.parentFile != dir) return null
-        if (!file.name.startsWith("dsh-shell-") || !file.name.endsWith(".log")) return null
-        return file.takeIf { it.isFile }
-    }
-
-    /** 开关只影响下一次 `shell` 调用，不重启引擎。开着时从现在起算一个新的窗口。 */
-    fun setRootShell(on: Boolean) {
-        grant.set(on)
-        emitStatus()
-    }
 
     override fun isLocked(): Boolean {
         val km = app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
@@ -782,6 +670,118 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return "不打扰模式（后台屏）用不了$reason。只能在主屏操作；要用后台屏请用户到 设置 → 手机操控 → 不打扰模式 开通。"
     }
 
+    /**
+     * 「root 模式开关」：关着时 shell 工具拒绝执行。默认关，而且开一次只算一段时间
+     * （[RootGrant.WINDOW_MS]），连续失败会把开关自己关掉——一个开着就再也不回来的 root
+     * 开关不该靠人记得关。
+     */
+    override fun rootShellEnabled(): Boolean = grant.enabled()
+
+    /** 严格模式：`shell` 是否也受手机操控规则约束。默认关。 */
+    override fun rootShellStrict(): Boolean = grant.strict()
+
+    /** 开关只影响下一次 `shell` 调用，不重启引擎。开着时从现在起算一个新的窗口。 */
+    fun setRootShell(on: Boolean) {
+        grant.set(on)
+        emitStatus()
+    }
+
+    fun setRootShellStrict(on: Boolean) {
+        grant.setStrict(on)
+        emitStatus()
+    }
+
+    /** 这个开关什么时候到期；关着是 null。 */
+    fun rootShellExpiresAt(): Long? = grant.expiresAt()
+
+    /** 上一次读成 false 的原因（expired / strikes），没有就是 null。 */
+    fun rootShellOffReason(): String? = grant.lastReason
+
+    /**
+     * A `shell` call that couldn't get root. After [RootGrant.MAX_STRIKES] the switch turns
+     * itself off, so the model is told to stop instead of retrying into a root manager that
+     * isn't answering.
+     */
+    override fun noteRootFailure(): Boolean {
+        val tripped = grant.recordFailure()
+        if (tripped) emitStatus()
+        return tripped
+    }
+
+    /** A `shell` call that worked: the grant is alive. */
+    override fun noteRootSuccess() { grant.recordSuccess() }
+
+    override fun appLabel(pkg: String): String? =
+        runCatching { app.packageManager.getApplicationInfo(pkg, 0) }
+            .map { app.packageManager.getApplicationLabel(it).toString() }
+            .getOrNull()
+
+    /**
+     * Only files the root tool itself spilled into this app's cache count: `shell_read` is a
+     * window onto a truncation, not a general file reader that would skip every rule the tool
+     * has. A path is accepted when it is directly inside [app].cacheDir and named `dsh-shell-*`.
+     */
+    override fun shellSpillFile(path: String): java.io.File? {
+        val file = runCatching { java.io.File(path).canonicalFile }.getOrNull() ?: return null
+        val dir = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
+        if (file.parentFile != dir) return null
+        if (!file.name.startsWith("dsh-shell-") || !file.name.endsWith(".log")) return null
+        return file.takeIf { it.isFile }
+    }
+
+    /**
+     * 低频重读 frida-server 的状态（最多每 [FRIDA_REFRESH_MS] 一次）。
+     *
+     * 只在 root 模式开着时读：关着时没有 su 可问，问了就是弹授权框。
+     * 读失败保留上一次的快照，而不是报「没在跑」——su 超时说明不了 frida 的事。
+     */
+    private fun refreshFrida() {
+        if (!rootShellEnabled()) {
+            if (fridaCache.isNotEmpty()) fridaCache = emptyMap()
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (now - fridaCheckedAt < FRIDA_REFRESH_MS) return
+        fridaCheckedAt = now
+        val snapshot = runCatching { Frida.status(app) }.getOrNull() ?: return
+        if (snapshot["ok"] == true) fridaCache = snapshot
+    }
+
+    /** 胶囊的点击（关闭）：停掉 server，并立刻刷新快照。 */
+    fun stopFridaNow(): Boolean {
+        runCatching { Frida.stop() }
+        fridaCache = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
+        emitStatus()
+        return true
+    }
+
+    /** 胶囊的点击：现在就装/启一次，并立刻刷新快照。 */
+    fun startFridaNow(): Boolean {
+        val result = runCatching { Frida.install(app, Frida.DEFAULT_PORT) }.getOrNull() ?: return false
+        if (result["ok"] == true) fridaCache = runCatching { Frida.status(app) }.getOrDefault(fridaCache)
+        emitStatus()
+        return result["ok"] == true
+    }
+
+    /**
+     * frida-server 的状态与起停（root/Frida.kt）。二进制随 App 分发，装到
+     * /data/local/tmp，监听 127.0.0.1:27042。
+     *
+     * 这些方法会 spawn su，所以 `start` / `stop` 在 PhoneCore 里先检查 root 开关；
+     * `status` 是只读的，但它也要 root 才能读 /proc，所以同样走 su。
+     */
+    override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
+
+    override fun fridaInject(pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> =
+        Frida.inject(app, pkg, script, timeoutMs)
+
+    override fun fridaStart(): Map<String, Any?> = Frida.install(app, Frida.DEFAULT_PORT)
+
+    override fun fridaStop(): Map<String, Any?> {
+        Frida.stop()
+        return Frida.status(app)
+    }
+
     override fun system(): SystemApi = system
 
     override fun zone(): ZoneId = ZoneId.systemDefault()
@@ -806,7 +806,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         const val SERVER_VERSION = "1"
         private const val PREFS = "dsh_phone"
         private const val K_ENABLED = "enabled"
-
         private const val K_POLICIES = "policies"
         private const val K_TCP_FALLBACK = "tcpFallback"
 

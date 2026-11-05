@@ -32,6 +32,9 @@ whenToUse: The user wants to add something of their own to the dsh-go phone app 
 | 按钮要读剪贴板 / 输入框 / 某条回复，或要算点什么 | 本技能：`composer.actions` / `message.actions` + `on(id)` |
 | 一直看得到的一行数字 | 本技能：`composer.strip` + `strip(id)` |
 | 一整页信息 | 本技能：`panels` + `panel(id)` |
+| 不常用但要顺手的工具 | 本技能：`composer.tools`（加号面板，要较新的 App） |
+| 对整段对话做事：导出、归档 | 本技能：`session.actions`（右侧栏「信息」，要较新的 App） |
+| 每轮一眼看到的数字 | 本技能：`turn.note` + `turnNote(id)`（回合脚注，要较新的 App） |
 | 某个工具的结果画成卡片 | 本技能：工具 `output.presentationMeta` 返回 `{ "dsh-go/view": 视图 }`，不需要清单 |
 | 把回复读出来、开口就停、跟读字幕 | 本技能：`capabilities` + `media` / `micro` / `overlays`（见下文「声音与字幕」） |
 
@@ -87,7 +90,10 @@ whenToUse: The user wants to add something of their own to the dsh-go phone app 
 | `composer.actions` | 2 | `label` 10 字 | `id` `label` `icon?` `effect?` | 有 `effect`：App 直接执行，不写代码；否则调 `on(id)` |
 | `message.actions` | 2 | `label` 12 字 | 同上 | 同上 |
 | `composer.strip` | 1 | `text` 24 字 | `id` `icon?` `text?` `panel?` | `panel` → 打开该面板；否则 `on(id)` |
-| `panels` | 4 | `title` 16 字 | `id` `title` `icon?` `placement?` `view?` | 视图里的按钮 / 行 / 选项 → `actions` |
+| `panels` | 4 | `title` 16 字 | `id` `title` `icon?` `placement?` `presentation?` `view?` | 视图里的按钮 / 行 / 选项 → `actions` |
+| `composer.tools` | 2 | `label` 8 字 | `id` `label` `icon?` `effect?` `panel?` | `panel` / `effect` App 直接执行（两者只写一个）；否则 `on(id)` |
+| `session.actions` | 2 | `label` 12 字 | `id` `label` `icon?` `effect?` | 同胶囊 |
+| `turn.note` | 1 | 每段 16 字 | `id` | 不能点；`turnNote(id, (scope, emit) => …)` 里 `emit({ 回合序号: { text, tone? } })` |
 
 - `title`、`label`、`text` 写字符串或 `{ "zh": "…", "en": "…" }`；中英文都不能超上限。插件名 `title` ≤ 24 字。
 - `id`：字母数字开头，字母数字和 `_ . -`，≤ 40 字；**整个插件内不能重复**（跨插槽也算）。

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,6 +131,7 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
 
   /// Bumped by every build and refresh: only the newest load may land.
   int _loadSeq = 0;
+  int _appliedRefreshSeq = 0;
   List<SessionSummary> _all = const [];
   Set<String> _archived = const {};
   ReadListOrigin? _origin;
@@ -232,11 +234,16 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
         if (_applyInPlace(event)) return;
         // Ready alone changes no conversation: it doesn't read the list a
         // second time behind the one a (re)connection is reading.
+        final readyAt = event is HostReadyEvent ? _loadSeq : null;
         _debouncedChange |= event is! HostReadyEvent;
         _debounce?.cancel();
         _debounce = Timer(const Duration(milliseconds: 400), () {
           final change = _debouncedChange;
           _debouncedChange = false;
+          // Only a successful request started after this ready covers it.
+          // A pre-ready response, newer pending/failing read or later change
+          // still needs the existing recovery path.
+          if (!change && readyAt != null && _appliedRefreshSeq == _loadSeq && _appliedRefreshSeq > readyAt) return;
           unawaited(_refresh(afterBuild: change));
         });
       }
@@ -538,6 +545,7 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
       if (r.mounted && seq == _loadSeq) {
         state = AsyncData(sessions);
         cache.finishRefresh(ReadListKind.sessions, activity);
+        _appliedRefreshSeq = seq;
       }
     } catch (error, stack) {
       // A failed background refresh keeps the list it had.
@@ -824,6 +832,9 @@ final pendingSessionFolderProvider = NotifierProvider<PendingSessionFolderContro
 /// The session shown in the chat screen; null means "new chat".
 class CurrentSessionController extends Notifier<String?> {
   static const _key = 'last_session_id';
+  static const _selectionKey = 'last_session_selection';
+
+  static String _hostKey(HostRef host) => '${host.kind.name}:${host.id}';
 
   /// Every explicit choice counts, including selecting the already-null new chat.
   int _selectionRevision = 0;
@@ -841,10 +852,28 @@ class CurrentSessionController extends Notifier<String?> {
 
   /// Reopens the conversation that was open when the app was last closed.
   Future<void> _restore() async {
+    final owner = ref;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final last = prefs.getString(_key);
-      if (last != null && state == null && !_touched) state = last;
+      if (!owner.mounted || _touched || state != null) return;
+      final raw = prefs.getString(_selectionKey);
+      final legacy = prefs.getString(_key);
+      if (raw == null && legacy == null) return;
+
+      await owner.read(activeHostProvider.notifier).ready;
+      if (!owner.mounted || _touched || state != null) return;
+      final host = owner.read(activeHostProvider);
+      if (raw != null) {
+        final saved = jsonDecode(raw);
+        if (saved is! Map || saved['host'] != _hostKey(host)) return;
+        final id = saved['sessionId'];
+        if (id is String) state = id;
+      } else {
+        // Old IDs have no host binding. Keep their existing compatibility
+        // only when startup actually chose the saved host; a skipped remote
+        // must not turn its unbound ID into a local conversation.
+        if (HostRef.decode(prefs.getString(ActiveHostController.prefsKey)) == host) state = legacy;
+      }
     } catch (_) {
       // No preferences backend (tests) or unreadable store: start with a new chat.
     }
@@ -853,13 +882,20 @@ class CurrentSessionController extends Notifier<String?> {
   void select(String? sessionId) {
     _selectionRevision++;
     _touched = true;
+    final host = ref.read(activeHostProvider);
     ref.read(pendingSessionFolderProvider.notifier).select(null);
     state = sessionId;
-    unawaited(
-      SharedPreferences.getInstance()
-          .then((prefs) => sessionId == null ? prefs.remove(_key) : prefs.setString(_key, sessionId))
-          .catchError((_) => false),
-    );
+    unawaited(_persist(host, sessionId));
+  }
+
+  Future<void> _persist(HostRef host, String? sessionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // One value owns both pieces, including an explicit new-chat choice.
+      // Its null ID also wins if removing a leftover legacy key fails.
+      await prefs.setString(_selectionKey, jsonEncode({'host': _hostKey(host), 'sessionId': sessionId}));
+      await prefs.remove(_key);
+    } catch (_) {}
   }
 }
 

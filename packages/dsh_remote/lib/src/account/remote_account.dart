@@ -314,6 +314,7 @@ class RemoteAccount {
   _Credentials? _credentials;
   Future<void> _credentialWrites = Future<void>.value();
   bool _restored = false;
+  Future<void>? _restoring;
   Map<String, _Pin>? _pins;
   Future<String>? _refreshing;
   _ActiveConnection? _active;
@@ -346,9 +347,12 @@ class RemoteAccount {
     );
   }
 
-  Future<void> _restore() async {
-    if (_restored) return;
-    _restored = true;
+  Future<void> _restore() {
+    if (_restored) return Future<void>.value();
+    return _restoring ??= _readStoredAccount().whenComplete(() => _restoring = null);
+  }
+
+  Future<void> _readStoredAccount() async {
     final identity = asMap(tryDecodeJson(await _secrets.read(_identityKey) ?? ''));
     try {
       if (identity != null) _identity = _Identity.fromJson(identity);
@@ -364,6 +368,7 @@ class RemoteAccount {
     } on Object {
       _credentials = null;
     }
+    _restored = true;
   }
 
   /// QR-capable sign-in providers of this Server (empty on a self-hosted

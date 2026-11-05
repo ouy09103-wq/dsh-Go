@@ -14,13 +14,16 @@ import '../usage_sheet.dart' show formatTokens;
 ///
 /// 放不下时依次省掉 tokens、步数、花费,时长总在。点开本轮轨迹。
 class TurnFootnote extends StatelessWidget {
-  const TurnFootnote({super.key, required this.trace, this.onTap});
+  const TurnFootnote({super.key, required this.trace, this.onTap, this.note});
 
   final TurnTrace trace;
   final VoidCallback? onTap;
 
+  /// What plugins say about this turn (`turn.note`): the first thing to go when it doesn't fit.
+  final String? note;
+
   /// 从全到简的几种写法(第一种放得下就用它)。
-  static List<String> variants(TurnTrace trace) {
+  static List<String> variants(TurnTrace trace, {String? note}) {
     final duration = trace.duration;
     final time = duration == null ? appL10n.commonInProgress : formatSpan(duration);
     final steps = trace.steps > 0 ? appL10n.chatTurnSteps(trace.steps) : null;
@@ -28,6 +31,7 @@ class TurnFootnote extends StatelessWidget {
     final tokens = trace.usage.isEmpty ? null : '${formatTokens(trace.usage.total)} tokens';
     String join(List<String?> parts) => parts.whereType<String>().join(' · ');
     return [
+      if (note != null) join([time, steps, cost, tokens, note]),
       join([time, steps, cost, tokens]),
       join([time, steps, cost]),
       join([time, cost]),
@@ -43,7 +47,7 @@ class TurnFootnote extends StatelessWidget {
     final style = AppType.tabular(
       theme.textTheme.labelSmall!.copyWith(fontSize: 12, color: dsh.textTertiary, height: 1.3),
     );
-    final options = variants(trace);
+    final options = variants(trace, note: note);
     return Semantics(
       button: onTap != null,
       label: l10n.chatTurnFootnoteSemantics(options.first),

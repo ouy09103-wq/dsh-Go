@@ -6,7 +6,7 @@
 >
 > **仅供测试与学习使用。请勿安装在存有重要数据、或你唯一的手机上。**
 >
-> 安装包名已改为 `io.github.ouy09103.dsh_go`，**可以和原版同时安装**；应用名显示为「DSH Go Root」。
+> 安装包名已改为 `io.github.ouy09103.dsh_go`，**可以和原版同时安装**。
 >
 > 👉 **原版在这里：[ccch1mneyyy/dsh-go](https://github.com/ccch1mneyyy/dsh-go)**（本文档以下内容均来自原版）
 
@@ -354,23 +354,6 @@ DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh --dry-run -f all
 - **名称与素材另有限制**：DSH Go 的名称、标识，以及 Deepy、鲸娘形象不在 AGPL 授权范围内，以修改版身份发布时请换成自己的名称和素材，见 [ASSETS.md](ASSETS.md)。
 
 **许可说明**：AGPL-3.0 允许符合其条款的修改、再发布和商业使用；上述提前联系及署名位置是作者的协作请求，不是对代码许可证追加的限制。品牌与素材须遵守各自的授权条件；本说明不改变 `sdk/`、`examples/` 及第三方内容的许可。
-
-## 本 fork 的改动
-
-相对上游 [1.0.10](https://github.com/ccch1mneyyy/dsh-go/releases/tag/v1.0.10)，本仓库只有下面这些差别：
-
-| 改动 | 位置 |
-| --- | --- |
-| 包名 `io.github.ouy09103.dsh_go`，可与原版并存 | `app/android/app/build.gradle.kts` |
-| 应用名「DSH Go Root」 | `AndroidManifest.xml`、`AppStrings.kt`、`AppInfo.name` |
-| 手机工具 `shell`（root 执行，经 su） | `phone/PhoneToolCatalog.kt`、`phone/PhoneCore.kt`、`phone/background/RootShell.kt` |
-| 聊天页「启用 root」胶囊 | `app/lib/ui/chat/dock/root_pill.dart` |
-| 设置 › Root 权限页（真 root 通道、rootfs、frida-server） | `root/RootPlugin.kt`、`app/lib/root/root_channel.dart`、`app/lib/ui/settings/root_page.dart` |
-| 应用内更新指向本仓库 | `app/lib/update/update_config.dart` |
-
-`shell` 一直在工具列表里，开关只决定放不放行（上游要求工具集固定，否则 KV cache 全失效）；关着时连命令有没有执行都拿不到。
-
-安装包只提供 **arm64**，需要 Android 8.0（API 26）以上。**装之前先备份**：root 命令不可逆。
 
 ## 许可证与致谢
 

@@ -85,7 +85,7 @@ export function validateCatalog(index: unknown, sidecar: unknown): sidecar is Si
       !record(p.risk) ||
       !['low', 'medium', 'high'].includes(String(p.risk.level)) ||
       !Array.isArray(p.risk.flags) ||
-      p.risk.flags.some((f) => !FLAGS.includes(String(f))) ||
+      p.risk.flags.some((f) => typeof f !== 'string' || !FLAGS.includes(f)) ||
       new Set(p.risk.flags).size !== p.risk.flags.length ||
       typeof p.integrity !== 'string' ||
       !/^sha512-[A-Za-z0-9+/]{86}==$/.test(p.integrity) ||
@@ -201,7 +201,11 @@ async function catalog(env: Env): Promise<{ value: Snapshot; stale: boolean }> {
     const saved = await env.QUOTA?.get(key);
     if (saved) {
       const parsed: unknown = JSON.parse(saved);
-      if (snapshot(parsed) && (!previous || parsed.at > previous.at)) previous = parsed;
+      // Only a newer snapshot can replace the already validated memory entry.
+      if (
+        (!previous || (record(parsed) && typeof parsed.at === 'number' && parsed.at > previous.at)) &&
+        snapshot(parsed)
+      ) previous = parsed;
     }
   } catch {
     /* memory fallback */

@@ -13,6 +13,7 @@
 ///   converts DOC/DOCX/XLS/XLSX/PPT/PPTX with LibreOffice).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -75,6 +76,8 @@ extension DshFilesApi on DshClient {
   bool get canReadFileBytes => carrier is DshHttpCarrier || supportsEndpoint('workspaceFiles/readBytes');
 
   /// Streams a file's bytes to [onChunk], in order; returns the byte count.
+  /// Each chunk is consumed before reporting progress or requesting the next
+  /// window. An asynchronous [onChunk] is awaited; its failure stops the read.
   ///
   /// [maxBytes] refuses larger files up front (`workspace-file/too-large`)
   /// when the size is known. [onProgress] gets (received, total?).
@@ -84,7 +87,7 @@ extension DshFilesApi on DshClient {
   Future<int> readFile(
     String sessionId,
     String path, {
-    required void Function(Uint8List chunk) onChunk,
+    required FutureOr<void> Function(Uint8List chunk) onChunk,
     void Function(int received, int? total)? onProgress,
     int? maxBytes,
   }) async {
@@ -101,9 +104,9 @@ extension DshFilesApi on DshClient {
       throw DshRemoteException('workspace-file/unsupported', 'this connection cannot read file bytes', {'path': path});
     }
     var delivered = 0;
-    void sink(Uint8List chunk) {
+    Future<void> sink(Uint8List chunk) async {
       delivered += chunk.length;
-      onChunk(chunk);
+      await onChunk(chunk);
     }
 
     try {
@@ -114,7 +117,7 @@ extension DshFilesApi on DshClient {
       final carrier = this.carrier;
       if (carrier is! DshHttpCarrier || delivered > 0) rethrow;
       final bytes = await _readWhole(carrier, stat.absolutePath.isEmpty ? path : stat.absolutePath, path, maxBytes);
-      onChunk(bytes);
+      await onChunk(bytes);
       onProgress?.call(bytes.length, total ?? bytes.length);
       return bytes.length;
     }
@@ -146,7 +149,7 @@ extension DshFilesApi on DshClient {
   Future<int> _readWindows(
     String sessionId,
     String path,
-    void Function(Uint8List chunk) onChunk,
+    FutureOr<void> Function(Uint8List chunk) onChunk,
     void Function(int received, int? total)? onProgress,
     int? maxBytes,
     int? total,
@@ -170,7 +173,7 @@ extension DshFilesApi on DshClient {
           'limit': maxBytes,
         });
       }
-      if (data.isNotEmpty) onChunk(data);
+      if (data.isNotEmpty) await onChunk(data);
       onProgress?.call(offset, asInt(value['bytes']) ?? total);
       if (value['eof'] == true || data.isEmpty) return offset;
     }

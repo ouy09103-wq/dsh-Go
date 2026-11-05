@@ -222,9 +222,8 @@ class _InlineScan {
       } else if (c == ']' && brackets.isNotEmpty) {
         final label = brackets.removeLast();
         if (i + 1 < n && text[i + 1] == '(') {
-          final close = text.indexOf(')', i + 2);
-          final newline = text.indexOf('\n', i + 2);
-          if (close == -1 || (newline != -1 && newline < close)) {
+          final close = text.indexOf(_linkTargetEnd, i + 2);
+          if (close == -1 || text[close] == '\n') {
             if (label > 0 && text[label - 1] == '!') {
               openImage = label - 1;
             } else {
@@ -252,6 +251,10 @@ class _InlineScan {
   int codeRun = 0;
   int? openLinkTarget;
   int? openImage;
+
+  // Stop at the first terminator instead of searching every link's entire
+  // remaining suffix for a newline after its closing parenthesis was found.
+  static final _linkTargetEnd = RegExp(r'[)\n]');
 
   /// A marker run at the very end that neither opened nor closed anything
   /// (`这是 **`, `然后 *`): it waits for the next character.

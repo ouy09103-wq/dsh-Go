@@ -11450,6 +11450,12 @@ abstract class L10n {
   /// **'高级'**
   String get featuresRepeatAdvanced;
 
+  /// No description provided for @featuresRepeatCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get featuresRepeatCustom;
+
   /// No description provided for @featuresIntervalSeconds.
   ///
   /// In zh, this message translates to:
@@ -13406,12 +13412,6 @@ abstract class L10n {
   /// **'隐私与分享'**
   String get hubPrivacy;
 
-  /// No description provided for @hubRootAccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'root 模式'**
-  String get hubRootAccess;
-
   /// No description provided for @hubPrivacySharing.
   ///
   /// In zh, this message translates to:
@@ -13633,6 +13633,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没有选择，左滑不会打开'**
   String get hubQuickPanelItemsNone;
+
+  /// No description provided for @hubRootAccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'root 模式'**
+  String get hubRootAccess;
 
   /// No description provided for @launchScreenTitle.
   ///
@@ -15428,6 +15434,18 @@ abstract class L10n {
   /// **'同时遵循系统的移除动画设置'**
   String get performanceSystemMotion;
 
+  /// No description provided for @performanceFluid.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵动动效'**
+  String get performanceFluid;
+
+  /// No description provided for @performanceFluidHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'弹性回弹、按压光晕、卡片展开成页面。几乎不增加耗电'**
+  String get performanceFluidHint;
+
   /// No description provided for @performanceFollowMode.
   ///
   /// In zh, this message translates to:
@@ -15973,12 +15991,6 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'剪贴板'**
   String get phoneToolClipboard;
-
-  /// No description provided for @phoneToolShell.
-  ///
-  /// In zh, this message translates to:
-  /// **'root 命令'**
-  String get phoneToolShell;
 
   /// No description provided for @phoneToolAction.
   ///
@@ -18175,6 +18187,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。'**
   String get phoneDndConnectPortHint;
+
+  /// No description provided for @phoneToolShell.
+  ///
+  /// In zh, this message translates to:
+  /// **'root 命令'**
+  String get phoneToolShell;
 
   /// Action log label for the frida tool.
   ///
@@ -21343,6 +21361,24 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'请在这台主机上查看引擎日志。'**
   String get pluginsLoadRemoteLogs;
+
+  /// No description provided for @plugslotsSurfaceComposerTools.
+  ///
+  /// In zh, this message translates to:
+  /// **'加号面板'**
+  String get plugslotsSurfaceComposerTools;
+
+  /// No description provided for @plugslotsSurfaceSessionActions.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话操作'**
+  String get plugslotsSurfaceSessionActions;
+
+  /// No description provided for @plugslotsSurfaceTurnNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'回合尾注'**
+  String get plugslotsSurfaceTurnNote;
 
   /// No description provided for @plugslotsSurfaceComposerActions.
   ///
@@ -24914,6 +24950,12 @@ abstract class L10n {
   /// **'当前主机提供时可用'**
   String get searchNeedsEngineField;
 
+  /// No description provided for @searchNeedsAnimations.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启动画时可用'**
+  String get searchNeedsAnimations;
+
   /// No description provided for @searchNeedsChat.
   ///
   /// In zh, this message translates to:
@@ -25262,6 +25304,12 @@ abstract class L10n {
   /// **'动画,动效,减少动画'**
   String get searchKwAnimations;
 
+  /// No description provided for @searchKwFluidMotion.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵动,弹性,回弹,光晕,丝滑'**
+  String get searchKwFluidMotion;
+
   /// No description provided for @searchKwNotifyEnabled.
   ///
   /// In zh, this message translates to:
@@ -25490,12 +25538,6 @@ abstract class L10n {
   /// **'隐私,数据,日志,分享,统计'**
   String get searchKwPrivacy;
 
-  /// No description provided for @searchKwRoot.
-  ///
-  /// In zh, this message translates to:
-  /// **'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行'**
-  String get searchKwRoot;
-
   /// No description provided for @searchKwAbout.
   ///
   /// In zh, this message translates to:
@@ -25543,6 +25585,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口'**
   String get searchKwQuickPanel;
+
+  /// No description provided for @searchKwRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'root,su,提权,超级用户,root shell,rootfs,shell 命令,命令行'**
+  String get searchKwRoot;
 
   /// No description provided for @shellDeletePermanently.
   ///
@@ -27301,6 +27349,42 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'已归档 {count} 个对话，{failed} 个没能归档'**
   String shellChatsArchivedPartial(int count, int failed);
+
+  /// No description provided for @shellPanelOverview.
+  ///
+  /// In zh, this message translates to:
+  /// **'信息'**
+  String get shellPanelOverview;
+
+  /// No description provided for @shellPanelWorkspace.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作区'**
+  String get shellPanelWorkspace;
+
+  /// No description provided for @shellPanelModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型'**
+  String get shellPanelModel;
+
+  /// No description provided for @shellPanelHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机'**
+  String get shellPanelHost;
+
+  /// No description provided for @shellPanelOpenFull.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开完整页面'**
+  String get shellPanelOpenFull;
+
+  /// No description provided for @shellPanelNoPlugins.
+  ///
+  /// In zh, this message translates to:
+  /// **'这段对话还没有插件面板'**
+  String get shellPanelNoPlugins;
 
   /// No description provided for @shellQuickPanel.
   ///

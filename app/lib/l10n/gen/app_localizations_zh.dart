@@ -6235,6 +6235,9 @@ class L10nZh extends L10n {
   String get featuresRepeatAdvanced => '高级';
 
   @override
+  String get featuresRepeatCustom => '自定义';
+
+  @override
   String get featuresIntervalSeconds => '秒';
 
   @override
@@ -7323,9 +7326,6 @@ class L10nZh extends L10n {
   String get hubPrivacy => '隐私与分享';
 
   @override
-  String get hubRootAccess => 'root 模式';
-
-  @override
   String get hubPrivacySharing => '分享';
 
   @override
@@ -7439,6 +7439,9 @@ class L10nZh extends L10n {
 
   @override
   String get hubQuickPanelItemsNone => '没有选择，左滑不会打开';
+
+  @override
+  String get hubRootAccess => 'root 模式';
 
   @override
   String get launchScreenTitle => '启动画面';
@@ -8403,6 +8406,12 @@ class L10nZh extends L10n {
   String get performanceSystemMotion => '同时遵循系统的移除动画设置';
 
   @override
+  String get performanceFluid => '灵动动效';
+
+  @override
+  String get performanceFluidHint => '弹性回弹、按压光晕、卡片展开成页面。几乎不增加耗电';
+
+  @override
   String get performanceFollowMode => '效果跟随性能模式';
 
   @override
@@ -8674,9 +8683,6 @@ class L10nZh extends L10n {
 
   @override
   String get phoneToolClipboard => '剪贴板';
-
-  @override
-  String get phoneToolShell => 'root 命令';
 
   @override
   String get phoneToolAction => '操作';
@@ -9849,6 +9855,9 @@ class L10nZh extends L10n {
 
   @override
   String get phoneDndConnectPortHint => '在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。';
+
+  @override
+  String get phoneToolShell => 'root 命令';
 
   @override
   String get phoneToolFrida => 'Frida';
@@ -11595,6 +11604,15 @@ class L10nZh extends L10n {
 
   @override
   String get pluginsLoadRemoteLogs => '请在这台主机上查看引擎日志。';
+
+  @override
+  String get plugslotsSurfaceComposerTools => '加号面板';
+
+  @override
+  String get plugslotsSurfaceSessionActions => '对话操作';
+
+  @override
+  String get plugslotsSurfaceTurnNote => '回合尾注';
 
   @override
   String get plugslotsSurfaceComposerActions => '输入框按钮';
@@ -13628,6 +13646,9 @@ class L10nZh extends L10n {
   String get searchNeedsEngineField => '当前主机提供时可用';
 
   @override
+  String get searchNeedsAnimations => '开启动画时可用';
+
+  @override
   String get searchNeedsChat => '打开对话时可用';
 
   @override
@@ -13802,6 +13823,9 @@ class L10nZh extends L10n {
   String get searchKwAnimations => '动画,动效,减少动画';
 
   @override
+  String get searchKwFluidMotion => '灵动,弹性,回弹,光晕,丝滑';
+
+  @override
   String get searchKwNotifyEnabled => '通知开关,关闭通知';
 
   @override
@@ -13918,9 +13942,6 @@ class L10nZh extends L10n {
   String get searchKwPrivacy => '隐私,数据,日志,分享,统计';
 
   @override
-  String get searchKwRoot => 'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行';
-
-  @override
   String get searchKwAbout => '关于,版本,更新,许可,dsh-go';
 
   @override
@@ -13943,6 +13964,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwQuickPanel => '左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口';
+
+  @override
+  String get searchKwRoot => 'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行';
 
   @override
   String get shellDeletePermanently => '永久删除';
@@ -14921,6 +14945,24 @@ class L10nZh extends L10n {
   String shellChatsArchivedPartial(int count, int failed) {
     return '已归档 $count 个对话，$failed 个没能归档';
   }
+
+  @override
+  String get shellPanelOverview => '信息';
+
+  @override
+  String get shellPanelWorkspace => '工作区';
+
+  @override
+  String get shellPanelModel => '模型';
+
+  @override
+  String get shellPanelHost => '主机';
+
+  @override
+  String get shellPanelOpenFull => '打开完整页面';
+
+  @override
+  String get shellPanelNoPlugins => '这段对话还没有插件面板';
 
   @override
   String get shellQuickPanel => '快捷入口';

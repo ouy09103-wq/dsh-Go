@@ -19,8 +19,8 @@ import { ICON, ID, LIMITS, PROTOCOL, TONES } from './bridge/limits.js'
 import { parseManifest, renderPlugin } from './bridge/manifest.js'
 import { chars, isPlainObject, toJson, truncateChars, viewStats, withoutNulls } from './bridge/util.js'
 
-const CONTEXT_FOR = { 'composer.actions': ['draft', 'clipboard'], 'message.actions': ['message'] }
-const SURFACE_OF = { 'composer.actions': 'composer.actions', 'message.actions': 'message.actions', 'composer.strip': 'composer.strip', panel: 'panels' }
+const CONTEXT_FOR = { 'composer.actions': ['draft', 'clipboard'], 'composer.tools': ['draft', 'clipboard'], 'message.actions': ['message'] }
+const SURFACE_OF = { 'composer.actions': 'composer.actions', 'message.actions': 'message.actions', 'composer.strip': 'composer.strip', panel: 'panels', 'composer.tools': 'composer.tools', 'session.actions': 'session.actions' }
 
 /** The caps an up-to-date app sends (protocol §3.1). */
 export function defaultCaps(overrides = {}) {
@@ -28,7 +28,7 @@ export function defaultCaps(overrides = {}) {
     protocol: PROTOCOL,
     app: '99.0.0',
     locale: 'zh-CN',
-    surfaces: ['composer.actions', 'message.actions', 'composer.strip', 'panels'],
+    surfaces: ['composer.actions', 'message.actions', 'composer.strip', 'panels', 'composer.tools', 'session.actions', 'turn.note', 'plugin'],
     components: JSON.parse(readFileSync(new URL('../schema/view.schema.json', import.meta.url), 'utf8')).$defs.node.properties.type.enum,
     ...overrides,
   }
@@ -41,6 +41,21 @@ function stripValue(d) {
   const out = { text: text === '' ? null : chars(text) > LIMITS.textChars.stripText ? truncateChars(text, LIMITS.textChars.stripText) : text }
   if (typeof d.icon === 'string' && ICON.test(d.icon)) out.icon = d.icon
   if (TONES.includes(d.tone)) out.tone = d.tone
+  return out
+}
+
+/** As the bridge cleans a turn note push: text cut, junk dropped, the newest turns kept. */
+function notesValue(d) {
+  if (d === null) return null
+  if (!isPlainObject(d)) return undefined
+  const out = {}
+  for (const [turn, note] of Object.entries(d).slice(-LIMITS.turnNotesPerFeed)) {
+    if (!isPlainObject(note) || typeof note.text !== 'string' || turn.length > 64) continue
+    const text = note.text.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+    if (text === '') continue
+    out[turn] = { text: chars(text) > LIMITS.textChars.turnNote ? truncateChars(text, LIMITS.textChars.turnNote) : text }
+    if (TONES.includes(note.tone)) out[turn].tone = note.tone
+  }
   return out
 }
 
@@ -69,15 +84,15 @@ export function createTestHost(options = {}) {
   const logs = []
   const pending = []
   const runtimeIssues = new Map()
-  const regs = { panels: new Map(), strips: new Map(), handlers: new Map(), media: new Map(), micro: new Map(), capability: new Map() }
+  const regs = { panels: new Map(), strips: new Map(), notes: new Map(), handlers: new Map(), media: new Map(), micro: new Map(), capability: new Map() }
   const feeds = new Set()
   const violations = []
 
   const undeclared = (kind, id) => {
     const declared = parsed.ids.get(id)
-    const ok = kind === 'media' || kind === 'micro' ? declared === kind : kind === 'handlers' ? declared !== undefined : kind === 'panels' ? declared === 'panels' : declared === 'composer.strip'
+    const ok = kind === 'media' || kind === 'micro' ? declared === kind : kind === 'handlers' ? declared !== undefined : kind === 'panels' ? declared === 'panels' : kind === 'notes' ? declared === 'turn.note' : declared === 'composer.strip'
     if (!ok) {
-      const name = { panels: 'panel', strips: 'strip', handlers: 'on' }[kind]
+      const name = { panels: 'panel', strips: 'strip', notes: 'turnNote', handlers: 'on' }[kind]
       runtimeIssues.set(`undeclared:${kind}:${id}`, { path: `/runtime/${id}`, code: 'undeclared', severity: 'warn', message: `${name}("${id}") is not declared in dshGo.contributes; ignored` })
     }
   }
@@ -93,6 +108,14 @@ export function createTestHost(options = {}) {
       regs.panels.set(id, { view: def.view, data: def.data, actions: def.actions })
       undeclared('panels', id)
       return () => regs.panels.delete(id)
+    },
+    turnNote(id, def) {
+      if (typeof id !== 'string' || !ID.test(id)) throw new TypeError(`dshGo.turnNote: id must match ${ID}`)
+      const data = typeof def === 'function' ? def : def?.data
+      if (typeof data !== 'function') throw new TypeError('dshGo.turnNote: pass (scope, emit) => cancel or { data }')
+      regs.notes.set(id, { data })
+      undeclared('notes', id)
+      return () => regs.notes.delete(id)
     },
     strip(id, def) {
       if (typeof id !== 'string' || !ID.test(id)) throw new TypeError(`dshGo.strips: id must match ${ID}`)
@@ -180,6 +203,7 @@ export function createTestHost(options = {}) {
     return {
       panels: new Map([...regs.panels].map(([id, r]) => [id, { data: typeof r.data === 'function' }])),
       strips: new Set(regs.strips.keys()),
+      notes: new Set(regs.notes.keys()),
       handlers: new Set(regs.handlers.keys()),
       degraded: false,
       runtimeIssues: [...runtimeIssues.values()],
@@ -189,7 +213,7 @@ export function createTestHost(options = {}) {
   const surfaceItem = (surface, id) => parsed.items[SURFACE_OF[surface]]?.find((x) => x.id === id)
 
   function findSurface(id) {
-    for (const surface of ['composer.actions', 'message.actions', 'composer.strip']) if (surfaceItem(surface, id)) return surface
+    for (const surface of ['composer.actions', 'message.actions', 'composer.strip', 'composer.tools', 'session.actions']) if (surfaceItem(surface, id)) return surface
     if (surfaceItem('panel', id)) return 'panel'
     return undefined
   }
@@ -268,6 +292,7 @@ export function createTestHost(options = {}) {
       return {
         panels: [...regs.panels.keys()],
         strips: [...regs.strips.keys()],
+        notes: [...regs.notes.keys()],
         handlers: [...regs.handlers.keys()],
         dataPanels: [...regs.panels].filter(([, r]) => typeof r.data === 'function').map(([id]) => id),
       }
@@ -275,7 +300,7 @@ export function createTestHost(options = {}) {
     /** The plugin's row in GET /dsh-go/v1/contributions for `caps`. */
     contributions(capsOverride = {}) {
       const c = { ...caps, ...capsOverride }
-      return renderPlugin(parsed, { versions: [c.protocol ?? PROTOCOL], app: c.app, locale: c.locale, features: c.features }, live())
+      return renderPlugin(parsed, { versions: [c.protocol ?? PROTOCOL], app: c.app, locale: c.locale, surfaces: c.surfaces, features: c.features }, live())
     },
     /**
      * POST /dsh-go/v1/invoke. Resolves { effects, issues } like the bridge; rejects with
@@ -366,7 +391,8 @@ export function createTestHost(options = {}) {
     subscribe(id, scope = {}) {
       const strip = regs.strips.get(id)
       const panel = regs.panels.get(id)
-      const dataFn = strip?.data ?? panel?.data
+      const note = regs.notes.get(id)
+      const dataFn = strip?.data ?? note?.data ?? panel?.data
       const feed = { id, scope, data: undefined, history: [], stale: 0, errors: [], stop: () => {} }
       if (typeof dataFn !== 'function') {
         feed.data = null
@@ -377,6 +403,9 @@ export function createTestHost(options = {}) {
         if (strip !== undefined) {
           value = stripValue(d)
           if (value === undefined) return feed.errors.push(`strip(${id}) emitted a non-object`)
+        } else if (note !== undefined) {
+          value = notesValue(d)
+          if (value === undefined) return feed.errors.push(`turnNote(${id}) emitted a non-object`)
         } else {
           if (d !== null && !isPlainObject(d)) return feed.errors.push(`data(${id}) emitted a non-object`)
           const json = toJson(d)

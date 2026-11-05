@@ -1,7 +1,7 @@
 # 构建带真 root 能力的 DSH Go Root APK（arm64）。
 #
 # 与官方 tooling/build-apk.sh 的差别：构建前先用 tooling/fetch-runtime.sh 把
-# 预编译运行时（rootfs + proot jniLibs，取自上游 1.0.10 的 release）取到
+# 预编译运行时（rootfs + proot jniLibs，取自上游 1.0.11 的 release）取到
 # runtime/out，再走官方构建脚本，最后用 tooling/release_assets.py 生成应用内
 # 更新要用的 update.json / SHA256SUMS（并按 release 命名复制 APK）。
 #
@@ -18,9 +18,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 版本名（如 1.0.10-root.1），发布为 tag v<版本>
+        description: 版本名（如 1.0.11-root.1），发布为 tag v<版本>
         required: false
-        default: 1.0.10-root.1
+        default: 1.0.11-root.1
       draft:
         description: 发布为 draft release
         type: boolean
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      VERSION: ${{ github.event.inputs.version || '1.0.10-root.1' }}
+      VERSION: ${{ github.event.inputs.version || '1.0.11-root.1' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,12 +60,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Fetch prebuilt runtime (upstream 1.0.10, revision r15)
+      - name: Fetch prebuilt runtime (upstream 1.0.11)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
-          bash tooling/fetch-runtime.sh arm64-v8a 1.0.10
+          bash tooling/fetch-runtime.sh arm64-v8a 1.0.11
           ls -la runtime/out/arm64-v8a/assets/runtime
           head -c 400 runtime/out/arm64-v8a/assets/runtime/manifest.json; echo
 

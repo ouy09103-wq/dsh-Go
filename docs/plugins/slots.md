@@ -73,6 +73,7 @@ export function apply(ctx) {
 | `on(id, handler)` | 胶囊、菜单项、状态条的点按。`handler(scope, event)` 返回效果；慢活返回延后效果（[动作与效果](actions.md)） |
 | `strip(id, dataFn)` | 状态条的内容：`dataFn(scope, emit, caps)` 里 `emit({ text, icon?, tone? })`，返回取消函数 |
 | `panel(id, { view, data?, actions? })` | 面板：`view` 是视图或 `(scope, caps) => 视图`；`data(scope, emit, caps)` 推数据；`actions` 处理视图里的点按 |
+| `turnNote(id, dataFn)` | 回合尾注：`dataFn(scope, emit, caps)` 里 `emit({ [回合序号]: { text, tone? } })`，返回取消函数。见[较新的位置](#较新的位置) |
 | `refresh(id, scope?)` | 视图结构变了，让 App 重新取 |
 
 **回调参数**
@@ -105,7 +106,41 @@ export function apply(ctx) {
 | `features` | 全部功能 | 空 |
 | `chat.panel` | 聊天页「插件」弹层：输入框上方胶囊行最后一枚「插件」打开，原生面板按插件名排在前，网页插件的聊天页部件在后（见[网页面板](web-panels.md#聊天页插件弹层)） | 带 `sessionId` |
 
+| `plugin` | 插件详情页，在设置和开关下面。需要较新的 App；老 App 看到只放这里的面板时，它会出现在对话详情 | 空 |
+
+**打开方式：** 写 `"presentation": "sheet"` 后，状态条、`open: "panel:<id>"` 和 `composer.tools` 打开它时用弹层，不离开当前页。缺省是推一页。老 App 忽略这个字段，仍然推页。
+
 同一个面板可以放多处，视图函数按 `scope.sessionId` 有没有来区分（`session.tab` 和 `chat.panel` 都带）。只有这个对话有东西可放时，「插件」胶囊才出现，不占胶囊 8 个的名额。
+
+## 较新的位置
+
+这几个位置需要较新的 App。用 `hasSurface(caps, 'composer.tools')` 判断，App 没有时它们不显示，其余照常。
+
+| 插槽 | 原生位置 | 条目字段 | 每插件 | 文字上限 | 点按 |
+|---|---|---|---|---|---|
+| `composer.tools` | 输入框加号面板，和附件磁贴同一网格 | `id`、`label`、`icon?`、`effect?`、`panel?` | 2（整个面板最多 8 个） | `label` 8 字 | `panel` 或 `effect` 由 App 直接执行；都没有就 invoke `on(id)`。`panel` 和 `effect` 只能写一个 |
+| `session.actions` | 右侧栏「信息」的操作行，右侧显示插件名 | `id`、`label`、`icon?`、`effect?` | 2 | `label` 12 字 | 同胶囊，`scope` 带 `sessionId` |
+| `turn.note` | 每轮回合脚注的末尾 | `id` | 1（每轮最多显示 2 个插件） | 每段 16 字 | 不能点；点脚注仍是打开轨迹 |
+
+```jsonc
+"contributes": {
+  "panels": [{ "id": "stickers", "title": "贴纸", "placement": ["chat.panel"], "presentation": "sheet" }],
+  "composer.tools": [{ "id": "open-stickers", "label": "贴纸", "icon": "image", "panel": "stickers" }],
+  "session.actions": [{ "id": "export", "label": "导出笔记", "icon": "archive" }],
+  "turn.note": [{ "id": "cost" }]
+}
+```
+
+**回合尾注**在宿主半侧用 `turnNote(id, dataFn)` 提供。一个对话一个订阅，每次推这个对话全部要显示的回合，键是回合序号：
+
+```js
+ctx.dshGo.turnNote('cost', (scope, emit) => watchCosts(scope.sessionId, (costs) =>
+  emit(Object.fromEntries(costs.map((c) => [c.turn, { text: `¥${c.yuan.toFixed(2)}` }])))))
+```
+
+- 每次最多 64 个回合，超出时留最新的；文字超过 16 字会被截断；格式不对的条目被丢弃。
+- 脚注放不下时最先省掉尾注，时长、步数和花费优先。
+- 没有声明 `turn.note` 的插件不会产生任何订阅。
 
 ## 静态面板
 

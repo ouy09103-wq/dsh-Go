@@ -37,7 +37,7 @@ export interface TestHost {
   contributions(caps?: Partial<Caps>): ContributionsPlugin
   /** POST /dsh-go/v1/invoke; rejects with HostError where the bridge answers an error. */
   invoke(id: string, request?: {
-    surface?: 'composer.actions' | 'message.actions' | 'composer.strip' | 'panel'
+    surface?: 'composer.actions' | 'message.actions' | 'composer.strip' | 'panel' | 'composer.tools' | 'session.actions'
     action?: string
     value?: unknown
     scope?: Scope

@@ -287,7 +287,7 @@ class AppUpdateController extends Notifier<AppUpdateState> {
     return AppUpdateState(current: AppVersion.tryParse(AppInfo.version) ?? const AppVersion(0, 0, 0));
   }
 
-  /// Completes once preferences and the installed version are known.
+  /// Completes once preferences, the installed version and startup cleanup are ready.
   Future<void> get ready => _loading;
 
   Future<void> _load() async {
@@ -319,7 +319,9 @@ class AppUpdateController extends Notifier<AppUpdateState> {
     if (latest == null) {
       // Updated (or nothing pending): drop the offer and any leftover APK.
       unawaited(prefs.remove(_latestKey));
-      unawaited(_cleanDownloads());
+      // A new download must not race this walk and have its verified APK deleted.
+      await _cleanDownloads();
+      if (!ref.mounted) return;
     }
     int? ms(String key) => prefs.getInt(key);
     state = state.copyWith(

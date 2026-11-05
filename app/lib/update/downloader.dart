@@ -124,6 +124,7 @@ class ApkDownloader {
       target = File('${directory.path}/$fileName');
       part = File('${target.path}.part');
       if (await target.exists()) {
+        if (cancel?.isCancelled ?? false) return const DownloadCancelled();
         onVerifying?.call();
         if (await hasher(target) == sha256) return DownloadDone(target, null);
         await target.delete();
@@ -245,14 +246,20 @@ class ApkDownloader {
         timeout: connectTimeout,
       );
     } on Object {
-      return _Step.unreachable;
+      return (cancel?.isCancelled ?? false) ? _Step.cancelled : _Step.unreachable;
+    }
+    // Cancellation can arrive while get is waiting for response headers.
+    if (cancel?.isCancelled ?? false) {
+      final body = response.body.listen(null, onError: (Object _) {});
+      unawaited(body.cancel().catchError((Object _) {}));
+      return _Step.cancelled;
     }
 
     var append = false;
     switch (response.status) {
       case 206:
         final start = RegExp(r'bytes (\d+)-').firstMatch(response.headers['content-range'] ?? '')?.group(1);
-        if (start != null && int.parse(start) != offset) {
+        if (start != null && int.tryParse(start) != offset) {
           await response.discard();
           await _deleteQuietly(part);
           return _Step.interrupted;
