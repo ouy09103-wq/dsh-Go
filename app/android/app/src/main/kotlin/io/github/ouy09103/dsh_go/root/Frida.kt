@@ -328,14 +328,23 @@ internal object Frida {
             val out = result.stdout.trim()
             val err = result.stderr.trim()
             val loaded = out.contains("[DSH] attached")
+            // `target-crashed` is the one outcome that must not be retried: the process is gone.
+            val crashed = out.contains("[DSH] target-crashed")
             return mapOf(
-                "ok" to (loaded && result.ok),
+                "ok" to (loaded && result.ok && !crashed),
                 "package" to pkg,
                 "attached" to loaded,
+                "crashed" to crashed,
                 "messages" to out.take(8_000),
                 "stderr" to err.take(2_000),
                 "error" to when {
                     // Each exit code in the runner maps to the one thing the model should do next.
+                    crashed -> "注入把目标进程搞崩了（不是 Frida 掉线，是那个 App 死了）。" +
+                        "最常见的两个原因：" +
+                        "① hook 体内用 `this.method(...)` 回调原方法 —— 改成在 Java.perform 里缓存" +
+                        " `const orig = M.m.overload(...)`，然后 `orig.call(this, ...)`；" +
+                        "② 在 hook 体内用 Java.use() 或做字符串拼接，把 GC 压力放到最脆弱的时刻。" +
+                        "崩因在 tombstone 里（logcat 搜 SIGSEGV / libart）。"
                     out.contains("no frida module") || err.contains("no frida module") ->
                         "Linux 里没有 frida 的 Python 客户端。先在「常驻 root shell」里跑一次 " +
                             "pip3 install frida frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple，" +
@@ -410,6 +419,18 @@ def on_message(message, data):
     elif message.get("type") == "error":
         print("[DSH] error: " + str(message.get("description"))[:400])
 script.on("message", on_message)
+
+# A detached session means two very different things, and the report's P2 is exactly this:
+# `process-terminated` is the TARGET dying (a bad hook crashed it — go read tombstones),
+# anything else is the SESSION ending (server went away, script unloaded). Conflating them is
+# how "the app crashed" gets reported as "frida disconnected", and the caller then retries
+# forever against a dead process.
+detach = {}
+def on_detached(reason, crash):
+    detach["reason"] = str(reason)
+    detach["crash"] = str(crash) if crash else None
+sess.on("detached", on_detached)
+
 try:
     script.load()
 except Exception as e:
@@ -419,12 +440,24 @@ print("[DSH] attached pid=%d" % pid)
 # Without resume the process stays suspended at spawn, and every later attach queues until it
 # times out — the exact failure the report chased for a while.
 dev.resume(pid)
-time.sleep(float(sys.argv[1]) if len(sys.argv) > 1 else 15.0)
-try:
-    script.unload()
-except Exception:
-    pass
-print("[DSH] done")
+
+window = float(sys.argv[1]) if len(sys.argv) > 1 else 15.0
+deadline = time.time() + window
+while time.time() < deadline:
+    if detach:
+        break
+    time.sleep(0.25)
+
+if detach.get("reason") == "process-terminated":
+    print("[DSH] target-crashed: %s" % (detach.get("crash") or "process terminated"))
+elif detach:
+    print("[DSH] detached: %s" % detach.get("reason"))
+else:
+    try:
+        script.unload()
+    except Exception:
+        pass
+    print("[DSH] done")
 """
 
     private fun quote(word: String): String =

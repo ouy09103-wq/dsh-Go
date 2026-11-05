@@ -112,6 +112,18 @@ object PhoneGuest {
         |  .currentApplication().getApplicationContext(); ... })`，不要在外面存 `let ctx`。
         |- hook framework 类（Activity / LoadedApk 等）时，回调里只记录参数、原样返回；
         |  在里面再调别的 Java API 容易踩到 ART 的 transition frame 校验。
+        |- **hook 体内不要用 `this.method(...)` 回调原方法**。Android 14 的 MarkCompact GC 在
+        |  扫描线程栈时，会对着这种 replacement 帧的 ArtMethod 取 OatQuickMethodHeader，拿到
+        |  null 就 SIGSEGV（`CodeInfo::DecodeGcMasksOnly`，崩因看着像 App 自己崩，栈里没有
+        |  任何 gum/frida 帧）。高频方法尤其容易踩。正确写法：在 Java.perform 里把句柄缓存好，
+        |  用 `orig.call(this, ...)`：
+        |  `const orig = M.publish.overload('org.json.JSONObject', 'int');`
+        |  `M.publish.implementation = function (j, c) { return orig.call(this, j, c); };`
+        |- 高频 hook 里不要分配 Java 对象：`console.log('x' + j.toString())` 每轮都造新对象，
+        |  把 GC 压力放在最脆弱的时刻。只计数、落盘交给 RPC 批量取。
+        |- 会话 `detached` 要分清两种：`process-terminated` 是**目标进程死了**（上面那两条
+        |  就是常见原因，去 logcat 搜 SIGSEGV / libart），别重试；其他 reason 才是会话断了。
+        |  `frida` 工具的 inject 会直接把这两种分开报。
         |""".trimMargin()
 
     /**
