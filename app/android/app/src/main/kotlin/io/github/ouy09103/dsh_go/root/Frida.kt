@@ -22,16 +22,18 @@ import java.io.FileOutputStream
  * The asset is xz-compressed (59 MB → 17 MB) because it travels through git; the APK already
  * depends on org.tukaani:xz for the rootfs, so decompressing costs nothing extra.
  *
- * Version: the asset is 17.23.3. frida only checks the **major** version, so it talks to the
- * guest's 17.25.2 client. A future bump means replacing the asset and [SHA256].
+ * Version: the asset is 17.25.2, deliberately matched to what `pip3 install frida` gives you
+ * today — a client and server that differ even in the minor version make every attach time out
+ * after 25 s (measured), which reads exactly like a target app fighting back. Bumping the asset
+ * means updating [SHA256] and the version string in [VERSION_HINT].
  */
 internal object Frida {
 
     /** The bundled build: `assets/frida/<this>`. */
-    private const val ASSET = "frida/frida-server-17.23.3-android-arm64.xz"
+    private const val ASSET = "frida/frida-server-17.25.2-android-arm64.xz"
 
     /** sha256 of the **decompressed** binary; a bad asset fails here instead of at exec time. */
-    private const val SHA256 = "8887fb3dc84222416e2cdde706a10037c920df01d7858025168739d926c2fe17"
+    private const val SHA256 = "7bb6219131819c11e5fe53b3e32fae0b8d1ff4c2a9c35c1a549d2703ea0f3b9b"
 
     /** Where the working tool puts it, and where frida's own tooling looks by default. */
     const val REMOTE_DIR = "/data/local/tmp"
@@ -171,9 +173,9 @@ internal object Frida {
             ""
         }
         val pid = pidOf()
-        // The client and the server must agree on major.minor, not just the major: 17.25.2
-        // against 17.23.3 made every attach time out after 25 s, and the tool used to report
-        // that as a plain "timeout" — the least useful thing it could say.
+        // The client and the server must agree on major.minor, not just the major: a client one
+        // minor ahead made every attach time out after 25 s, and the tool used to report that as
+        // a plain "timeout" — the least useful thing it could say.
         val client = clientVersion(context)
         return mapOf(
             "ok" to true,
@@ -206,7 +208,8 @@ internal object Frida {
      * A sentence when the client and the server don't share a major.minor, null when they do.
      *
      * 17.23.3 and 17.25.2 look compatible (same major) but are not: every attach times out after
-     * 25 s. Matching major.minor is what frida actually needs here.
+     * 25 s. Matching major.minor is what frida actually needs — which is why the bundled server
+     * tracks the version `pip3 install frida` gives you.
      */
     private fun versionMismatch(server: String, client: String?): String? {
         if (server.isBlank() || client.isNullOrBlank()) return null

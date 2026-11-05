@@ -82,7 +82,7 @@ class RootDockSlot extends ConsumerWidget {
 }
 
 /// 「▣ 启用 Frida                点击启动」
-/// 「▣ Frida 已启用 · 17.23.3   点击关闭」
+/// 「▣ Frida 已启用 · 17.25.2   点击关闭」
 ///
 /// 和 root 胶囊同形，紧挨着它出现。存在的理由：模型没法从「我能跑 shell」
 /// 推断出「这台手机上 frida-server 装在哪、监听哪个端口」，所以它常常想不到要用；

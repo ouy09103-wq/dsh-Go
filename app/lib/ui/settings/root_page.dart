@@ -314,9 +314,9 @@ class _RootPageState extends ConsumerState<RootPage> {
             SettingsTile(
               icon: AppIcons.plugin,
               title: '安装并启动 frida-server',
-              subtitle: '内置 17.23.3（arm64），不联网下载。装到 /data/local/tmp，'
-                  '以 127.0.0.1:27042 启动。Linux 里的 frida 是 17.x，主版本一致就能连。',
-              value: Text(_busy ? '…' : '17.23.3'),
+              subtitle: '内置 17.25.2（arm64），不联网下载。装到 /data/local/tmp，'
+                  '以 127.0.0.1:27042 启动。跟 pip3 install frida 装到的版本对齐，直接能连。',
+              value: Text(_busy ? '…' : '17.25.2'),
               onTap: _busy ? null : _installFrida,
             ),
             SettingsTile(
