@@ -172,6 +172,12 @@ internal object Frida {
         } else {
             ""
         }
+        // **Listening is the truth, not `pidof`.** On this phone `pidof frida-server` comes back
+        // empty even while the server is up and serving (the process name differs from the
+        // binary name), so the old check reported "installed, not running" against a healthy
+        // server. A port that accepts connections is what the client actually needs; the pid is
+        // a convenience for the page, never the verdict.
+        val listening = listening(DEFAULT_PORT)
         val pid = pidOf()
         // The client and the server must agree on major.minor, not just the major: a client one
         // minor ahead made every attach time out after 25 s, and the tool used to report that as
@@ -180,9 +186,9 @@ internal object Frida {
         return mapOf(
             "ok" to true,
             "installed" to installed,
-            "running" to pid.isNotEmpty(),
+            "running" to (listening || pid.isNotEmpty()),
+            "listening" to listening,
             "pids" to pid,
-            "listening" to listening(DEFAULT_PORT),
             "version" to version.ifBlank { null },
             "client" to client,
             "mismatch" to versionMismatch(version, client),
@@ -235,8 +241,26 @@ internal object Frida {
         )
     }
 
-    private fun pidOf(): String =
-        RootExec.run("pidof frida-server 2>/dev/null | tr ' ' '\\n' | head -3", 15_000).stdout.trim()
+    /**
+     * Pids of a running server, best effort.
+     *
+     * `pidof frida-server` is not reliable here (the process may not carry the binary's name),
+     * so this also asks the listening socket's owner and pgrep. Empty is not a verdict — see
+     * [status], which goes by [listening].
+     */
+    private fun pidOf(): String {
+        val hex = "%04X".format(DEFAULT_PORT)
+        val bySocket = RootExec.run(
+            "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | head -1 | " +
+                "awk '{print \$10}' | cut -d: -f1 | tr -d ' '",
+            15_000,
+        ).stdout.trim().toIntOrNull()
+        if (bySocket != null && bySocket > 0) return bySocket.toString()
+        return RootExec.run(
+            "pidof frida-server 2>/dev/null || pgrep -f frida-server 2>/dev/null | head -3",
+            15_000,
+        ).stdout.trim()
+    }
 
     /** Whether something listens on [port]; `0x69A2` is 27042 in /proc/net/tcp's hex. */
     private fun listening(port: Int): Boolean {
@@ -336,15 +360,23 @@ internal object Frida {
             val loaded = out.contains("[DSH] attached")
             // `target-crashed` is the one outcome that must not be retried: the process is gone.
             val crashed = out.contains("[DSH] target-crashed")
+            // The cgroup freezer has the target stopped; nothing can attach until it is back
+            // in the foreground, and the 25 s timeout would otherwise read as anti-debugging.
+            val frozenTarget = out.contains("[DSH] target-frozen")
             return mapOf(
                 "ok" to (loaded && result.ok && !crashed),
                 "package" to pkg,
                 "attached" to loaded,
                 "crashed" to crashed,
+                "frozen" to frozenTarget,
                 "messages" to out.take(8_000),
                 "stderr" to err.take(2_000),
                 "error" to when {
                     // Each exit code in the runner maps to the one thing the model should do next.
+                    frozenTarget ->
+                        "目标进程被系统冻结了（cgroup freezer 把它挂起），frida 注入不了。" +
+                            "这不是 App 有反调试，25 秒超时就是这个原因。" +
+                            "把那个 App 切到前台再试：open 一下它，或者让用户手动点开。"
                     crashed -> "注入把目标进程搞崩了（不是 Frida 掉线，是那个 App 死了）。" +
                         "最常见的两个原因：" +
                         "① hook 体内用 `this.method(...)` 回调原方法 —— 改成在 Java.perform 里缓存" +
@@ -367,7 +399,14 @@ internal object Frida {
                     out.contains("script load failed") || err.contains("script load failed") ->
                         "脚本本身跑挂了（load 阶段）。检查语法，以及是不是用了 Frida 17 已经没有的 " +
                             "`Java` 全局对象——那要先 bundle frida-java-bridge。"
-                    !loaded -> "注入没成功：" + (err.ifBlank { out }.take(400).ifBlank { "没有输出" })
+                    // Nothing matched: show what the client actually printed, with the
+                    // stage markers, instead of a bare "no output". The report's
+                    // `[object Object]` came from exactly this gap.
+                    !loaded -> buildString {
+                        append("注入没成功。客户端说：")
+                        val detail = (out + "\n" + err).trim()
+                        append(if (detail.isEmpty()) "没有任何输出（脚本可能没跑起来）" else detail.take(500))
+                    }
                     else -> null
                 },
             )
@@ -400,10 +439,31 @@ dev = frida.get_device_manager().add_remote_device("127.0.0.1:27042")
 
 # spawn is the stable path: attach to an already-running process times out at random
 # ("waiting for stop"), and that has nothing to do with the target app.
+# spawn takes a package name (or an argv list); a one-element list also works but a bare
+# string is what frida-python's own docs use, and it reads better in the error below.
 try:
-    pid = dev.spawn(["@PKG@"])
+    pid = dev.spawn("@PKG@")
 except Exception as e:
     print("[DSH] spawn failed: %s: %s" % (type(e).__name__, e)); sys.exit(5)
+
+# A frozen process cannot be attached to: the cgroup freezer has it stopped, so frida waits
+# out its 25 s timeout and reports "waiting for stop" — which reads exactly like a target app
+# with anti-debugging. Check first and say what it is.
+def frozen(pid):
+    try:
+        for line in open("/proc/%d/cgroup" % pid, encoding="utf-8"):
+            path = line.strip().split(":")[-1]
+            if not path.startswith("/apps/"):
+                continue
+            f = "/sys/fs/cgroup" + path + "/cgroup.freeze"
+            return open(f, encoding="utf-8").read().strip() == "1"
+    except Exception:
+        return False
+    return False
+
+if frozen(pid):
+    print("[DSH] target-frozen")
+    sys.exit(8)
 
 sess = None
 last = ""

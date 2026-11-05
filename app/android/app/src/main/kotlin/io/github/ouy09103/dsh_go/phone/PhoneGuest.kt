@@ -145,6 +145,17 @@ object PhoneGuest {
         |  就是上面那条 replacement 帧的问题；`JNI DETECTED ERROR ... invalid JNI transition
         |  frame` 是 jobject 跨线程；`SIGKILL`（不是 SIGSEGV/SIGABRT）才是被系统或目标杀。
         |  栈里全是业务 so 且没有 libart，才值得怀疑反调试。别一崩就归因到「有反调试」。
+        |- **`Memory.readXxx` 在这台机器上不存在**：`typeof Memory.readByteArray === 'undefined'`，
+        |  读取方法只在 NativePointer 原型上。照抄旧脚本会 TypeError。写法：
+        |  `ptr(addr).readByteArray(16)` / `ptr(addr).readU8()` / `ptr(addr).readUtf8String()`，
+        |  不要用 `Memory.readByteArray(addr, 16)`。
+        |- **`Java.perform(fn)` 不返回 fn 的返回值**（frida-java-bridge 7.0.13 的缺陷：
+        |  `perform` 里 `this.vm.perform(fn)` 少了 return，`performNow` 是对的）。要拿返回值：
+        |  用 `Java.performNow(fn)`，或者用闭包捕获——`const box = {}; Java.perform(() => { box.v = x; });`。
+        |- 目标进程被 **cgroup freezer 冻结**时 attach 会等满 25 秒超时，报
+        |  `TimedOutError ... waiting for stop`。这不是反调试。查
+        |  `/sys/fs/cgroup/apps/uid_<uid>/pid_<pid>/cgroup.freeze` 是不是 1；是就把 App 切到前台。
+        |  `frida` 工具的 inject 会先查这个，冻着就直接报「目标被冻结」，不浪费 25 秒。
         |- 排查顺序：先只 load 空脚本静置 60 秒 → 再加 bridge + 空 Java.perform 静置 60 秒 →
         |  再逐个加 hook，每加一个等 60 秒。哪个加完开始崩就是它。崩溃时间窗通常是挂载后
         |  3~10 秒（首屏渲染后的密集 GC），所以「刚挂上没事、一操作就退」也是这个原因。
