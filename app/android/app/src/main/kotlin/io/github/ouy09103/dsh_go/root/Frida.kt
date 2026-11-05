@@ -166,18 +166,30 @@ internal object Frida {
     /** What the page shows: whether the server runs, on which port, and which build. */
     fun status(context: Context): Map<String, Any?> {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
-        val installed = RootExec.run("test -x $REMOTE_SERVER && echo yes", 15_000).stdout.contains("yes")
-        val version = if (installed) {
+        // "Installed" has to mean "a working frida-server is there", not "a file is there":
+        // the report found that swapping the binary for anything else still reported
+        // "installed 17.25.2" because only the path was checked. `--version` printing a
+        // version number is the cheapest proof that the thing runs and is what it claims.
+        val present = RootExec.run("test -x $REMOTE_SERVER && echo yes", 15_000).stdout.contains("yes")
+        val version = if (present) {
             RootExec.run("$REMOTE_SERVER --version 2>/dev/null | tail -1", 20_000).stdout.trim()
         } else {
             ""
         }
+        // No version line means the file is there but is not a usable server (wrong binary,
+        // wrong ABI, or it aborted before printing — see the BOOTCLASSPATH note below).
+        val installed = present && VERSION.containsMatchIn(version)
         // **Listening is the truth, not `pidof`.** On this phone `pidof frida-server` comes back
         // empty even while the server is up and serving (the process name differs from the
         // binary name), so the old check reported "installed, not running" against a healthy
         // server. A port that accepts connections is what the client actually needs; the pid is
         // a convenience for the page, never the verdict.
-        val listening = listening(DEFAULT_PORT)
+        //
+        // The port is read from the running server's argv when possible: some targets kill
+        // themselves on a connect to 27042 specifically (the report's com.chunqiunativecheck
+        // probes it three times), so a server started on another port has to be seen as running.
+        val port = activePort() ?: DEFAULT_PORT
+        val listening = listening(port)
         val pid = pidOf()
         // The client and the server must agree on major.minor, not just the major: a client one
         // minor ahead made every attach time out after 25 s, and the tool used to report that as
@@ -193,7 +205,7 @@ internal object Frida {
             "client" to client,
             "mismatch" to versionMismatch(version, client),
             "path" to REMOTE_SERVER,
-            "port" to DEFAULT_PORT,
+            "port" to port,
         )
     }
 
@@ -242,31 +254,60 @@ internal object Frida {
     }
 
     /**
+     * The port a running server was started with, or null when it can't be read.
+     *
+     * Taken from the process's own argv (`-l 127.0.0.1:27043`), so a server on a non-default
+     * port is still seen as running. Some targets kill themselves the moment anything
+     * connects to 27042, so running elsewhere is a legitimate and common setup.
+     */
+    private fun activePort(): Int? {
+        val pid = pidOf().split(" ").firstOrNull { it.isNotBlank() } ?: return null
+        val cmdline = RootExec.run("tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null", 15_000)
+            .stdout.trim()
+        val match = Regex("""(?:-l\s+|:)(?:127\.0\.0\.1:|0\.0\.0\.0:)?(\d{2,5})""").find(cmdline)
+        return match?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 1..65535 }
+    }
+
+    /**
      * Pids of a running server, best effort.
      *
-     * `pidof frida-server` is not reliable here (the process may not carry the binary's name),
-     * so this also asks the listening socket's owner and pgrep. Empty is not a verdict — see
-     * [status], which goes by [listening].
+     * **`/proc/net/tcp`'s 10th field is the socket inode, not a pid.** Reading it as a pid is
+     * what produced the report's "PID 2710988" — a number that doesn't exist under /proc and
+     * changes on every call. The only trustworthy sources are `pidof`/`pgrep` and, failing
+     * those, walking /proc looking for the binary in each process's cmdline.
+     *
+     * Empty is not a verdict — see [status], which goes by [listening].
      */
     private fun pidOf(): String {
-        val hex = "%04X".format(DEFAULT_PORT)
-        val bySocket = RootExec.run(
-            "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | head -1 | " +
-                "awk '{print \$10}' | cut -d: -f1 | tr -d ' '",
+        val named = RootExec.run(
+            "pidof frida-server 2>/dev/null; pgrep -f frida-server 2>/dev/null; true",
             15_000,
-        ).stdout.trim().toIntOrNull()
-        if (bySocket != null && bySocket > 0) return bySocket.toString()
+        ).stdout.trim()
+        if (named.isNotEmpty()) return named.lineSequence().filter { it.isNotBlank() }
+            .joinToString(" ").trim()
+        // No process carries the name: find who has the binary mapped. `grep -l` over cmdline
+        // is cheap enough at this size and does not depend on any name at all.
         return RootExec.run(
-            "pidof frida-server 2>/dev/null || pgrep -f frida-server 2>/dev/null | head -3",
-            15_000,
+            "for d in /proc/[0-9]*; do " +
+                "c=\"\$(tr '\\0' ' ' < \$d/cmdline 2>/dev/null)\"; " +
+                "case \"\$c\" in *frida*) echo \${d#/proc/};; esac; done | head -3",
+            20_000,
         ).stdout.trim()
     }
 
-    /** Whether something listens on [port]; `0x69A2` is 27042 in /proc/net/tcp's hex. */
+    /**
+     * Whether something is *listening* on [port].
+     *
+     * `/proc/net/tcp` lists every socket in every state. Matching the port alone counts
+     * `TIME_WAIT` leftovers (state `06`) as an occupied port, which is what made `start` tell
+     * people to reboot the phone over a socket that clears itself in seconds. Only `0A`
+     * (LISTEN) means occupied; `0x69A2` is 27042 in this file's hex.
+     */
     private fun listening(port: Int): Boolean {
         val hex = "%04X".format(port)
         return RootExec.run(
-            "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | head -1",
+            "awk -v p='$hex' '\$2 ~ \":\"p \$4 == \"0A\" {print; exit}' " +
+                "/proc/net/tcp /proc/net/tcp6 2>/dev/null",
             15_000,
         ).stdout.trim().isNotEmpty()
     }
@@ -284,19 +325,18 @@ internal object Frida {
      */
     private fun freePort(port: Int): String? {
         stop()
-        val hex = "%04X".format(port)
+        // Only LISTEN blocks a new server. A TIME_WAIT socket (state 06) is a closed
+        // connection waiting out its timeout — it cannot accept anything, it clears itself in
+        // seconds, and telling people to reboot over it was wrong.
         repeat(6) {
-            val held = RootExec.run(
-                "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -i ':$hex ' | head -1",
-                15_000,
-            ).stdout.trim()
-            if (held.isEmpty()) return null
+            if (!listening(port)) return null
             Thread.sleep(300)
         }
-        val pids = RootExec.run("pidof frida-server 2>/dev/null", 15_000).stdout.trim()
+        val pids = pidOf()
         // l10n:keep agent tool result
-        return "端口 $port 还是被占着" + (pids.ifBlank { "" }.let { if (it.isEmpty()) "" else "（frida-server pid $it）" }) +
-            "。它不是 frida-server，或者是刚被杀还没退干净：重启手机后最干净。"
+        return "端口 $port 还被别的程序监听" +
+            (if (pids.isBlank()) "" else "（可能是 frida-server pid $pids）") +
+            "。先把它停掉再重试；如果那是另一个 App 的服务，换个端口（参数 port）。"
     }
 
     /**

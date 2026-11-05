@@ -156,6 +156,16 @@ object PhoneGuest {
         |  `TimedOutError ... waiting for stop`。这不是反调试。查
         |  `/sys/fs/cgroup/apps/uid_<uid>/pid_<pid>/cgroup.freeze` 是不是 1；是就把 App 切到前台。
         |  `frida` 工具的 inject 会先查这个，冻着就直接报「目标被冻结」，不浪费 25 秒。
+        |- **有的目标会探测 27042 端口**：启动时连 3 次，每次都成功就认定「装了 Frida」并自杀
+        |  （`exit_self`，`SIGKILL`，不是崩溃）。所以只要 frida-server 常驻在默认端口，这类
+        |  App 就启动即退。查法：起 server 时看目标会不会秒退；或者先不起 server 跑一次对照。
+        |  解法：把 server 起在别的端口（`frida(action=start, port=27043)`），再让客户端连那个端口。
+        |- **注入落地后被 abort 是另一回事**：`liblongzevmcq.so` 这类加固会在 agent 载入后
+        |  主动 `abort()`（`SIGABRT`，裸 abort，栈里有业务 so + `art_jni_trampoline`）。
+        |  它检测的是 ptrace / maps 里的 agent 段 / `gum-js-loop` 线程名，**与脚本内容无关**，
+        |  所以只 attach 不加载脚本也会崩。这种目标换端口绕不过去，得在 agent 落地前
+        |  patch 检测入口，或者放弃动态分析改静态。
+        |  区分两者：`SIGKILL` + `exit_self` = 端口探测；`SIGABRT` + 业务 so 帧 = 注入后自毁。
         |- 排查顺序：先只 load 空脚本静置 60 秒 → 再加 bridge + 空 Java.perform 静置 60 秒 →
         |  再逐个加 hook，每加一个等 60 秒。哪个加完开始崩就是它。崩溃时间窗通常是挂载后
         |  3~10 秒（首屏渲染后的密集 GC），所以「刚挂上没事、一操作就退」也是这个原因。
