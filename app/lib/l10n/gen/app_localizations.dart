@@ -18191,7 +18191,7 @@ abstract class L10n {
   /// No description provided for @phoneToolShell.
   ///
   /// In zh, this message translates to:
-  /// **'Frida'**
+  /// **'root 命令'**
   String get phoneToolShell;
 
   /// Action log label for the frida tool.
