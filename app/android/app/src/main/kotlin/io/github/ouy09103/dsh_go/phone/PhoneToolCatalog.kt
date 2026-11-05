@@ -294,6 +294,9 @@ object PhoneToolCatalog {
                     "要做 Java hook 先 bundle frida-java-bridge"),
                 // l10n:keep agent tool catalog
                 "timeoutMs" to int("inject 收集消息多久，默认 20000（5000–300000）"),
+                // l10n:keep agent tool catalog
+                "port" to int("frida-server 监听端口，默认 27042。有的目标会探测 27042，" +
+                    "连 3 次都通就自杀；遇到这类目标换成 27043 之类，客户端再连那个端口"),
             ),
             emptyList(),
         ),

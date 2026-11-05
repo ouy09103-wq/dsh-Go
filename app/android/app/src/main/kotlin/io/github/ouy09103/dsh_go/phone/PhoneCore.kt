@@ -61,7 +61,7 @@ interface PhoneEnv {
     fun fridaStatus(): Map<String, Any?> = emptyMap()
 
     /** 装内置的 frida-server 并启动。失败时 map 里有 error。 */
-    fun fridaStart(): Map<String, Any?> = emptyMap()
+    fun fridaStart(port: Int? = null): Map<String, Any?> = emptyMap()
 
     /** 停掉正在跑的 frida-server。 */
     fun fridaStop(): Map<String, Any?> = emptyMap()
@@ -73,7 +73,8 @@ interface PhoneEnv {
      * frida-server、spawn/attach、resume、收消息。少了任何一步它就只能靠 shell 拼，
      * 而那条路它已经证明会走错（见 AGENTS.md 里那条 spawn 后必须 resume）。
      */
-    fun fridaInject(pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> = emptyMap()
+    fun fridaInject(pkg: String, script: String?, timeoutMs: Long, port: Int? = null): Map<String, Any?> =
+        emptyMap()
 
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
@@ -788,13 +789,14 @@ class PhoneCore(
                     summary = "frida", decision = "refused:no-package")
             val script = a.str("script")
             val timeout = (a.int("timeoutMs") ?: FRIDA_INJECT_MS).toLong()
-            val injected = env.fridaInject(pkg, script, timeout)
+            val injected = env.fridaInject(pkg, script, timeout, port)
             val verdict = describeFrida("inject", injected)
             return Out(verdict, error = injected["ok"] != true, summary = "frida",
                 decision = if (injected["ok"] == true) "ok" else "failed")
         }
+        val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
         val result = when (action) {
-            "start" -> env.fridaStart()
+            "start" -> env.fridaStart(port)
             "stop" -> env.fridaStop()
             else -> env.fridaStatus()
         }

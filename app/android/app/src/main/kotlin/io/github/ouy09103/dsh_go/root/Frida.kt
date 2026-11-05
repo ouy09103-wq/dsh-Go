@@ -354,15 +354,29 @@ internal object Frida {
      * 脚本以文件传给 guest（-s），不拼进命令行：hook 脚本里全是引号和反斜杠，
      * 经过 sh 和 su 两层再转义必然出错。
      */
-    fun inject(context: Context, pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> {
+    fun inject(
+        context: Context,
+        pkg: String,
+        script: String?,
+        timeoutMs: Long,
+        port: Int? = null,
+    ): Map<String, Any?> {
+        val targetPort = port ?: activePort() ?: DEFAULT_PORT
         if (pkg in FORBIDDEN_TARGETS) {
             // l10n:keep agent tool result
             return fail("不往 $pkg 注入：那个进程一崩整台手机会重启。只对普通 App 用。")
         }
         RootExec.suPath() ?: return fail("这台手机上没有 su")
         val status = status(context)
-        if (status["running"] != true) {
-            return fail("frida-server 没在跑。先 action=start 装上并启动，再注入。")
+        // Check the port we are about to connect to, not just "something is running": a
+        // server on 27043 is useless to a client that dials 27042.
+        if (!listening(targetPort)) {
+            val elsewhere = status["port"] as? Int
+            return fail(
+                "端口 $targetPort 上没有 frida-server" +
+                    (if (elsewhere != null && elsewhere != targetPort) "（它现在在 $elsewhere）" else "") +
+                    "。先 action=start 装上并启动（可以传 port），再注入。",
+            )
         }
 
         val payload = script?.takeIf { it.isNotBlank() }
@@ -386,7 +400,10 @@ internal object Frida {
         try {
             scriptFile.writeText(payload)
             runnerFile.writeText(
-                FRIDA_RUNNER.replace("@PKG@", pkg).replace("@SCRIPT@", scriptGuest),
+                FRIDA_RUNNER
+                    .replace("@PKG@", pkg)
+                    .replace("@SCRIPT@", scriptGuest)
+                    .replace("@PORT@", targetPort.toString()),
             )
             val serverVersion = status["version"] as? String ?: ""
             val command = GuestExec.suCommand(
@@ -475,7 +492,7 @@ if WANT and GOT and WANT.split(".")[:2] != GOT.split(".")[:2]:
     print("[DSH] fix: pip3 install frida==%s frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple" % WANT)
     sys.exit(4)
 
-dev = frida.get_device_manager().add_remote_device("127.0.0.1:27042")
+dev = frida.get_device_manager().add_remote_device("127.0.0.1:@PORT@")
 
 # spawn is the stable path: attach to an already-running process times out at random
 # ("waiting for stop"), and that has nothing to do with the target app.
