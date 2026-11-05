@@ -99,6 +99,9 @@ object PhoneGuest {
         |  `frida-compile` 在手机上跑不起来（缺 frida 的 Node 绑定和 make），别试。
         |- 注入脚本超时（`TimedOutError ... waiting for stop`）几乎都是**上一轮 spawn 后忘了 resume**，
         |  不是反调试：`pid = dev.spawn(...)` 之后必须 `dev.resume(pid)`，否则进程停在挂起态，后续 attach 全排队超时。
+        |- `frida` 工具的 inject 靠 Linux 里的 frida-python 客户端。第一次用或重装过 App 之后它会缺，
+        |  先 `pip3 install frida frida-tools`（走国内镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）。
+        |  版本要跟 frida-server 的主版本一致（内置的是 17.x）。
         |""".trimMargin()
 
     /**

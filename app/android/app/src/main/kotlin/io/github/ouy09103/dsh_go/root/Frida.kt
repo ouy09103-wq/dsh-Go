@@ -285,6 +285,11 @@ internal object Frida {
                 "messages" to out.take(8_000),
                 "stderr" to err.take(2_000),
                 "error" to when {
+                    // The runner exits 3 with this exact line when `import frida` fails.
+                    out.contains("no frida module") || err.contains("no frida module") ->
+                        "Linux 里没有 frida 的 Python 客户端。先在「常驻 root shell」里跑一次 " +
+                            "`pip3 install frida frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple`，" +
+                            "然后重试注入。"
                     !loaded -> "注入没成功：" + (err.ifBlank { out }.take(400).ifBlank { "没有输出" })
                     else -> null
                 },
