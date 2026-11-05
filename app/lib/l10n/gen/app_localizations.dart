@@ -18191,7 +18191,7 @@ abstract class L10n {
   /// No description provided for @phoneToolShell.
   ///
   /// In zh, this message translates to:
-  /// **'root 命令'**
+  /// **'Frida'**
   String get phoneToolShell;
 
   /// Action log label for the frida tool.
@@ -25589,7 +25589,7 @@ abstract class L10n {
   /// No description provided for @searchKwRoot.
   ///
   /// In zh, this message translates to:
-  /// **'root,su,提权,超级用户,root shell,rootfs,shell 命令,命令行'**
+  /// **'root,su,提权,超级用户,root shell,rootfs,frida,shell 命令,命令行'**
   String get searchKwRoot;
 
   /// No description provided for @shellDeletePermanently.

@@ -279,8 +279,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             return false
         }
         return try {
-            PhoneGuest.writeFiles(rootfs)
             val ep = bridge.start(withTcp = prefs.getBoolean(K_TCP_FALLBACK, false))
+            // The overlay carries the token (as the relay child's environment), the config file
+            // only the socket name: a token on disk would be readable by everything in the guest.
+            PhoneGuest.writeFiles(rootfs, ep.token)
             PhoneGuest.writeConfig(rootfs, ep)
             registerScreenOff()
             tasks.clearStop()
