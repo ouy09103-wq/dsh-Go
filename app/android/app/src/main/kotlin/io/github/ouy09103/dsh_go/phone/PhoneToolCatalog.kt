@@ -297,6 +297,9 @@ object PhoneToolCatalog {
                 // l10n:keep agent tool catalog
                 "port" to int("frida-server 监听端口，默认 27042。有的目标会探测 27042，" +
                     "连 3 次都通就自杀；遇到这类目标换成 27043 之类，客户端再连那个端口"),
+                // l10n:keep agent tool catalog
+                "stealth" to bool("隐身模式：二进制改名、放在不起眼的目录，" +
+                    "躲开目标对 frida-server 名字和路径的扫描。配合换端口用"),
             ),
             emptyList(),
         ),

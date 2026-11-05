@@ -61,7 +61,7 @@ interface PhoneEnv {
     fun fridaStatus(): Map<String, Any?> = emptyMap()
 
     /** 装内置的 frida-server 并启动。失败时 map 里有 error。 */
-    fun fridaStart(port: Int? = null): Map<String, Any?> = emptyMap()
+    fun fridaStart(port: Int? = null, stealth: Boolean = false): Map<String, Any?> = emptyMap()
 
     /** 停掉正在跑的 frida-server。 */
     fun fridaStop(): Map<String, Any?> = emptyMap()
@@ -796,7 +796,7 @@ class PhoneCore(
         }
         val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
         val result = when (action) {
-            "start" -> env.fridaStart(port)
+            "start" -> env.fridaStart(port, a.bool("stealth") == true)
             "stop" -> env.fridaStop()
             else -> env.fridaStatus()
         }

@@ -39,6 +39,20 @@ internal object Frida {
     const val REMOTE_DIR = "/data/local/tmp"
     const val REMOTE_SERVER = "$REMOTE_DIR/frida-server"
 
+    /**
+     * Stealth install: a random binary name in a directory that doesn't say "frida".
+     *
+     * Targets scan for the literal strings `frida-server`, `/data/local/tmp/frida`, and the
+     * `gum-js-loop` thread name. None of that survives if the binary is called something else
+     * and lives somewhere unremarkable — the report's com.chunqiunativecheck reads
+     * `/proc/self/maps` and cmdline looking for exactly those.
+     *
+     * This is obscurity, not evasion: a determined checker can still find the agent in memory
+     * after injection. It defeats name-and-path scanning, which is what most of them do.
+     */
+    private const val STEALTH_BINARY = "netd_helper"
+    private const val STEALTH_DIR = "/data/local/tmp/.cache"
+
     const val DEFAULT_PORT = 27042
 
     /** `17.23.3` at the start of a line: the shape `frida.__version__` prints. */
@@ -59,7 +73,7 @@ internal object Frida {
      * `/data/local/tmp` and `chmod 755` through su — so the push never has to stream 59 MB
      * through a pipe, which is what makes a slow root manager time out.
      */
-    fun install(context: Context, port: Int): Map<String, Any?> {
+    fun install(context: Context, port: Int, stealth: Boolean = false): Map<String, Any?> {
         if (Build.SUPPORTED_ABIS.firstOrNull() != "arm64-v8a") {
             return fail("内置的 frida-server 只有 arm64 版，这台手机的 ABI 是 ${Build.SUPPORTED_ABIS.firstOrNull()}")
         }
@@ -75,19 +89,61 @@ internal object Frida {
             return fail("内置 frida-server 解出失败：" + (e.message ?: e.javaClass.simpleName))
         }
 
+        // Stealth writes a differently-named copy to an unremarkable directory and runs that.
+        // Same binary, same bytes — only the name and path a scanner greps for change.
+        val target = if (stealth) "$STEALTH_DIR/$STEALTH_BINARY" else REMOTE_SERVER
         val push = RootExec.run(
-            "mkdir -p $REMOTE_DIR && cp ${quote(extracted.absolutePath)} $REMOTE_SERVER && " +
-                "chmod 755 $REMOTE_SERVER && $REMOTE_SERVER --version",
+            "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
+                "cp ${quote(extracted.absolutePath)} $target && chmod 755 $target && $target --version",
             180_000,
         )
         extracted.delete()
         if (!push.ok) {
-            return fail("写 $REMOTE_SERVER 失败：" + (push.stderr.ifBlank { push.stdout }.take(300)))
+            return fail("写 $target 失败：" + (push.stderr.ifBlank { push.stdout }.take(300)))
         }
         val version = push.stdout.trim().lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
 
         freePort(port)?.let { return fail(it) }
-        return start(port) + mapOf("version" to version.ifBlank { null }, "path" to REMOTE_SERVER)
+        // `start` always uses REMOTE_SERVER; for stealth, point it at the copy instead.
+        val started = if (stealth) startAt(target, port) else start(port)
+        return started + mapOf(
+            "version" to version.ifBlank { null },
+            "path" to target,
+            "stealth" to stealth,
+        )
+    }
+
+    /**
+     * Starts the binary at [path] on [port].
+     *
+     * Split out from [start] so stealth can run a copy under a different name without
+     * duplicating the setsid / /dev/null dance, which is the part that took the longest to
+     * get right on this phone.
+     */
+    private fun startAt(path: String, port: Int): Map<String, Any?> {
+        val dir = path.substringBeforeLast('/')
+        val script = buildString {
+            append("B=${quote(path)}; ")
+            append("cd $dir || exit 3; ")
+            append("if command -v setsid >/dev/null 2>&1; then ")
+            append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
+            append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
+            append("sleep 2; ")
+            append("if [ -n \"\$(pgrep -f '${path.substringAfterLast('/')}' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
+            append("else echo FRIDA_NOT_RUNNING; fi")
+        }
+        val result = RootExec.run(script, 60_000)
+        if (!result.stdout.contains("FRIDA_RUNNING")) {
+            return mapOf(
+                "ok" to false,
+                "port" to port,
+                "error" to "frida-server 没有起来（$path 存在，但找不到进程）。" +
+                    "到「常驻 root shell」里手动跑一次 $path -l 127.0.0.1:$port，看它说什么。",
+                "stdout" to result.stdout.trim(),
+                "stderr" to result.stderr.trim(),
+            )
+        }
+        return mapOf("ok" to true, "port" to port, "pid" to pidOf(), "path" to path)
     }
 
     /**
@@ -140,7 +196,8 @@ internal object Frida {
             append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
             append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
             append("sleep 2; ")
-            append("if [ -n \"\$(pidof frida-server 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
+            // Cannot use pidof frida-server: the process may be renamed in stealth mode.
+            append("if [ -n \"\$(pgrep -f 'frida-server\|$STEALTH_BINARY' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
             append("else echo FRIDA_NOT_RUNNING; fi")
         }
         val result = RootExec.run(script, 60_000)
@@ -245,10 +302,18 @@ internal object Frida {
     }
 
     /** Stops a running server. Also used before a start, so two builds never share the port. */
+    /**
+     * Kills any server, whatever it is called.
+     *
+     * Matches the plain name, the stealth name, and anything whose cmdline carries either —
+     * a renamed copy has to be stoppable too, or "stop" leaves a listening port behind and
+     * the next start reports it as occupied.
+     */
     fun stop() {
+        val pattern = "frida-server|$STEALTH_BINARY"
         RootExec.run(
-            "for P in \$(pidof frida-server 2>/dev/null); do kill \"\$P\" 2>/dev/null || true; done; " +
-                "sleep 1; for P in \$(pidof frida-server 2>/dev/null); do kill -9 \"\$P\" 2>/dev/null || true; done; true",
+            "for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill \"\$P\" 2>/dev/null || true; done; " +
+                "sleep 1; for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill -9 \"\$P\" 2>/dev/null || true; done; true",
             30_000,
         )
     }
