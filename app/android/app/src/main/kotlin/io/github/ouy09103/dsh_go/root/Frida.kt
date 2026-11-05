@@ -107,7 +107,7 @@ internal object Frida {
      * The technique is from phantom-frida (TheQmaks/phantom-frida, ~90 patches over 16
      * detection classes). Its key insight is that most of Frida's detection surface is
      * *strings* — a checker greps `/proc/self/maps`, the task names under
-     * `/proc/self/task/*/status`, or the loaded module list. Replacing those strings in the
+     * `/proc/self/task/<tid>/status`, or the loaded module list. Replacing those strings in the
      * already-compiled binary is enough for the name-based checks, and needs no toolchain
      * (rebuilding frida-server on a phone is not possible anyway).
      *
