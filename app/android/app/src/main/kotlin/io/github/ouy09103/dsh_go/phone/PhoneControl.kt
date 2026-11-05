@@ -715,6 +715,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun fridaStart(): Map<String, Any?> = Frida.install(app, Frida.DEFAULT_PORT)
 
+    override fun fridaInject(pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> =
+        Frida.inject(app, pkg, script, timeoutMs)
+
     override fun fridaStop(): Map<String, Any?> {
         Frida.stop()
         return Frida.status()

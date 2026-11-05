@@ -286,7 +286,14 @@ object PhoneToolCatalog {
                 "监听 127.0.0.1:27042。Linux 环境里的 frida 客户端可以直接连。",
             linkedMapOf(
                 // l10n:keep agent tool catalog
-                "action" to str("status（默认，只读）/ start（装上并启动）/ stop（停掉）"),
+                "action" to str("status（默认，只读）/ start（装上并启动）/ stop（停掉）/ inject（注入脚本到某个 App）"),
+                // l10n:keep agent tool catalog
+                "package" to str("inject 时要注入的 App 包名；不能是 system_server / zygote"),
+                // l10n:keep agent tool catalog
+                "script" to str("inject 的 Frida 脚本（JS 全文）。Frida 17 没有 Java 全局对象，" +
+                    "要做 Java hook 先 bundle frida-java-bridge"),
+                // l10n:keep agent tool catalog
+                "timeoutMs" to int("inject 收集消息多久，默认 20000（5000–300000）"),
             ),
             emptyList(),
         ),

@@ -66,6 +66,15 @@ interface PhoneEnv {
     /** 停掉正在跑的 frida-server。 */
     fun fridaStop(): Map<String, Any?> = emptyMap()
 
+    /**
+     * 把 [script] 注入 [pkg]，跑 [timeoutMs] 后收集它 send 回来的消息。
+     *
+     * 这是 `frida` 工具的 inject：模型要 hook 一个 App 时，得有人替它起客户端、连
+     * frida-server、spawn/attach、resume、收消息。少了任何一步它就只能靠 shell 拼，
+     * 而那条路它已经证明会走错（见 AGENTS.md 里那条 spawn 后必须 resume）。
+     */
+    fun fridaInject(pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> = emptyMap()
+
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
@@ -772,6 +781,18 @@ class PhoneCore(
                 decision = "refused:root-off",
             )
         }
+        if (action == "inject") {
+            // l10n:keep agent tool result
+            val pkg = a.str("package")
+                ?: return Out("inject 需要 package：要注入的 App 包名（必须是普通应用）。", error = true,
+                    summary = "frida", decision = "refused:no-package")
+            val script = a.str("script")
+            val timeout = (a.int("timeoutMs") ?: FRIDA_INJECT_MS).toLong()
+            val injected = env.fridaInject(pkg, script, timeout)
+            val verdict = describeFrida("inject", injected)
+            return Out(verdict, error = injected["ok"] != true, summary = "frida",
+                decision = if (injected["ok"] == true) "ok" else "failed")
+        }
         val result = when (action) {
             "start" -> env.fridaStart()
             "stop" -> env.fridaStop()
@@ -791,6 +812,19 @@ class PhoneCore(
         if (result["ok"] != true) {
             // l10n:keep agent tool result
             return "frida $action 失败：" + (result["error"] as? String ?: "未知原因")
+        }
+        if (action == "inject") {
+            val pkg = result["package"] as? String ?: "?"
+            val messages = (result["messages"] as? String).orEmpty().trim()
+            // l10n:keep agent tool result
+            return buildString {
+                append("已注入 $pkg。")
+                if (messages.isEmpty()) {
+                    append("\n脚本没有 send 任何消息——可能是它没跑，或者 hook 点没被命中。")
+                } else {
+                    append("\n脚本回传：\n").append(messages)
+                }
+            }
         }
         val installed = result["installed"] == true
         val running = result["running"] == true
@@ -931,8 +965,11 @@ class PhoneCore(
         /** One `shell_read` answer never exceeds this, so a follow-up can't flood the context. */
         const val MAX_SHELL_READ_CHARS = 32_000
 
-        /** frida's three actions; anything else is refused before it reaches the host. */
-        val FRIDA_ACTIONS = listOf("status", "start", "stop")
+        /** frida's actions; anything else is refused before it reaches the host. */
+        val FRIDA_ACTIONS = listOf("status", "start", "stop", "inject")
+
+        /** How long an inject collects messages before it detaches and reports. */
+        const val FRIDA_INJECT_MS = 20_000
 
         /** The call's own time, not counting waits for the person. */
         fun budgetMs(tool: String): Long = when (tool) {
@@ -944,7 +981,7 @@ class PhoneCore(
             PhoneToolCatalog.HANDOFF -> 30_000L
             PhoneToolCatalog.SHELL -> 125_000L
             PhoneToolCatalog.SHELL_READ -> 10_000L
-            PhoneToolCatalog.FRIDA -> 200_000L
+            PhoneToolCatalog.FRIDA -> 240_000L
             else -> 30_000L
         }
     }

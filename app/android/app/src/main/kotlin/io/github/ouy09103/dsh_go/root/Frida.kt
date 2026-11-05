@@ -40,6 +40,14 @@ internal object Frida {
     const val DEFAULT_PORT = 27042
 
     /**
+     * 永不注入的进程。往 system_server 或 zygote 注 agent，崩一次就是整机重启
+     * （这台机器上已经发生过一次，见 frida-notes/SUMMARY.md）。
+     */
+    val FORBIDDEN_TARGETS = setOf(
+        "system_server", "zygote", "zygote64", "zygote32", "init", "surfaceflinger",
+    )
+
+    /**
      * Installs the bundled server and starts it on [port].
      *
      * The binary is written as the app first (the app owns its cache dir), then copied to
@@ -220,6 +228,104 @@ internal object Frida {
         return "端口 $port 还是被占着" + (pids.ifBlank { "" }.let { if (it.isEmpty()) "" else "（frida-server pid $it）" }) +
             "。它不是 frida-server，或者是刚被杀还没退干净：重启手机后最干净。"
     }
+
+    /**
+     * 把 [script] 注入 [pkg] 并收集它 send 回来的消息。
+     *
+     * 客户端跑在打包的 Ubuntu rootfs 里（frida-python 由用户自己装过，见 gpucheck 的报告），
+     * 连 127.0.0.1:27042 的 frida-server。
+     *
+     * 报告里踩过的两个坑，这里都绕开了：
+     *  - **spawn 之后必须 resume**，否则进程停在挂起态，后续 attach 全排队超时
+     *    （报告里那些 `TimedOutError` 就是这么来的，不是反调试）
+     *  - **Frida 17 没有 `Java` 全局对象**，Java hook 要先 bundle frida-java-bridge；
+     *    这条只能靠 AGENTS.md 告诉模型，工具这边只负责把脚本原样送进去
+     *
+     * 脚本以文件传给 guest（-s），不拼进命令行：hook 脚本里全是引号和反斜杠，
+     * 经过 sh 和 su 两层再转义必然出错。
+     */
+    fun inject(context: Context, pkg: String, script: String?, timeoutMs: Long): Map<String, Any?> {
+        if (pkg in FORBIDDEN_TARGETS) {
+            // l10n:keep agent tool result
+            return fail("不往 $pkg 注入：那个进程一崩整台手机会重启。只对普通 App 用。")
+        }
+        RootExec.suPath() ?: return fail("这台手机上没有 su")
+        val status = status()
+        if (status["running"] != true) {
+            return fail("frida-server 没在跑。先 action=start 装上并启动，再注入。")
+        }
+
+        val payload = script?.takeIf { it.isNotBlank() }
+            ?: return fail("inject 需要 script：要注入的 Frida 脚本内容（JS）。")
+
+        // Both files go into the rootfs as the app (the rootfs lives under filesDir, so no su
+        // needed to write) and are removed in the finally below: a hook script can name a
+        // target app, and leaving it in DSH home would leak that to the next session.
+        val dir = File(context.filesDir, "runtime/rootfs/root/.dsh/frida-inject").apply { mkdirs() }
+        val scriptFile = File(dir, "hook.js")
+        val runnerFile = File(dir, "run.py")
+        val scriptGuest = "/root/.dsh/frida-inject/hook.js"
+        val runnerGuest = "/root/.dsh/frida-inject/run.py"
+        val seconds = (timeoutMs.coerceIn(5_000L, 300_000L) / 1000).toString()
+        try {
+            scriptFile.writeText(payload)
+            runnerFile.writeText(
+                FRIDA_RUNNER.replace("@PKG@", pkg).replace("@SCRIPT@", scriptGuest),
+            )
+            val command = GuestExec.suCommand(context, "python3 $runnerGuest $seconds")
+                ?: return fail("rootfs 还没解压，注入脚本没地方跑")
+            val result = RootExec.run(command, timeoutMs.coerceIn(5_000L, 300_000L))
+            val out = result.stdout.trim()
+            val err = result.stderr.trim()
+            val loaded = out.contains("[DSH] attached")
+            return mapOf(
+                "ok" to (loaded && result.ok),
+                "package" to pkg,
+                "attached" to loaded,
+                "messages" to out.take(8_000),
+                "stderr" to err.take(2_000),
+                "error" to when {
+                    !loaded -> "注入没成功：" + (err.ifBlank { out }.take(400).ifBlank { "没有输出" })
+                    else -> null
+                },
+            )
+        } finally {
+            runCatching { dir.deleteRecursively() }
+        }
+    }
+
+    /**
+     * 在 guest 里跑的客户端。spawn → load → resume → 收消息 → detach。
+     *
+     * `resume` 放在 `load()` 之后、`time.sleep` 之前：脚本还没加载就 resume，
+     * 前几毫秒的调用会漏掉；反过来忘了 resume，进程一直挂着，后面的 attach 全超时。
+     */
+    private val FRIDA_RUNNER = """
+import sys, time, json
+try:
+    import frida
+except Exception as e:
+    print("[DSH] no frida module: %s" % e); sys.exit(3)
+dev = frida.get_device_manager().add_remote_device("127.0.0.1:27042")
+pid = dev.spawn(["@PKG@"])
+s = dev.attach(pid)
+script = s.create_script(open("@SCRIPT@", encoding="utf-8").read())
+def on_message(message, data):
+    if message.get("type") == "send":
+        print("[DSH] " + json.dumps(message.get("payload"), ensure_ascii=False))
+    elif message.get("type") == "error":
+        print("[DSH] error: " + str(message.get("description"))[:400])
+script.on("message", on_message)
+script.load()
+print("[DSH] attached pid=%d" % pid)
+dev.resume(pid)
+time.sleep(float(sys.argv[1]) if len(sys.argv) > 1 else 15.0)
+try:
+    script.unload()
+except Exception:
+    pass
+print("[DSH] done")
+"""
 
     private fun quote(word: String): String =
         if (word.isNotEmpty() && word.all { it.isLetterOrDigit() || it in "/._-:=@%+," }) word
