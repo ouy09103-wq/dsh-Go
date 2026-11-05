@@ -124,6 +124,30 @@ object PhoneGuest {
         |- 会话 `detached` 要分清两种：`process-terminated` 是**目标进程死了**（上面那两条
         |  就是常见原因，去 logcat 搜 SIGSEGV / libart），别重试；其他 reason 才是会话断了。
         |  `frida` 工具的 inject 会直接把这两种分开报。
+        |- **Frida 17 删了一批 API，老脚本抄过来会直接 TypeError**：
+        |  `Module.findExportByName` / `getExportByName` / `enumerateExports` 都没了。
+        |  换成 `Module.findGlobalExportByName(name)`；模块级用
+        |  `Process.getModuleByName(m).findExportByName(sym)` /
+        |  `.enumerateExports()`。`Interceptor.replace` 的返回值不再保证有 `.revert()`，
+        |  用 `Interceptor.revert(target)`。`Thread.backtrace()` 不再收 tid，要在 hook 回调里传
+        |  `this.context`。`File.readAllText` 严格 UTF-8，读二进制用 `File.readAllBytes`。
+        |- **`rpc.exports` 放在脚本最前面**。放在后面时，只要顶层有一行抛异常，
+        |  `rpc.exports` 就没执行到，Python 侧看到的是「脚本 load 成功但 unable to find method」——
+        |  这个现象的唯一原因就是这个。有风险的逻辑全包进函数 + try/catch。
+        |- **别 hook 目标自己的 hook 面**：`dlopen` / `dlsym` / `android_dlopen_ext` /
+        |  `stat` / `lstat` / `access` / `sigaction` / `sigtimedwait` / `pthread_create`。
+        |  大量 SDK、加固、风控框架自己就在挂这些，叠加即崩，而且是最快崩的一类。
+        |  只挂低频、只读参数的：`openat`、`open`、`fopen`、`readlink`、具体业务符号。
+        |- **别用 `...arguments` 展开进 Java 调用**：bridge 会生成临时 jobject，帧更乱。
+        |  按签名逐个透传。
+        |- 崩了先看两行再决定怎么办：**崩溃线程名** + **栈顶 `#00` 符号**。
+        |  `HeapTaskDaemon` / `FinalizerDaemon` / `ReferenceQueueDaemon` + `DecodeGcMasksOnly`
+        |  就是上面那条 replacement 帧的问题；`JNI DETECTED ERROR ... invalid JNI transition
+        |  frame` 是 jobject 跨线程；`SIGKILL`（不是 SIGSEGV/SIGABRT）才是被系统或目标杀。
+        |  栈里全是业务 so 且没有 libart，才值得怀疑反调试。别一崩就归因到「有反调试」。
+        |- 排查顺序：先只 load 空脚本静置 60 秒 → 再加 bridge + 空 Java.perform 静置 60 秒 →
+        |  再逐个加 hook，每加一个等 60 秒。哪个加完开始崩就是它。崩溃时间窗通常是挂载后
+        |  3~10 秒（首屏渲染后的密集 GC），所以「刚挂上没事、一操作就退」也是这个原因。
         |""".trimMargin()
 
     /**

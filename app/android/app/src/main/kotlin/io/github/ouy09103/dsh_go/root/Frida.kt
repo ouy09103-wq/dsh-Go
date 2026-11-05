@@ -304,6 +304,12 @@ internal object Frida {
         val payload = script?.takeIf { it.isNotBlank() }
             ?: return fail("inject 需要 script：要注入的 Frida 脚本内容（JS）。")
 
+        // Refuse the shapes that crash the target, before spawning it. Each of these is a
+        // measured crash, not a style opinion (see the frida-report: the crash window is 3–10 s
+        // after attach, and the stack has no frida frames — it reads exactly like the target
+        // app crashing on its own, which is why this is worth blocking rather than warning).
+        scriptRisk(payload)?.let { return fail(it) }
+
         // Both files go into the rootfs as the app (the rootfs lives under filesDir, so no su
         // needed to write) and are removed in the finally below: a hook script can name a
         // target app, and leaving it in DSH home would leak that to the next session.
@@ -459,6 +465,100 @@ else:
         pass
     print("[DSH] done")
 """
+
+    /**
+     * A sentence naming the first crash-prone construct in [script], or null when it looks safe.
+     *
+     * Deliberately textual: this cannot know what the script does, only that it uses a shape
+     * which reliably kills the target on Android 14+. It refuses rather than warns because a
+     * warning would be read after the process is already gone.
+     */
+    private fun scriptRisk(script: String): String? {
+        val code = script.lineSequence()
+            .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+            .joinToString("\n")
+
+        // `this.foo(` inside an implementation body: the replacement frame has no legal
+        // OatQuickMethodHeader, and MarkCompact's DecodeGcMasksOnly dereferences it.
+        if (RECEIVER_CALL.containsMatchIn(code) && !code.contains(".call(this") && !code.contains(".apply(this")) {
+            return "脚本里用 `this.方法(...)` 回调原方法 —— 这会崩（Android 14 的 MarkCompact GC " +
+                "扫到 replacement 帧时解引用空的 OatQuickMethodHeader，栈里没有 frida 帧，" +
+                "看起来像目标 App 自己崩）。改成在 Java.perform 里缓存句柄：" +
+                "`const orig = M.m.overload(...);` 然后 `return orig.call(this, ...)`。"
+        }
+        // Old Frida APIs: TypeError on load, which reads as "the script is broken".
+        REMOVED_API.firstOrNull { it.containsMatchIn(code) }?.let {
+            return "脚本用了 Frida 17 已经删掉的 API（${it.pattern}）。" +
+                "`Module.findExportByName` 换成 `Module.findGlobalExportByName`；" +
+                "`Module.enumerateExports` 换成 `Process.getModuleByName(m).enumerateExports()`。"
+        }
+        // The functions a lot of SDKs, packers and risk-control frameworks hook themselves;
+        // stacking ours on top is the fastest way to crash.
+        FORBIDDEN_HOOKS.firstOrNull { code.contains(it) }?.let {
+            return "脚本要 hook `$it` —— 这个函数大量 SDK / 加固 / 风控框架自己就在挂，" +
+                "叠加即崩。只挂低频只读参数的：openat / open / fopen / readlink / 具体业务符号。"
+        }
+        // A jobject stored in a JS variable and used later is a use-after-free local ref.
+        // Narrow on purpose: only a top-level `let`/`var` holding a Java object (a `Java.use`
+        // result, or a value taken from one) that is later read outside its own block. Matching
+        // every `let x = null` would refuse most harmless scripts.
+        if (storedJobject(code)) {
+            return "脚本把 Java 对象存进顶层变量后跨调用用（`let ctx = ...getApplicationContext()` " +
+                "再在 setTimeout / 别的回调里用之类）。jobject 是 JNI 局部引用，出了那次调用帧就失效，" +
+                "ART 会直接 abort。每次在 Java.perform 里当场重新取对象。"
+        }
+        // Object allocation inside a hot hook puts GC pressure at the worst moment.
+        if (code.contains("toString()") && (code.contains("console.log") || code.contains("send("))) {
+            return "hook 体内做了字符串拼接 / toString() / send({...}) —— 每轮都造新对象，" +
+                "把 GC 压力放在最脆弱的时刻。高频 hook 只计数，内容用 rpc.exports 批量取。"
+        }
+        return null
+    }
+
+    /**
+     * True when a declared variable later receives a Java object and something runs after that.
+     *
+     * `let ctx; Java.perform(() => { ctx = ...getApplicationContext(); }); setTimeout(...)` is the
+     * shape that aborts ART: the jobject is a JNI local reference that died with its frame.
+     */
+    private fun storedJobject(code: String): Boolean {
+        if (!LATER_USE.containsMatchIn(code)) return false
+        for (decl in DECLARATION.findAll(code)) {
+            val name = decl.groupValues[1]
+            val assign = Regex("""\b${Regex.escape(name)}\s*=\s*([^;\n]*)""")
+            for (a in assign.findAll(code)) {
+                if (a.range.first < decl.range.last) continue
+                if (JAVA_VALUE.containsMatchIn(a.groupValues[1])) return true
+            }
+        }
+        return false
+    }
+
+    /** `this.foo(` — a method call on the receiver inside a hook body. */
+    private val RECEIVER_CALL = Regex("""this\.[A-Za-z_$][A-Za-z0-9_$]*\s*\(""")
+
+    /** APIs Frida 17 removed; using any of them is a TypeError at load. */
+    private val REMOVED_API = listOf(
+        Regex("""Module\.findExportByName"""),
+        Regex("""Module\.getExportByName"""),
+        Regex("""Module\.enumerateExports"""),
+    )
+
+    /** Hook targets that collide with the target's own instrumentation. */
+    private val FORBIDDEN_HOOKS = listOf(
+        "dlopen", "dlsym", "android_dlopen_ext", "sigtimedwait", "sigaction", "pthread_create",
+    )
+
+    /** `let x` / `var x` declarations: the only way a jobject gets kept across calls. */
+    private val DECLARATION = Regex("""\b(?:let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)""")
+
+    /** The right-hand side of an assignment that produces or holds a Java object. */
+    private val JAVA_VALUE = Regex(
+        """(?:Java\.use|currentApplication|getApplicationContext|ActivityThread|_handle)""",
+    )
+
+    /** Something scheduled to run later, which is when a stale jobject gets touched. */
+    private val LATER_USE = Regex("""setTimeout|setInterval|setImmediate""")
 
     private fun quote(word: String): String =
         if (word.isNotEmpty() && word.all { it.isLetterOrDigit() || it in "/._-:=@%+," }) word
