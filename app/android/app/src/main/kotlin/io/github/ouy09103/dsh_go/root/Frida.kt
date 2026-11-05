@@ -40,6 +40,54 @@ internal object Frida {
     const val REMOTE_SERVER = "$REMOTE_DIR/frida-server"
 
     /**
+     * Rewrites [input] with [STEALTH_ALIASES] into [output], verifying the result.
+     *
+     * Byte-level, same-length replacement on the decompressed server. Every pair is
+     * length-checked before anything is written, and the output must still be an ELF64
+     * arm64 executable of exactly the same size — a short alias would silently corrupt
+     * .rodata and the binary would segfault on the first Gum call.
+     *
+     * Returns the number of replacements, or throws with the reason.
+     */
+    private fun rewriteStealth(input: File, output: File): Int {
+        var data = input.readBytes()
+        for ((from, to) in STEALTH_ALIASES) {
+            require(from.length == to.length) { "别名长度不一致：$from -> $to" }
+        }
+        var total = 0
+        for ((from, to) in STEALTH_ALIASES) {
+            val needle = from.toByteArray()
+            var at = 0
+            while (true) {
+                val i = indexOf(data, needle, at)
+                if (i < 0) break
+                System.arraycopy(to.toByteArray(), 0, data, i, needle.size)
+                total++
+                at = i + needle.size
+            }
+        }
+        val expected = input.length()
+        require(data.size.toLong() == expected) { "改写后大小变了（${data.size} != $expected）" }
+        require(data.size > 64 && data[0] == 0x7F.toByte() && data[1] == 'E'.code.toByte() &&
+            data[2] == 'L'.code.toByte() && data[3] == 'F'.code.toByte()) { "改写后不是 ELF" }
+        require(data[18] == 0xB7.toByte() && data[19] == 0x00.toByte()) { "改写后不是 arm64" }
+        output.writeBytes(data)
+        return total
+    }
+
+    private fun indexOf(hay: ByteArray, needle: ByteArray, from: Int): Int {
+        if (needle.isEmpty() || hay.size < needle.size) return -1
+        var i = from.coerceAtLeast(0)
+        while (i <= hay.size - needle.size) {
+            var k = 0
+            while (k < needle.size && hay[i + k] == needle[k]) k++
+            if (k == needle.size) return i
+            i++
+        }
+        return -1
+    }
+
+    /**
      * Stealth install: a random binary name in a directory that doesn't say "frida".
      *
      * Targets scan for the literal strings `frida-server`, `/data/local/tmp/frida`, and the
@@ -52,6 +100,45 @@ internal object Frida {
      */
     private const val STEALTH_BINARY = "netd_helper"
     private const val STEALTH_DIR = "/data/local/tmp/.cache"
+
+    /**
+     * Same-length string aliases applied to the binary before it is installed.
+     *
+     * The technique is from phantom-frida (TheQmaks/phantom-frida, ~90 patches over 16
+     * detection classes). Its key insight is that most of Frida's detection surface is
+     * *strings* — a checker greps `/proc/self/maps`, the task names under
+     * `/proc/self/task/*/status`, or the loaded module list. Replacing those strings in the
+     * already-compiled binary is enough for the name-based checks, and needs no toolchain
+     * (rebuilding frida-server on a phone is not possible anyway).
+     *
+     * Rules this list follows, learned the hard way:
+     *  - **Every pair must be the same length.** These are fixed-size string literals in
+     *    .rodata; a different length shifts everything after it.
+     *  - Keep the shape recognisable to Frida itself where Frida compares them (the
+     *    `gum-js-loop` name is looked up by the JS engine), so only the *identifiable*
+     *    part changes: `gum-js-loop` → `gum-jx-loop`, not a random word.
+     *  - Do not touch `frida` in paths Frida resolves at runtime (its own asset dir).
+     */
+    private val STEALTH_ALIASES = listOf(
+        // Thread names, read straight out of /proc/self/task/<tid>/status.
+        "gum-js-loop" to "gum-jx-loop",
+        "gmain" to "amain",
+        "gdbus" to "gdbug",
+        "pool-spawner" to "pool-spoiler",
+        // Module and asset names, visible in /proc/self/maps.
+        "frida-gadget" to "libgc-gadget",
+        "frida-agent" to "libgc-agent",
+        "frida-helper" to "libgc-helper",
+        // Type names the runtime puts in memory.
+        "FridaScriptEngine" to "xf0b52fe480d6411e",
+        "GumScript" to "x11cd6c23",
+        "GDBusProxy" to "x2152cded3",
+        "GLib-GIO" to "x037fd60",
+        // The D-Bus service name and the Android helper package.
+        "re.frida.server" to "x1535704be60818",
+        "re.frida.helper" to "xa799196c65e405",
+        "re.frida.Helper" to "xa574125e0a38dd",
+    )
 
     const val DEFAULT_PORT = 27042
 
@@ -89,14 +176,28 @@ internal object Frida {
             return fail("内置 frida-server 解出失败：" + (e.message ?: e.javaClass.simpleName))
         }
 
-        // Stealth writes a differently-named copy to an unremarkable directory and runs that.
-        // Same binary, same bytes — only the name and path a scanner greps for change.
+        // Stealth does two things: a differently-named copy in an unremarkable directory,
+        // and the same-length string aliases inside the binary so a checker that greps
+        // /proc/self/maps or the task names does not find Frida's own strings.
+        var payload = extracted
+        var rewritten = 0
+        if (stealth) {
+            val patched = File(extracted.parentFile, "frida-server.stealth")
+            rewritten = try {
+                rewriteStealth(extracted, patched)
+            } catch (e: Exception) {
+                extracted.delete()
+                return fail("隐身改写失败：" + (e.message ?: e.javaClass.simpleName))
+            }
+            payload = patched
+        }
         val target = if (stealth) "$STEALTH_DIR/$STEALTH_BINARY" else REMOTE_SERVER
         val push = RootExec.run(
             "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
-                "cp ${quote(extracted.absolutePath)} $target && chmod 755 $target && $target --version",
+                "cp ${quote(payload.absolutePath)} $target && chmod 755 $target && $target --version",
             180_000,
         )
+        if (payload != extracted) payload.delete()
         extracted.delete()
         if (!push.ok) {
             return fail("写 $target 失败：" + (push.stderr.ifBlank { push.stdout }.take(300)))
@@ -110,6 +211,7 @@ internal object Frida {
             "version" to version.ifBlank { null },
             "path" to target,
             "stealth" to stealth,
+            "rewritten" to rewritten,
         )
     }
 
