@@ -627,14 +627,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val now = SystemClock.elapsedRealtime()
         if (now - fridaCheckedAt < FRIDA_REFRESH_MS) return
         fridaCheckedAt = now
-        val snapshot = runCatching { Frida.status() }.getOrNull() ?: return
+        val snapshot = runCatching { Frida.status(app) }.getOrNull() ?: return
         if (snapshot["ok"] == true) fridaCache = snapshot
     }
 
     /** 胶囊的点击（关闭）：停掉 server，并立刻刷新快照。 */
     fun stopFridaNow(): Boolean {
         runCatching { Frida.stop() }
-        fridaCache = runCatching { Frida.status() }.getOrDefault(emptyMap())
+        fridaCache = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
         emitStatus()
         return true
     }
@@ -642,7 +642,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** 胶囊的点击：现在就装/启一次，并立刻刷新快照。 */
     fun startFridaNow(): Boolean {
         val result = runCatching { Frida.install(app, Frida.DEFAULT_PORT) }.getOrNull() ?: return false
-        if (result["ok"] == true) fridaCache = runCatching { Frida.status() }.getOrDefault(fridaCache)
+        if (result["ok"] == true) fridaCache = runCatching { Frida.status(app) }.getOrDefault(fridaCache)
         emitStatus()
         return result["ok"] == true
     }
@@ -711,7 +711,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      * 这些方法会 spawn su，所以 `start` / `stop` 在 PhoneCore 里先检查 root 开关；
      * `status` 是只读的，但它也要 root 才能读 /proc，所以同样走 su。
      */
-    override fun fridaStatus(): Map<String, Any?> = Frida.status()
+    override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
 
     override fun fridaStart(): Map<String, Any?> = Frida.install(app, Frida.DEFAULT_PORT)
 
@@ -720,7 +720,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun fridaStop(): Map<String, Any?> {
         Frida.stop()
-        return Frida.status()
+        return Frida.status(app)
     }
 
     /**

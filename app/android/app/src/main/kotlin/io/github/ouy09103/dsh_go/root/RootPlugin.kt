@@ -79,7 +79,7 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 val port = call.argument<Int>("port") ?: Frida.DEFAULT_PORT
                 background(result) { Frida.install(context, port) }
             }
-            "fridaStatus" -> background(result) { Frida.status() }
+            "fridaStatus" -> background(result) { Frida.status(context) }
             "shellOpen" -> {
                 val su = RootExec.suPath() ?: run {
                     result.error("noRoot", "no su on this device", null); return

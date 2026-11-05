@@ -101,7 +101,16 @@ object PhoneGuest {
         |  不是反调试：`pid = dev.spawn(...)` 之后必须 `dev.resume(pid)`，否则进程停在挂起态，后续 attach 全排队超时。
         |- `frida` 工具的 inject 靠 Linux 里的 frida-python 客户端。第一次用或重装过 App 之后它会缺，
         |  先 `pip3 install frida frida-tools`（走国内镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`）。
-        |  版本要跟 frida-server 的主版本一致（内置的是 17.x）。
+        |  **版本要对到 major.minor，不是只对 major**：客户端 17.25.2 配服务端 17.23.3 时，
+        |  每次 attach 都 25 秒超时，看起来完全像目标 App 有反调试。`frida` 的 status 会直接报这个。
+        |- **jobject 不能跨线程**。frida-java-bridge 里的 jobject 是 JNI 局部引用，只在创建它的
+        |  那次调用帧内有效。存到 JS 变量里、换个线程或 setTimeout 再用，ART 会直接 abort
+        |  （`JNI DETECTED ERROR ... invalid JNI transition frame reference`），崩的是 frida 的
+        |  工作线程，看起来像目标 App 崩了。正确写法：每次都在 `Java.perform` 里当场重新取对象。
+        |  例：`Java.perform(() => { const c = Java.use('android.app.ActivityThread')
+        |  .currentApplication().getApplicationContext(); ... })`，不要在外面存 `let ctx`。
+        |- hook framework 类（Activity / LoadedApk 等）时，回调里只记录参数、原样返回；
+        |  在里面再调别的 Java API 容易踩到 ART 的 transition frame 校验。
         |""".trimMargin()
 
     /**

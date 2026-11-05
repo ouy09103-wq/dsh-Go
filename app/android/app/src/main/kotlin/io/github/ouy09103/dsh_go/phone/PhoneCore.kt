@@ -840,6 +840,9 @@ class PhoneCore(
             append(if (running) "正在跑" else "没在跑")
             if (pid?.isNotBlank() == true) append("，PID $pid")
             append("。")
+            // A version mismatch makes every attach time out and looks like the target app
+            // fighting back. Say it first, before anything else about ports or PIDs.
+            (result["mismatch"] as? String)?.let { append("\n").append(it) }
             if (running) {
                 // l10n:keep agent tool result
                 append("\nLinux 里的 frida 连 127.0.0.1:$port。")

@@ -39,6 +39,9 @@ internal object Frida {
 
     const val DEFAULT_PORT = 27042
 
+    /** `17.23.3` at the start of a line: the shape `frida.__version__` prints. */
+    private val VERSION = Regex("[0-9]+\\.[0-9]+\\.[0-9]+")
+
     /**
      * 永不注入的进程。往 system_server 或 zygote 注 agent，崩一次就是整机重启
      * （这台机器上已经发生过一次，见 frida-notes/SUMMARY.md）。
@@ -159,7 +162,7 @@ internal object Frida {
     }
 
     /** What the page shows: whether the server runs, on which port, and which build. */
-    fun status(): Map<String, Any?> {
+    fun status(context: Context): Map<String, Any?> {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
         val installed = RootExec.run("test -x $REMOTE_SERVER && echo yes", 15_000).stdout.contains("yes")
         val version = if (installed) {
@@ -168,6 +171,10 @@ internal object Frida {
             ""
         }
         val pid = pidOf()
+        // The client and the server must agree on major.minor, not just the major: 17.25.2
+        // against 17.23.3 made every attach time out after 25 s, and the tool used to report
+        // that as a plain "timeout" — the least useful thing it could say.
+        val client = clientVersion(context)
         return mapOf(
             "ok" to true,
             "installed" to installed,
@@ -175,9 +182,45 @@ internal object Frida {
             "pids" to pid,
             "listening" to listening(DEFAULT_PORT),
             "version" to version.ifBlank { null },
+            "client" to client,
+            "mismatch" to versionMismatch(version, client),
             "path" to REMOTE_SERVER,
             "port" to DEFAULT_PORT,
         )
+    }
+
+    /**
+     * The guest's frida-python version, or null when it can't be read (no rootfs, not installed).
+     *
+     * Asked through the packaged Ubuntu rootfs because that is where the inject client runs.
+     */
+    fun clientVersion(context: Context): String? {
+        val command = GuestExec.suCommand(context, "python3 -c 'import frida; print(frida.__version__)'")
+            ?: return null
+        val result = RootExec.run(command, 60_000)
+        if (!result.ok) return null
+        return VERSION.find(result.stdout.trim())?.value
+    }
+
+    /**
+     * A sentence when the client and the server don't share a major.minor, null when they do.
+     *
+     * 17.23.3 and 17.25.2 look compatible (same major) but are not: every attach times out after
+     * 25 s. Matching major.minor is what frida actually needs here.
+     */
+    private fun versionMismatch(server: String, client: String?): String? {
+        if (server.isBlank() || client.isNullOrBlank()) return null
+        if (sameSeries(server, client)) return null
+        // l10n:keep agent tool result
+        return "frida 客户端和服务端版本不一致：服务端 $server，Linux 里的客户端 $client。" +
+            "同主版本也不够——attach 会全部超时（实测 25s）。先在「常驻 root shell」里跑：" +
+            "pip3 install frida==$server frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple"
+    }
+
+    /** `17.23.3` vs `17.23.9` count as one series; `17.23` vs `17.25` do not. */
+    private fun sameSeries(a: String, b: String): Boolean {
+        fun head(v: String) = v.trim().split(".").take(2).joinToString(".")
+        return head(a) == head(b)
     }
 
     /** Stops a running server. Also used before a start, so two builds never share the port. */
@@ -250,7 +293,7 @@ internal object Frida {
             return fail("不往 $pkg 注入：那个进程一崩整台手机会重启。只对普通 App 用。")
         }
         RootExec.suPath() ?: return fail("这台手机上没有 su")
-        val status = status()
+        val status = status(context)
         if (status["running"] != true) {
             return fail("frida-server 没在跑。先 action=start 装上并启动，再注入。")
         }
@@ -272,7 +315,11 @@ internal object Frida {
             runnerFile.writeText(
                 FRIDA_RUNNER.replace("@PKG@", pkg).replace("@SCRIPT@", scriptGuest),
             )
-            val command = GuestExec.suCommand(context, "python3 $runnerGuest $seconds")
+            val serverVersion = status["version"] as? String ?: ""
+            val command = GuestExec.suCommand(
+                context,
+                "python3 $runnerGuest $seconds ${quote(serverVersion)}",
+            )
                 ?: return fail("rootfs 还没解压，注入脚本没地方跑")
             val result = RootExec.run(command, timeoutMs.coerceIn(5_000L, 300_000L))
             val out = result.stdout.trim()
@@ -285,11 +332,23 @@ internal object Frida {
                 "messages" to out.take(8_000),
                 "stderr" to err.take(2_000),
                 "error" to when {
-                    // The runner exits 3 with this exact line when `import frida` fails.
+                    // Each exit code in the runner maps to the one thing the model should do next.
                     out.contains("no frida module") || err.contains("no frida module") ->
                         "Linux 里没有 frida 的 Python 客户端。先在「常驻 root shell」里跑一次 " +
-                            "`pip3 install frida frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple`，" +
+                            "pip3 install frida frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple，" +
                             "然后重试注入。"
+                    out.contains("version mismatch") || err.contains("version mismatch") ->
+                        "frida 客户端和服务端的版本对不上，attach 会全部超时（不是目标 App 的问题）。" +
+                            "照上面那行 fix 里的命令装成同一版，再重试。"
+                    out.contains("spawn failed") || err.contains("spawn failed") ->
+                        "spawn 失败：包名可能不对，或者那个 App 不允许被启动。" +
+                            "先用 apps 工具确认包名。"
+                    out.contains("attach failed after 3 tries") || err.contains("attach failed after 3 tries") ->
+                        "attach 连试 3 次都没成功。这在进程线程很多时会发生（frida 冻结线程和 ART 的 " +
+                            "suspend 打架），不是反调试。再试一次，或者换一个更轻的目标。"
+                    out.contains("script load failed") || err.contains("script load failed") ->
+                        "脚本本身跑挂了（load 阶段）。检查语法，以及是不是用了 Frida 17 已经没有的 " +
+                            "`Java` 全局对象——那要先 bundle frida-java-bridge。"
                     !loaded -> "注入没成功：" + (err.ifBlank { out }.take(400).ifBlank { "没有输出" })
                     else -> null
                 },
@@ -311,18 +370,51 @@ try:
     import frida
 except Exception as e:
     print("[DSH] no frida module: %s" % e); sys.exit(3)
+
+WANT = sys.argv[2] if len(sys.argv) > 2 else ""
+GOT = getattr(frida, "__version__", "?")
+if WANT and GOT and WANT.split(".")[:2] != GOT.split(".")[:2]:
+    print("[DSH] version mismatch: client=%s server=%s" % (GOT, WANT))
+    print("[DSH] fix: pip3 install frida==%s frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple" % WANT)
+    sys.exit(4)
+
 dev = frida.get_device_manager().add_remote_device("127.0.0.1:27042")
-pid = dev.spawn(["@PKG@"])
-s = dev.attach(pid)
-script = s.create_script(open("@SCRIPT@", encoding="utf-8").read())
+
+# spawn is the stable path: attach to an already-running process times out at random
+# ("waiting for stop"), and that has nothing to do with the target app.
+try:
+    pid = dev.spawn(["@PKG@"])
+except Exception as e:
+    print("[DSH] spawn failed: %s: %s" % (type(e).__name__, e)); sys.exit(5)
+
+sess = None
+last = ""
+# Three attempts, doubling the wait: the report measured one success in three on a heavy app.
+for attempt in range(3):
+    try:
+        sess = dev.attach(pid)
+        break
+    except Exception as e:
+        last = "%s: %s" % (type(e).__name__, e)
+        time.sleep(1.0 * (attempt + 1))
+if sess is None:
+    print("[DSH] attach failed after 3 tries: %s" % last); sys.exit(6)
+
+script = sess.create_script(open("@SCRIPT@", encoding="utf-8").read())
 def on_message(message, data):
     if message.get("type") == "send":
         print("[DSH] " + json.dumps(message.get("payload"), ensure_ascii=False))
     elif message.get("type") == "error":
         print("[DSH] error: " + str(message.get("description"))[:400])
 script.on("message", on_message)
-script.load()
+try:
+    script.load()
+except Exception as e:
+    print("[DSH] script load failed: %s: %s" % (type(e).__name__, e)); sys.exit(7)
+
 print("[DSH] attached pid=%d" % pid)
+# Without resume the process stays suspended at spawn, and every later attach queues until it
+# times out — the exact failure the report chased for a while.
 dev.resume(pid)
 time.sleep(float(sys.argv[1]) if len(sys.argv) > 1 else 15.0)
 try:
