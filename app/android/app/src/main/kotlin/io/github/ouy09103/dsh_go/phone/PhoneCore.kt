@@ -830,16 +830,21 @@ class PhoneCore(
         }
         val installed = result["installed"] == true
         val running = result["running"] == true
+        val state = result["state"] as? String
         val version = result["version"] as? String
         val pid = result["pids"] as? String
         val port = result["port"] ?: 27042
         return buildString {
             // l10n:keep agent tool result
-            append(if (installed) "frida-server 已装" else "frida-server 没装")
+            // The state word already says installed/stopped/running; only the version is
+            // missing from it, so the sentence leads with state and appends the version.
+            when (state) {
+                "RUNNING" -> append("frida-server 正在跑")
+                "STOPPED" -> append("frida-server 已装但没在跑")
+                "NOT_INSTALLED" -> append("frida-server 没装")
+                else -> append(if (installed) "frida-server 已装" else "frida-server 没装")
+            }
             if (version != null) append("（$version）")
-            append("，")
-            // l10n:keep agent tool result
-            append(if (running) "正在跑" else "没在跑")
             if (pid?.isNotBlank() == true) append("，PID $pid")
             append("。")
             // A version mismatch makes every attach time out and looks like the target app

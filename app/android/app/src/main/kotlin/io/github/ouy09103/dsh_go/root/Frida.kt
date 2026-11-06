@@ -241,18 +241,30 @@ internal object Frida {
      * duplicating the setsid / /dev/null dance, which is the part that took the longest to
      * get right on this phone.
      */
+    /**
+     * Starts the binary at [path] on [port], and reports whether it is now running.
+     *
+     * Split out from [start] so stealth can run a renamed copy. The launch ladder is the one
+     * MilkCode's installer uses (reverse-engineered from its dex): setsid, else nohup, else
+     * plain background. Two rungs are not enough — some toybox builds have nohup but no setsid.
+     *
+     * Every rung redirects all three streams: an inherited pipe that nobody drains will block
+     * the server the moment it writes a log line.
+     */
     private fun startAt(path: String, port: Int): Map<String, Any?> {
         val dir = path.substringBeforeLast('/')
+        val bin = path.substringAfterLast('/')
+        // Bracketed so pgrep's pattern cannot match the shell that is running it.
+        val pat = "[" + bin.first() + "]" + bin.drop(1)
         val script = buildString {
             append("B=${quote(path)}; ")
             append("cd $dir || exit 3; ")
             append("if command -v setsid >/dev/null 2>&1; then ")
             append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
+            append("elif command -v nohup >/dev/null 2>&1; then ")
+            append("nohup \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
             append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
             append("sleep 2; ")
-            val bin = path.substringAfterLast('/')
-            // Bracketed so the pattern can't match the shell that is running it.
-            val pat = "[" + bin.first() + "]" + bin.drop(1)
             append("if [ -n \"\$(pgrep -f '$pat' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
             append("else echo FRIDA_NOT_RUNNING; fi")
         }
@@ -312,36 +324,16 @@ internal object Frida {
      * down, output discarded so a full pipe can't block it. No `-P`, no injected environment:
      * that is the combination that actually starts on this phone.
      */
+    /**
+     * Starts the bundled binary at [REMOTE_SERVER] on [port].
+     *
+     * Just [startAt] with the default path — one launch ladder, one place to fix it.
+     */
     private fun start(port: Int): Map<String, Any?> {
-        val script = buildString {
-            append("B=$REMOTE_SERVER; ")
-            append("cd $REMOTE_DIR || exit 3; ")
-            append("if command -v setsid >/dev/null 2>&1; then ")
-            append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
-            append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
-            append("sleep 2; ")
-            // Cannot use pidof frida-server: the process may be renamed in stealth mode.
-            append("if [ -n \"\$(pgrep -f '[f]rida-server|[n]etd_helper' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
-            append("else echo FRIDA_NOT_RUNNING; fi")
-        }
-        val result = RootExec.run(script, 60_000)
-        if (!result.stdout.contains("FRIDA_RUNNING")) {
-            return mapOf(
-                "ok" to false,
-                "port" to port,
-                "error" to "frida-server 没有起来（二进制在 $REMOTE_SERVER，但 pidof 找不到进程）。" +
-                    "到「常驻 root shell」里手动跑一次 $REMOTE_SERVER -l 127.0.0.1:$port，看它说什么。",
-                "stdout" to result.stdout.trim(),
-                "stderr" to result.stderr.trim(),
-            )
-        }
-        return mapOf(
-            "ok" to true,
-            "port" to port,
-            "pid" to pidOf(),
-            "listening" to listening(port),
-            "running" to true,
-        )
+        val result = startAt(REMOTE_SERVER, port)
+        // The caller (install) reports whether the port ended up listening; startAt only says
+        // whether a process exists, which is a different question on a slow phone.
+        return if (result["ok"] == true) result + mapOf("listening" to listening(port)) else result
     }
 
     /** What the page shows: whether the server runs, on which port, and which build. */
@@ -380,6 +372,14 @@ internal object Frida {
             "ok" to true,
             "installed" to installed,
             "running" to (listening || pid.isNotEmpty()),
+            // One word instead of two booleans, the way MilkCode's installer reports it
+            // (UNKNOWN / ROOT_REQUIRED / NOT_INSTALLED / STOPPED / RUNNING). A caller that
+            // only reads `state` cannot get the "installed but not running" combination wrong.
+            "state" to when {
+                !installed -> "NOT_INSTALLED"
+                listening || pid.isNotEmpty() -> "RUNNING"
+                else -> "STOPPED"
+            },
             "listening" to listening,
             "pids" to pid,
             "version" to version.ifBlank { null },
@@ -433,14 +433,21 @@ internal object Frida {
      * a renamed copy has to be stoppable too, or "stop" leaves a listening port behind and
      * the next start reports it as occupied.
      */
+    /**
+     * Kills any server, whatever name it carries.
+     *
+     * `pidof` is tried first because it matches the process *name* and can never match the
+     * shell running this command — MilkCode's installer does the same. `pgrep -f` covers the
+     * stealth name, bracketed so it can't match its own argv either.
+     */
     fun stop() {
-        // `[f]rida-server` instead of `frida-server`: pgrep -f matches the full command line,
-        // and the shell running this very command carries that string in its own argv — without
-        // the bracket the command kills its own shell before it can kill anything else.
-        val pattern = "[f]rida-server|[n]etd_helper"
         RootExec.run(
-            "for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill \"\$P\" 2>/dev/null || true; done; " +
-                "sleep 1; for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill -9 \"\$P\" 2>/dev/null || true; done; true",
+            "for P in \$(pidof frida-server 2>/dev/null) \$(pidof $STEALTH_BINARY 2>/dev/null) " +
+                "\$(pgrep -f '[f]rida-server' 2>/dev/null) \$(pgrep -f '[n]etd_helper' 2>/dev/null); do " +
+                "kill \"\$P\" 2>/dev/null || true; done; sleep 1; " +
+                "for P in \$(pidof frida-server 2>/dev/null) \$(pidof $STEALTH_BINARY 2>/dev/null) " +
+                "\$(pgrep -f '[f]rida-server' 2>/dev/null) \$(pgrep -f '[n]etd_helper' 2>/dev/null); do " +
+                "kill -9 \"\$P\" 2>/dev/null || true; done; true",
             30_000,
         )
     }
@@ -471,10 +478,11 @@ internal object Frida {
      * Empty is not a verdict — see [status], which goes by [listening].
      */
     private fun pidOf(): String {
+        // `pidof` first: it compares the process *name*, so it can never match the shell that
+        // runs this query. That is what MilkCode's installer uses throughout, and it avoids the
+        // self-match class of bug entirely. `pgrep -f` is the fallback for a renamed copy whose
+        // name pidof doesn't know — bracketed so it can't match its own shell either.
         val named = RootExec.run(
-            // `pidof` compares the process name; `pgrep -f` compares the whole command line,
-            // so it must be bracketed or it matches the shell running this query and reports
-            // that shell's pid as the server's — the "fake pid" bug in another guise.
             "pidof frida-server 2>/dev/null; pidof $STEALTH_BINARY 2>/dev/null; " +
                 "pgrep -f '[f]rida-server' 2>/dev/null; pgrep -f '[n]etd_helper' 2>/dev/null; true",
             15_000,
