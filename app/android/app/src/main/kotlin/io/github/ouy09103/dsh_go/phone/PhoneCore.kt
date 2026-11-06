@@ -63,6 +63,9 @@ interface PhoneEnv {
     /** 装内置的 frida-server 并启动。失败时 map 里有 error。 */
     fun fridaStart(port: Int? = null, stealth: Boolean = false): Map<String, Any?> = emptyMap()
 
+    /** Installs the guest's frida Python client, pinned to the server's version. */
+    fun fridaClient(): Map<String, Any?> = emptyMap()
+
     /** 停掉正在跑的 frida-server。 */
     fun fridaStop(): Map<String, Any?> = emptyMap()
 
@@ -783,6 +786,12 @@ class PhoneCore(
             )
         }
         val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
+        if (action == "client") {
+            val installed = env.fridaClient()
+            val verdict = describeFrida("client", installed)
+            return Out(verdict, error = installed["ok"] != true, summary = "frida",
+                decision = if (installed["ok"] == true) "ok" else "failed")
+        }
         if (action == "inject") {
             // l10n:keep agent tool result
             val pkg = a.str("package")
@@ -814,6 +823,15 @@ class PhoneCore(
         if (result["ok"] != true) {
             // l10n:keep agent tool result
             return "frida $action 失败：" + (result["error"] as? String ?: "未知原因")
+        }
+        if (action == "client") {
+            val version = result["version"] as? String
+            val pinned = result["pinned"] as? String
+            // l10n:keep agent tool result
+            return "Linux 里的 frida 客户端已就绪" +
+                (if (version != null) "（$version）" else "") +
+                (if (pinned != null && version != pinned) "，但服务端是 $pinned，可能对不上" else "") +
+                "。"
         }
         if (action == "inject") {
             val pkg = result["package"] as? String ?: "?"
@@ -976,7 +994,7 @@ class PhoneCore(
         const val MAX_SHELL_READ_CHARS = 32_000
 
         /** frida's actions; anything else is refused before it reaches the host. */
-        val FRIDA_ACTIONS = listOf("status", "start", "stop", "inject")
+        val FRIDA_ACTIONS = listOf("status", "start", "stop", "client", "inject")
 
         /** How long an inject collects messages before it detaches and reports. */
         const val FRIDA_INJECT_MS = 20_000

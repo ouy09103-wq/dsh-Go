@@ -142,6 +142,9 @@ internal object Frida {
 
     const val DEFAULT_PORT = 27042
 
+    /** Client pin used when the server's own version can't be read. */
+    private const val DEFAULT_CLIENT_PIN = "17.25.2"
+
     /** `17.23.3` at the start of a line: the shape `frida.__version__` prints. */
     private val VERSION = Regex("[0-9]+\\.[0-9]+\\.[0-9]+")
 
@@ -391,6 +394,56 @@ internal object Frida {
     }
 
     /**
+     * Installs the Python client into the guest, pinned to the server's version.
+     *
+     * The client is not in the rootfs (it would add ~30 MB and most users never inject), and
+     * telling the model to run `pip3 install` by hand was the reason "inject" kept failing in
+     * practice — the report from MilkCode's dex does this automatically, and pins
+     * `frida==<server version>` so a fresh `pip3 install frida` can't silently pull a
+     * mismatched minor and make every attach time out.
+     *
+     * Mirrors are tried in order (the report's installer does the same): tsinghua, aliyun,
+     * then pypi. `uv` is preferred when present because pip's resolver is slow on a phone.
+     */
+    fun ensureClient(context: Context, serverVersion: String?): Map<String, Any?> {
+        val pin = serverVersion?.takeIf { VERSION.containsMatchIn(it) } ?: DEFAULT_CLIENT_PIN
+        val script = buildString {
+            append("set -e; ")
+            append("if python3 -c 'import frida' >/dev/null 2>&1; then ")
+            append("  V=\$(python3 -c 'import frida; print(frida.__version__)' 2>/dev/null); ")
+            append("  case \"\$V\" in $pin*) echo CLIENT_READY; exit 0;; esac; ")
+            append("fi; ")
+            append("PKGS='frida==$pin frida-tools'; ")
+            append("for M in https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.org/simple; do ")
+            append("  if command -v uv >/dev/null 2>&1; then ")
+            append("    uv pip install --python /usr/local/bin/python3 --break-system-packages -i \"\$M\" \$PKGS >/dev/null 2>&1 && break; ")
+            append("  fi; ")
+            append("  python3 -m pip install -q --break-system-packages --ignore-installed -i \"\$M\" \$PKGS >/dev/null 2>&1 && break; ")
+            append("done; ")
+            append("if python3 -c 'import frida' >/dev/null 2>&1; then ")
+            append("  python3 -c 'import frida; print(\"CLIENT_READY \" + frida.__version__)' 2>/dev/null; ")
+            append("else echo CLIENT_FAILED; fi")
+        }
+        val command = GuestExec.suCommand(context, script)
+            ?: return mapOf("ok" to false, "error" to "rootfs 还没解压，装不了客户端")
+        val result = RootExec.run(command, 300_000)
+        val out = result.stdout.trim()
+        return if (out.contains("CLIENT_READY")) {
+            val got = Regex("""CLIENT_READY\s+([0-9.]+)""").find(out)?.groupValues?.get(1)
+            mapOf("ok" to true, "version" to got, "pinned" to pin)
+        } else {
+            mapOf(
+                "ok" to false,
+                "error" to "装 frida 客户端失败（三个镜像都试过了）。" +
+                    "多半是 Linux 里连不上网，或者 pip 坏了。到「常驻 root shell」里手动跑一次 " +
+                    "`pip3 install frida==$pin -i https://pypi.tuna.tsinghua.edu.cn/simple` 看它报什么。",
+                "stdout" to out.take(1_500),
+                "stderr" to result.stderr.trim().take(1_500),
+            )
+        }
+    }
+
+    /**
      * The guest's frida-python version, or null when it can't be read (no rootfs, not installed).
      *
      * Asked through the packaged Ubuntu rootfs because that is where the inject client runs.
@@ -585,6 +638,15 @@ internal object Frida {
 
         val payload = script?.takeIf { it.isNotBlank() }
             ?: return fail("inject 需要 script：要注入的 Frida 脚本内容（JS）。")
+
+        // The Python client is not shipped in the rootfs; install it here, pinned to the
+        // server's own version, instead of failing and telling the user to run pip by hand.
+        // That hand-off is what made "inject" unusable in practice: a fresh
+        // `pip3 install frida` pulls a newer minor and every attach then times out.
+        val client = ensureClient(context, status["version"] as? String)
+        if (client["ok"] != true) {
+            return fail(client["error"] as? String ?: "装 frida 客户端失败")
+        }
 
         // Refuse the shapes that crash the target, before spawning it. Each of these is a
         // measured crash, not a style opinion (see the frida-report: the crash window is 3–10 s
