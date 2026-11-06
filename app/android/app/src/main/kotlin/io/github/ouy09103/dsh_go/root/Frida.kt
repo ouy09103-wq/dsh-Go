@@ -209,13 +209,20 @@ internal object Frida {
         // stdout or stderr — which surfaced as "写 ... 失败：" with an empty reason and sent
         // everyone hunting for a Text-file-busy that wasn't there. Size is proof enough at this
         // point; the exec happens in start(), where the environment is set up.
+        // The pattern must bracket BOTH alternatives. This line once read
+        // `[f]rida-server|n]etd_helper` — the right side was missing its opening bracket, so it
+        // became a plain substring, matched the shell running this very command (its own argv
+        // contains it), and `kill` took out the shell before `cp` ever ran. The symptom was a
+        // command with *no output at all*, which read as "su not authorized". Excluding $$ and
+        // the parent pid makes the loop survive any future pattern mistake.
+        val killLoop = { sig: String ->
+            "ME=\$\$; PA=\$(awk '{print \$4}' /proc/\$ME/stat 2>/dev/null); " +
+                "for P in \$(pgrep -f '[f]rida-server|[n]etd_helper' 2>/dev/null); do " +
+                "case \"\$P\" in \$ME|\$PA) continue;; esac; " +
+                "kill $sig \"\$P\" 2>/dev/null; done; "
+        }
         val push = RootExec.run(
-            // Kill anything still holding the binary, then wait for it to actually exit.
-            // The `[f]` form keeps the pattern from matching the shell that carries it.
-            "for P in \$(pgrep -f '[f]rida-server|${STEALTH_BINARY.substring(0, 1)}]${STEALTH_BINARY.substring(1)}' 2>/dev/null); do " +
-                "kill \"\$P\" 2>/dev/null; done; sleep 1; " +
-                "for P in \$(pgrep -f '[f]rida-server|${STEALTH_BINARY.substring(0, 1)}]${STEALTH_BINARY.substring(1)}' 2>/dev/null); do " +
-                "kill -9 \"\$P\" 2>/dev/null; done; sleep 1; " +
+            killLoop("") + "sleep 1; " + killLoop("-9") + "sleep 1; " +
                 "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
                 "cp ${quote(payload.absolutePath)} $staged && chmod 755 $staged && " +
                 "mv -f $staged $target && " +
@@ -231,10 +238,18 @@ internal object Frida {
             // A stale `.new` from a failed run would otherwise linger and confuse the next try.
             RootExec.run("rm -f $staged", 15_000)
             val detail = (push.stderr.trim().ifBlank { out }).take(300)
+            // The exit code narrows it down far better than a guess: 143 means the staging
+            // script was terminated by a signal (historically: a bad pgrep pattern killing the
+            // shell), 134 means an abort, and a clean -1 with no output means su never ran.
+            val hint = when {
+                push.exitCode == 143 -> "命令被信号终止（143）——通常是 kill 循环误杀了自己"
+                push.exitCode == 134 -> "命令 abort（134）"
+                detail.isBlank() -> "命令没有输出、exit=${push.exitCode}（su 可能没授权，或 /data 满）"
+                else -> ""
+            }
             return fail(
-                "写 $target 失败：" +
-                    (if (detail.isBlank()) "命令没有输出（su 可能没授权，或 /data 满了）" else detail) +
-                    "\n如果是 Text file busy，说明那个二进制正在被运行：先 frida action=stop 再装。",
+                "写 $target 失败：" + (if (detail.isBlank()) hint else detail) +
+                    "\n如果提到 Text file busy，说明那个二进制正在被运行：先 frida action=stop 再装。",
             )
         }
         // The asset's own version, not the binary's: reading it would mean executing it, which
@@ -277,25 +292,37 @@ internal object Frida {
         val script = buildString {
             append("B=${quote(path)}; ")
             append("cd $dir || exit 3; ")
-            // **BOOTCLASSPATH matters.** A `su -c` shell starts nearly empty, and frida-server
-            // aborts on the first Gum call when BOOTCLASSPATH / DEX2OATBOOTCLASSPATH are unset
-            // ("Check failed: !location.empty() BOOTCLASSPATH and DEX2OATBOOTCLASSPATH must not
-            // be empty"). Replay the environment of PID 1, which has the real boot classpath.
-            // `read -d ''` is a bash/ash extension; Android's mksh has no `-d`, so the
-            // NUL-separated environ is converted to newlines first — `tr` is in every toybox.
-            append("if [ -r /proc/1/environ ]; then ")
-            append("  for E in \$(tr '\\000' '\\n' < /proc/1/environ 2>/dev/null); do ")
-            append("    case \"\$E\" in BOOTCLASSPATH=*|DEX2OATBOOTCLASSPATH=*|ANDROID_ROOT=*|ANDROID_DATA=*) ")
+            // **BOOTCLASSPATH comes from zygote, not init.** A `su -c` shell starts nearly
+            // empty; /proc/1 (init) does not carry BOOTCLASSPATH at all — that lives in the
+            // zygote process, which is what actually loads the art runtime. The first version
+            // of this read /proc/1, fell through to a 3-jar fallback, and frida-server aborted
+            // on JNI_CreateJavaVM with "BOOTCLASSPATH and DEX2OATBOOTCLASSPATH must not be
+            // empty". Read zygote64 (then zygote), export everything ART needs, and pin
+            // DEX2OATBOOTCLASSPATH to the same value as BOOTCLASSPATH when it's still empty —
+            // leaving it empty is the exact abort condition. mksh has no `read -d ''`, so the
+            // NUL-separated environ goes through tr first.
+            append("ZY=\$(pidof zygote64 2>/dev/null); [ -n \"\$ZY\" ] || ZY=\$(pidof zygote 2>/dev/null); ")
+            append("if [ -n \"\$ZY\" ] && [ -r /proc/\$ZY/environ ]; then ")
+            append("  for E in \$(tr '\\000' '\\n' < /proc/\$ZY/environ 2>/dev/null); do ")
+            append("    case \"\$E\" in ")
+            append("      BOOTCLASSPATH=*|DEX2OATBOOTCLASSPATH=*|ANDROID_ROOT=*|ANDROID_DATA=*|")
+            append("ANDROID_ART_ROOT=*|ANDROID_I18N_ROOT=*|ANDROID_TZDATA_ROOT=*|ANDROID_STORAGE=*) ")
             append("      export \"\$E\";; ")
             append("    esac; ")
             append("  done; ")
             append("fi; ")
-            // Fall back to the standard Android paths when PID 1's environment isn't readable
-            // (some hardened ROMs deny it even to root). A wrong-but-plausible path is better
-            // than an empty variable, which is the exact abort condition.
-            append("export BOOTCLASSPATH=\"\${BOOTCLASSPATH:-/apex/com.android.art/javalib/core-oj.jar:/apex/com.android.art/javalib/core-libart.jar:/apex/com.android.art/javalib/core-icu4j.jar}\"; ")
+            // Standard Android paths plus a DEX2OAT guard: an empty value is the abort.
             append("export ANDROID_ROOT=\"\${ANDROID_ROOT:-/system}\"; ")
             append("export ANDROID_DATA=\"\${ANDROID_DATA:-/data}\"; ")
+            append("export ANDROID_ART_ROOT=\"\${ANDROID_ART_ROOT:-/apex/com.android.art}\"; ")
+            append("export ANDROID_I18N_ROOT=\"\${ANDROID_I18N_ROOT:-/apex/com.android.i18n}\"; ")
+            append("export ANDROID_TZDATA_ROOT=\"\${ANDROID_TZDATA_ROOT:-/apex/com.android.tzdata}\"; ")
+            append("export ANDROID_STORAGE=\"\${ANDROID_STORAGE:-/storage}\"; ")
+            append("if [ -z \"\$BOOTCLASSPATH\" ]; then ")
+            append("  export BOOTCLASSPATH=\$(ls /apex/com.android.art/javalib/*.jar 2>/dev/null | tr '\\n' ':'); ")
+            append("  export BOOTCLASSPATH=\"\${BOOTCLASSPATH%%:}\"; ")
+            append("fi; ")
+            append("export DEX2OATBOOTCLASSPATH=\"\${DEX2OATBOOTCLASSPATH:-\$BOOTCLASSPATH}\"; ")
             append("if command -v setsid >/dev/null 2>&1; then ")
             append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
             append("elif command -v nohup >/dev/null 2>&1; then ")
@@ -447,9 +474,9 @@ internal object Frida {
             // first unreachable mirror instead of trying the next one.
             append("if python3 -c 'import frida' >/dev/null 2>&1; then ")
             append("  V=\$(python3 -c 'import frida; print(frida.__version__)' 2>/dev/null); ")
-            // Compare major.minor, not the whole string: 17.25.2 and 17.25.9 talk to each other
-            // fine, and reinstalling over a patch difference would waste 30 seconds on a phone.
-            append("  case \"\$V\" in ${pin.substringBeforeLast('.')}.*) echo CLIENT_READY; exit 0;; esac; ")
+            // Compare the full triple: a patch difference is enough to break attach (the
+            // report measured it), so 17.25.0 must not pass for a pinned 17.25.2.
+            append("  case \"\$V\" in $pin) echo CLIENT_READY; exit 0;; esac; ")
             append("fi; ")
             append("PKGS='frida==$pin frida-tools'; ")
             append("for M in https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.org/simple; do ")
@@ -512,8 +539,10 @@ internal object Frida {
 
     /** `17.23.3` vs `17.23.9` count as one series; `17.23` vs `17.25` do not. */
     private fun sameSeries(a: String, b: String): Boolean {
-        fun head(v: String) = v.trim().split(".").take(2).joinToString(".")
-        return head(a) == head(b)
+        // Through the patch number: 17.25.0 client against a 17.25.2 server is not the same
+        // thing, and the report measured the failure mode (attach hangs, reads as anti-debug).
+        fun whole(v: String) = v.trim().split(".").take(3).joinToString(".")
+        return whole(a) == whole(b)
     }
 
     /** Stops a running server. Also used before a start, so two builds never share the port. */
@@ -570,16 +599,23 @@ internal object Frida {
      */
     private fun pidOf(): String {
         // `pidof` first: it compares the process *name*, so it can never match the shell that
-        // runs this query. That is what MilkCode's installer uses throughout, and it avoids the
-        // self-match class of bug entirely. `pgrep -f` is the fallback for a renamed copy whose
-        // name pidof doesn't know — bracketed so it can't match its own shell either.
+        // runs this query. `pgrep -f` is the fallback for a renamed copy — bracketed so it
+        // can't match its own shell either. The four queries OVERLAP on purpose (pidof and
+        // pgrep can both hit the same process), so results are deduped here: the report's
+        // "PID 13276 13276" was the same pid found twice, printed as if it were two.
         val named = RootExec.run(
             "pidof frida-server 2>/dev/null; pidof $STEALTH_BINARY 2>/dev/null; " +
                 "pgrep -f '[f]rida-server' 2>/dev/null; pgrep -f '[n]etd_helper' 2>/dev/null; true",
             15_000,
         ).stdout.trim()
-        if (named.isNotEmpty()) return named.lineSequence().filter { it.isNotBlank() }
-            .joinToString(" ").trim()
+        if (named.isNotEmpty()) {
+            val seen = linkedSetOf<String>()
+            for (tok in named.split(Regex("\\s+"))) {
+                val pid = tok.trim().toIntOrNull()
+                if (pid != null && pid > 1) seen.add(pid.toString())
+            }
+            return seen.joinToString(" ")
+        }
         // No process carries the name: find who has the binary mapped. `grep -l` over cmdline
         // is cheap enough at this size and does not depend on any name at all.
         return RootExec.run(
@@ -791,7 +827,9 @@ except Exception as e:
 
 WANT = sys.argv[2] if len(sys.argv) > 2 else ""
 GOT = getattr(frida, "__version__", "?")
-if WANT and GOT and WANT.split(".")[:2] != GOT.split(".")[:2]:
+# Full three-part compare. A patch difference (17.25.0 client vs 17.25.2 server) is
+# enough to break attach, and the report measured it: same minor is NOT the same thing.
+if WANT and GOT and WANT.split(".")[:3] != GOT.split(".")[:3]:
     print("[DSH] version mismatch: client=%s server=%s" % (GOT, WANT))
     print("[DSH] fix: pip3 install frida==%s frida-tools -i https://pypi.tuna.tsinghua.edu.cn/simple" % WANT)
     sys.exit(4)
