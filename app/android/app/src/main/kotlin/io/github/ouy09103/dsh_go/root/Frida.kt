@@ -408,17 +408,21 @@ internal object Frida {
     fun ensureClient(context: Context, serverVersion: String?): Map<String, Any?> {
         val pin = serverVersion?.takeIf { VERSION.containsMatchIn(it) } ?: DEFAULT_CLIENT_PIN
         val script = buildString {
-            append("set -e; ")
+            // No `set -e` here on purpose: every install command is expected to fail on some
+            // mirror, and a bare `&& break` under `set -e` would abort the whole script on the
+            // first unreachable mirror instead of trying the next one.
             append("if python3 -c 'import frida' >/dev/null 2>&1; then ")
             append("  V=\$(python3 -c 'import frida; print(frida.__version__)' 2>/dev/null); ")
-            append("  case \"\$V\" in $pin*) echo CLIENT_READY; exit 0;; esac; ")
+            // Compare major.minor, not the whole string: 17.25.2 and 17.25.9 talk to each other
+            // fine, and reinstalling over a patch difference would waste 30 seconds on a phone.
+            append("  case \"\$V\" in ${pin.substringBeforeLast('.')}.*) echo CLIENT_READY; exit 0;; esac; ")
             append("fi; ")
             append("PKGS='frida==$pin frida-tools'; ")
             append("for M in https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple https://pypi.org/simple; do ")
             append("  if command -v uv >/dev/null 2>&1; then ")
-            append("    uv pip install --python /usr/local/bin/python3 --break-system-packages -i \"\$M\" \$PKGS >/dev/null 2>&1 && break; ")
+            append("    uv pip install --python /usr/local/bin/python3 --break-system-packages -i \"\$M\" \$PKGS >/dev/null 2>&1 && break || true; ")
             append("  fi; ")
-            append("  python3 -m pip install -q --break-system-packages --ignore-installed -i \"\$M\" \$PKGS >/dev/null 2>&1 && break; ")
+            append("  python3 -m pip install -q --break-system-packages --ignore-installed -i \"\$M\" \$PKGS >/dev/null 2>&1 && break || true; ")
             append("done; ")
             append("if python3 -c 'import frida' >/dev/null 2>&1; then ")
             append("  python3 -c 'import frida; print(\"CLIENT_READY \" + frida.__version__)' 2>/dev/null; ")
