@@ -145,6 +145,9 @@ internal object Frida {
     /** Client pin used when the server's own version can't be read. */
     private const val DEFAULT_CLIENT_PIN = "17.25.2"
 
+    /** The bundled server's version. Must match [ASSET]; asserted by the asset's filename. */
+    private const val BUNDLED_VERSION = "17.25.2"
+
     /** `17.23.3` at the start of a line: the shape `frida.__version__` prints. */
     private val VERSION = Regex("[0-9]+\\.[0-9]+\\.[0-9]+")
 
@@ -200,6 +203,12 @@ internal object Frida {
         // stop the old server first, then write to a temporary name and `mv` it into place,
         // because a rename only swaps the directory entry and never touches the busy inode.
         val staged = "$target.new"
+        val expected = payload.length()
+        // **Do not execute the binary here.** A bare `su -c` shell has no BOOTCLASSPATH /
+        // DEX2OATBOOTCLASSPATH, and frida-server aborts instantly without writing a byte to
+        // stdout or stderr — which surfaced as "写 ... 失败：" with an empty reason and sent
+        // everyone hunting for a Text-file-busy that wasn't there. Size is proof enough at this
+        // point; the exec happens in start(), where the environment is set up.
         val push = RootExec.run(
             // Kill anything still holding the binary, then wait for it to actually exit.
             // The `[f]` form keeps the pattern from matching the shell that carries it.
@@ -210,21 +219,27 @@ internal object Frida {
                 "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
                 "cp ${quote(payload.absolutePath)} $staged && chmod 755 $staged && " +
                 "mv -f $staged $target && " +
-                "$target --version",
+                "S=\$(stat -c %s $target 2>/dev/null); " +
+                "if [ \"\$S\" = \"$expected\" ]; then echo FRIDA_STAGED \$S; " +
+                "else echo FRIDA_BAD_SIZE \$S; fi",
             180_000,
         )
         if (payload != extracted) payload.delete()
         extracted.delete()
-        if (!push.ok) {
+        val out = push.stdout.trim()
+        if (!out.contains("FRIDA_STAGED")) {
             // A stale `.new` from a failed run would otherwise linger and confuse the next try.
             RootExec.run("rm -f $staged", 15_000)
+            val detail = (push.stderr.trim().ifBlank { out }).take(300)
             return fail(
-                "写 $target 失败：" + (push.stderr.ifBlank { push.stdout }.take(300) +
-                    "\n如果还是 Text file busy，说明那个二进制正在被运行：" +
-                    "先 frida action=stop，或者重启手机后再装。"),
+                "写 $target 失败：" +
+                    (if (detail.isBlank()) "命令没有输出（su 可能没授权，或 /data 满了）" else detail) +
+                    "\n如果是 Text file busy，说明那个二进制正在被运行：先 frida action=stop 再装。",
             )
         }
-        val version = push.stdout.trim().lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+        // The asset's own version, not the binary's: reading it would mean executing it, which
+        // needs the environment that only start() sets up.
+        val version = BUNDLED_VERSION
 
         freePort(port)?.let { return fail(it) }
         // `start` always uses REMOTE_SERVER; for stealth, point it at the copy instead.
@@ -262,6 +277,25 @@ internal object Frida {
         val script = buildString {
             append("B=${quote(path)}; ")
             append("cd $dir || exit 3; ")
+            // **BOOTCLASSPATH matters.** A `su -c` shell starts nearly empty, and frida-server
+            // aborts on the first Gum call when BOOTCLASSPATH / DEX2OATBOOTCLASSPATH are unset
+            // ("Check failed: !location.empty() BOOTCLASSPATH and DEX2OATBOOTCLASSPATH must not
+            // be empty"). Replay the environment of PID 1, which has the real boot classpath.
+            // `read -d ''` is a bash/ash extension; Android's mksh has no `-d`, so the
+            // NUL-separated environ is converted to newlines first — `tr` is in every toybox.
+            append("if [ -r /proc/1/environ ]; then ")
+            append("  for E in \$(tr '\\000' '\\n' < /proc/1/environ 2>/dev/null); do ")
+            append("    case \"\$E\" in BOOTCLASSPATH=*|DEX2OATBOOTCLASSPATH=*|ANDROID_ROOT=*|ANDROID_DATA=*) ")
+            append("      export \"\$E\";; ")
+            append("    esac; ")
+            append("  done; ")
+            append("fi; ")
+            // Fall back to the standard Android paths when PID 1's environment isn't readable
+            // (some hardened ROMs deny it even to root). A wrong-but-plausible path is better
+            // than an empty variable, which is the exact abort condition.
+            append("export BOOTCLASSPATH=\"\${BOOTCLASSPATH:-/apex/com.android.art/javalib/core-oj.jar:/apex/com.android.art/javalib/core-libart.jar:/apex/com.android.art/javalib/core-icu4j.jar}\"; ")
+            append("export ANDROID_ROOT=\"\${ANDROID_ROOT:-/system}\"; ")
+            append("export ANDROID_DATA=\"\${ANDROID_DATA:-/data}\"; ")
             append("if command -v setsid >/dev/null 2>&1; then ")
             append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
             append("elif command -v nohup >/dev/null 2>&1; then ")
