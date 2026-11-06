@@ -192,15 +192,34 @@ internal object Frida {
             payload = patched
         }
         val target = if (stealth) "$STEALTH_DIR/$STEALTH_BINARY" else REMOTE_SERVER
+        // `cp` onto a binary that is currently running fails with ETXTBSY ("Text file busy"):
+        // the kernel refuses to open a running executable for writing. Two things fix it —
+        // stop the old server first, then write to a temporary name and `mv` it into place,
+        // because a rename only swaps the directory entry and never touches the busy inode.
+        val staged = "$target.new"
         val push = RootExec.run(
-            "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
-                "cp ${quote(payload.absolutePath)} $target && chmod 755 $target && $target --version",
+            // Kill anything still holding the binary, then wait for it to actually exit.
+            // The `[f]` form keeps the pattern from matching the shell that carries it.
+            "for P in \$(pgrep -f '[f]rida-server|${STEALTH_BINARY.substring(0, 1)}]${STEALTH_BINARY.substring(1)}' 2>/dev/null); do " +
+                "kill \"\$P\" 2>/dev/null; done; sleep 1; " +
+                "for P in \$(pgrep -f '[f]rida-server|${STEALTH_BINARY.substring(0, 1)}]${STEALTH_BINARY.substring(1)}' 2>/dev/null); do " +
+                "kill -9 \"\$P\" 2>/dev/null; done; sleep 1; " +
+                "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
+                "cp ${quote(payload.absolutePath)} $staged && chmod 755 $staged && " +
+                "mv -f $staged $target && " +
+                "$target --version",
             180_000,
         )
         if (payload != extracted) payload.delete()
         extracted.delete()
         if (!push.ok) {
-            return fail("写 $target 失败：" + (push.stderr.ifBlank { push.stdout }.take(300)))
+            // A stale `.new` from a failed run would otherwise linger and confuse the next try.
+            RootExec.run("rm -f $staged", 15_000)
+            return fail(
+                "写 $target 失败：" + (push.stderr.ifBlank { push.stdout }.take(300) +
+                    "\n如果还是 Text file busy，说明那个二进制正在被运行：" +
+                    "先 frida action=stop，或者重启手机后再装。"),
+            )
         }
         val version = push.stdout.trim().lines().lastOrNull { it.isNotBlank() }?.trim().orEmpty()
 
@@ -231,7 +250,10 @@ internal object Frida {
             append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
             append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
             append("sleep 2; ")
-            append("if [ -n \"\$(pgrep -f '${path.substringAfterLast('/')}' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
+            val bin = path.substringAfterLast('/')
+            // Bracketed so the pattern can't match the shell that is running it.
+            val pat = "[" + bin.first() + "]" + bin.drop(1)
+            append("if [ -n \"\$(pgrep -f '$pat' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
             append("else echo FRIDA_NOT_RUNNING; fi")
         }
         val result = RootExec.run(script, 60_000)
@@ -299,7 +321,7 @@ internal object Frida {
             append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
             append("sleep 2; ")
             // Cannot use pidof frida-server: the process may be renamed in stealth mode.
-            append("if [ -n \"\$(pgrep -f 'frida-server\\|$STEALTH_BINARY' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
+            append("if [ -n \"\$(pgrep -f '[f]rida-server|[n]etd_helper' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
             append("else echo FRIDA_NOT_RUNNING; fi")
         }
         val result = RootExec.run(script, 60_000)
@@ -412,7 +434,10 @@ internal object Frida {
      * the next start reports it as occupied.
      */
     fun stop() {
-        val pattern = "frida-server|$STEALTH_BINARY"
+        // `[f]rida-server` instead of `frida-server`: pgrep -f matches the full command line,
+        // and the shell running this very command carries that string in its own argv — without
+        // the bracket the command kills its own shell before it can kill anything else.
+        val pattern = "[f]rida-server|[n]etd_helper"
         RootExec.run(
             "for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill \"\$P\" 2>/dev/null || true; done; " +
                 "sleep 1; for P in \$(pgrep -f '$pattern' 2>/dev/null); do kill -9 \"\$P\" 2>/dev/null || true; done; true",
@@ -447,7 +472,11 @@ internal object Frida {
      */
     private fun pidOf(): String {
         val named = RootExec.run(
-            "pidof frida-server 2>/dev/null; pgrep -f frida-server 2>/dev/null; true",
+            // `pidof` compares the process name; `pgrep -f` compares the whole command line,
+            // so it must be bracketed or it matches the shell running this query and reports
+            // that shell's pid as the server's — the "fake pid" bug in another guise.
+            "pidof frida-server 2>/dev/null; pidof $STEALTH_BINARY 2>/dev/null; " +
+                "pgrep -f '[f]rida-server' 2>/dev/null; pgrep -f '[n]etd_helper' 2>/dev/null; true",
             15_000,
         ).stdout.trim()
         if (named.isNotEmpty()) return named.lineSequence().filter { it.isNotBlank() }
@@ -457,7 +486,7 @@ internal object Frida {
         return RootExec.run(
             "for d in /proc/[0-9]*; do " +
                 "c=\"\$(tr '\\0' ' ' < \$d/cmdline 2>/dev/null)\"; " +
-                "case \"\$c\" in *frida*) echo \${d#/proc/};; esac; done | head -3",
+                "case \"\$c\" in *[f]rida*) echo \${d#/proc/};; esac; done | head -3",
             20_000,
         ).stdout.trim()
     }
