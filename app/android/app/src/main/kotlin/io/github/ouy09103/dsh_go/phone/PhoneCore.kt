@@ -782,6 +782,7 @@ class PhoneCore(
                 decision = "refused:root-off",
             )
         }
+        val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
         if (action == "inject") {
             // l10n:keep agent tool result
             val pkg = a.str("package")
@@ -794,7 +795,6 @@ class PhoneCore(
             return Out(verdict, error = injected["ok"] != true, summary = "frida",
                 decision = if (injected["ok"] == true) "ok" else "failed")
         }
-        val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
         val result = when (action) {
             "start" -> env.fridaStart(port, a.bool("stealth") == true)
             "stop" -> env.fridaStop()

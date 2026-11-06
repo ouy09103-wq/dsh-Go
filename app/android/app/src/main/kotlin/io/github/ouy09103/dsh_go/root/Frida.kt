@@ -299,7 +299,7 @@ internal object Frida {
             append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
             append("sleep 2; ")
             // Cannot use pidof frida-server: the process may be renamed in stealth mode.
-            append("if [ -n \"\$(pgrep -f 'frida-server\|$STEALTH_BINARY' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
+            append("if [ -n \"\$(pgrep -f 'frida-server\\|$STEALTH_BINARY' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
             append("else echo FRIDA_NOT_RUNNING; fi")
         }
         val result = RootExec.run(script, 60_000)
