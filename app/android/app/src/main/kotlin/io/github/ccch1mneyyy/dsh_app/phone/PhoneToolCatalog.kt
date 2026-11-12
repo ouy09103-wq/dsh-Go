@@ -22,6 +22,9 @@ object PhoneToolCatalog {
     const val KEY = "key"
     const val TAP_XY = "tap_xy"
     const val HANDOFF = "handoff"
+    const val SHELL = "shell"
+    const val SHELL_READ = "shell_read"
+    const val FRIDA = "frida"
 
     class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
         fun toJson(): Map<String, Any?> = linkedMapOf(
@@ -252,6 +255,65 @@ object PhoneToolCatalog {
             // l10n:keep agent tool catalog
             linkedMapOf("reason" to str("要用户做什么，一句话")),
             listOf("reason"),
+        ),
+        Tool(
+            SHELL,
+            // l10n:keep agent tool catalog
+            "在手机上以 root 执行一条 shell 命令（经 su），返回退出码和输出。" +
+                // l10n:keep agent tool catalog
+                "手机操控的限制在这里同样有效：不碰名单里的应用、DSH Go 自己的数据、系统目录、" +
+                "密码凭据都不会执行。只在用户明确要求、或别无他法时用；删除和改系统的命令先问用户。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "command" to str("要执行的命令，按 sh 语法"),
+                // l10n:keep agent tool catalog
+                "timeoutMs" to int("超时毫秒数，默认 20000，最长 120000（1–120000）"),
+            ),
+            listOf("command"),
+        ),
+        Tool(
+            SHELL_READ,
+            // l10n:keep agent tool catalog
+            "接着读上一次 shell 的输出：输出太长时结果里会给出一个文件路径，用这个工具按行读它的后面部分。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "path" to str("结果里给出的输出文件路径"),
+                // l10n:keep agent tool catalog
+                "offset" to int("从第几个字符开始，默认 0"),
+                // l10n:keep agent tool catalog
+                "length" to int("读多少个字符，默认 8000，最长 32000（1–32000）"),
+            ),
+            listOf("path"),
+        ),
+  
+  
+  
+        Tool(
+            FRIDA,
+            // l10n:keep agent tool catalog
+            "查 frida-server 在不在、跑没跑，或者把它装上并启动、停掉。" +
+                // l10n:keep agent tool catalog
+                "二进制随 App 分发（17.23.3，arm64），不联网下载；装到 /data/local/tmp，" +
+                "监听 127.0.0.1:27042。Linux 环境里的 frida 客户端可以直接连。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "action" to str("status（默认，只读）/ start（装上并启动）/ stop（停掉）/ " +
+                    "client（装 Linux 里的 frida Python 客户端）/ inject（注入脚本到某个 App）"),
+                // l10n:keep agent tool catalog
+                "package" to str("inject 时要注入的 App 包名；不能是 system_server / zygote"),
+                // l10n:keep agent tool catalog
+                "script" to str("inject 的 Frida 脚本（JS 全文）。Frida 17 没有 Java 全局对象，" +
+                    "要做 Java hook 先 bundle frida-java-bridge"),
+                // l10n:keep agent tool catalog
+                "timeoutMs" to int("inject 收集消息多久，默认 20000（5000–300000）"),
+                // l10n:keep agent tool catalog
+                "port" to int("frida-server 监听端口，默认 27042。有的目标会探测 27042，" +
+                    "连 3 次都通就自杀；遇到这类目标换成 27043 之类，客户端再连那个端口"),
+                // l10n:keep agent tool catalog
+                "stealth" to bool("隐身模式：二进制改名、放在不起眼的目录，" +
+                    "躲开目标对 frida-server 名字和路径的扫描。配合换端口用"),
+            ),
+            emptyList(),
         ),
     )
 
