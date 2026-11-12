@@ -1,5 +1,5 @@
 // 设置 › Root 权限: 真 root 通道的入口页——状态、命令、Linux（Ubuntu rootfs）、
-// frida-server、常驻 root shell。每一项都只在点按后 spawn su。
+// frida-server（由 Frida Control 模块提供）、常驻 root shell。每一项都只在点按后 spawn su。
 
 import 'dart:async';
 
@@ -82,11 +82,12 @@ class _RootPageState extends ConsumerState<RootPage> {
 
   Future<void> _installFrida() async {
     setState(() => _busy = true);
-    _log('安装内置 frida-server…（解压约 59 MB，写进 /data/local/tmp）');
+    _log('让 Frida Control 模块启动 frida-server…');
     try {
       final state = await _root.installFrida();
       _log(state.ok
           ? 'frida-server 已启动：${state.version} · PID ${state.pid} · 127.0.0.1:${state.port}\n${state.path}'
+
           : 'frida-server 安装失败：${state.error ?? '未知原因'}');
     } on PlatformException catch (error) {
       _log('frida-server 安装失败：${error.code} ${error.message ?? ''}');
@@ -294,9 +295,9 @@ class _RootPageState extends ConsumerState<RootPage> {
           children: [
             SettingsTile(
               icon: AppIcons.plugin,
-              title: '安装并启动 frida-server',
+              title: '启动 frida-server（模块）',
               subtitle: '内置 17.25.2（arm64），不联网下载。装到 /data/local/tmp，'
-                  '以 127.0.0.1:27042 启动。跟 pip3 install frida 装到的版本对齐，直接能连。',
+                  '由 Frida Control 模块负责启动，默认 127.0.0.1:27043 —— 27042 会被部分目标探测后 abort。',
               value: Text(_busy ? '…' : '17.25.2'),
               onTap: _busy ? null : _installFrida,
             ),

@@ -78,7 +78,7 @@ class RootResult {
   }
 }
 
-/// frida-server 安装/状态。
+/// frida-server 状态。由 Frida Control 模块提供，App 只调它的 ctl.sh。
 class FridaState {
   const FridaState({
     required this.ok,
@@ -103,14 +103,14 @@ class FridaState {
   final String pids;
   final bool listening;
 
-  /// 二进制已经在 /data/local/tmp 里（还没起来也算 true）。
+  /// 二进制已就位（模块隐藏目录 /data/adb/frida-hide，或旧位置；还没起来也算 true）。
   final bool installed;
 
   String get report {
     if (!ok) return '失败：${error ?? '未知原因'}';
     final buffer = StringBuffer(running ? 'frida-server 运行中' : 'frida-server 未运行');
     if (pids.trim().isNotEmpty) buffer.write(' · PID ${pids.trim()}');
-    if (listening) buffer.write(' · 27042 在监听');
+    if (listening) buffer.write(' · ${port ?? 27043} 在监听');
     if (version != null) buffer.write('\n版本 $version');
     if (path != null) buffer.write('\n$path');
     return buffer.toString();
@@ -171,7 +171,7 @@ class RootChannel {
       );
 
   /// 装上并启动内置的 frida-server（二进制在 APK 里，不下载）。
-  Future<FridaState> installFrida({int port = 27042}) async => FridaState.from(
+  Future<FridaState> installFrida({int port = 27043}) async => FridaState.from(
         await channel.invokeMethod<Object?>('installFrida', {'port': port}),
       );
 

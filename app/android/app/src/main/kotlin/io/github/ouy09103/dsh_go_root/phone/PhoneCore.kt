@@ -1376,7 +1376,7 @@ class PhoneCore(
      * frida：查状态，或者装上并启动、停掉。
      *
      * 模型从「我能跑 shell」推得出「我能跑 frida」，但推不出「server 装在
-     * /data/local/tmp、监听 27042、二进制随 App 分发」。做成工具它就能直接问。
+     * 模块目录、默认端口 27043、二进制藏在哪」。做成工具它就能直接问。
      * status 只读，任何模式都能调；start / stop / client / inject 要「启用 root」。
      */
     private fun fridaTool(a: Args, owner: PhoneTasks.Owner): Out {

@@ -1,471 +1,212 @@
 package io.github.ouy09103.dsh_go_root.root
 
 import android.content.Context
-import android.os.Build
-import org.tukaani.xz.XZInputStream
-import java.io.File
-import java.io.FileOutputStream
 
 /**
- * frida-server for real root, shipped inside the APK.
+ * frida-server 由 **Frida Control 模块**（KernelSU 模块 `frida-control`）提供，App 不再自带。
  *
- * The previous attempts downloaded the release from GitHub, decompressed it with `xz` on the
- * device, and then fought ART to make the server start. All three were wrong for a phone:
- * Android's toolbox has no `curl`, no `wget` and no `xz`; the guest's Ubuntu rootfs doesn't ship
- * them either; and downloading made the feature depend on GitHub being reachable at the moment
- * someone taps the button.
+ * 为什么不内置：目标 App（com.chunqiunativecheck 那类）的检测判据是
+ * 「存在可执行段但没有对应磁盘文件」。frida-server 注入时 agent 走 memfd，
+ * `/proc/self/maps` 里天生就是 `/memfd:frida-agent-64.so (deleted)` —— 改名字、
+ * 改线程名、mprotect、换 abort 全都无效，因为它读的是内核原始 maps。
+ * 实测：只 spawn 不 attach 活 7.9s，attach 后 0.3s detach 活 9.6s，
+ * agent 常驻则 0.7~1.9s 死。所以「把 server 藏得更好」这条路走不通。
  *
- * This is the approach a working on-device tool uses: put the binary in the APK, write it out,
- * `chmod`, `setsid` it, and read the state back with `pidof`. No network, no external tool, no
- * environment surgery.
+ * 模块把二进制放在 `/data/adb/frida-hide/`（0700，非 root 进程内核层就拒绝），
+ * 改名为 `ksud_helper`，进程名和路径都不含 frida。App 这里只负责**调用模块的
+ * ctl.sh**，不再自己写文件、不再自己 setsid、不再改二进制。
  *
- * The asset is xz-compressed (59 MB → 17 MB) because it travels through git; the APK already
- * depends on org.tukaani:xz for the rootfs, so decompressing costs nothing extra.
- *
- * Version: the asset is 17.25.2, deliberately matched to what `pip3 install frida` gives you
- * today — a client and server that differ even in the minor version make every attach time out
- * after 25 s (measured), which reads exactly like a target app fighting back. Bumping the asset
- * means updating [SHA256] and the version string in [VERSION_HINT].
+ * 端口：模块默认 27042，但目标 App 会主动连 27042，连上就 abort（3 次入站即触发）。
+ * 所以这里默认 27043，跟实测通过的配置一致；启动前会把模块的 config.prop 也改成一致。
  */
 internal object Frida {
 
-    /** The bundled build: `assets/frida/<this>`. */
-    private const val ASSET = "frida/frida-server-17.25.2-android-arm64.xz"
+    /** 模块目录（KernelSU / APatch 通用）。 */
+    private const val MODULE_DIR = "/data/adb/modules/frida-control"
+    private const val MODULE_CTL = "$MODULE_DIR/ctl.sh"
+    private const val MODULE_CONF = "$MODULE_DIR/config.prop"
 
-    /** sha256 of the **decompressed** binary; a bad asset fails here instead of at exec time. */
-    private const val SHA256 = "7bb6219131819c11e5fe53b3e32fae0b8d1ff4c2a9c35c1a549d2703ea0f3b9b"
+    /** 模块隐藏后的二进制位置，仅用于状态展示与兜底探测。 */
+    private const val HIDDEN_BIN = "/data/adb/frida-hide/ksud_helper"
 
-    /** Where the working tool puts it, and where frida's own tooling looks by default. */
-    const val REMOTE_DIR = "/data/local/tmp"
-    const val REMOTE_SERVER = "$REMOTE_DIR/frida-server"
-
-    /**
-     * Rewrites [input] with [STEALTH_ALIASES] into [output], verifying the result.
-     *
-     * Byte-level, same-length replacement on the decompressed server. Every pair is
-     * length-checked before anything is written, and the output must still be an ELF64
-     * arm64 executable of exactly the same size — a short alias would silently corrupt
-     * .rodata and the binary would segfault on the first Gum call.
-     *
-     * Returns the number of replacements, or throws with the reason.
-     */
-    private fun rewriteStealth(input: File, output: File): Int {
-        var data = input.readBytes()
-        for ((from, to) in STEALTH_ALIASES) {
-            require(from.length == to.length) { "别名长度不一致：$from -> $to" }
-        }
-        var total = 0
-        for ((from, to) in STEALTH_ALIASES) {
-            val needle = from.toByteArray()
-            var at = 0
-            while (true) {
-                val i = indexOf(data, needle, at)
-                if (i < 0) break
-                System.arraycopy(to.toByteArray(), 0, data, i, needle.size)
-                total++
-                at = i + needle.size
-            }
-        }
-        val expected = input.length()
-        require(data.size.toLong() == expected) { "改写后大小变了（${data.size} != $expected）" }
-        require(data.size > 64 && data[0] == 0x7F.toByte() && data[1] == 'E'.code.toByte() &&
-            data[2] == 'L'.code.toByte() && data[3] == 'F'.code.toByte()) { "改写后不是 ELF" }
-        require(data[18] == 0xB7.toByte() && data[19] == 0x00.toByte()) { "改写后不是 arm64" }
-        output.writeBytes(data)
-        return total
-    }
-
-    private fun indexOf(hay: ByteArray, needle: ByteArray, from: Int): Int {
-        if (needle.isEmpty() || hay.size < needle.size) return -1
-        var i = from.coerceAtLeast(0)
-        while (i <= hay.size - needle.size) {
-            var k = 0
-            while (k < needle.size && hay[i + k] == needle[k]) k++
-            if (k == needle.size) return i
-            i++
-        }
-        return -1
-    }
+    /** 旧位置：模块关闭 HIDE 时用。 */
+    private const val LEGACY_BIN = "/data/local/tmp/frida-server"
 
     /**
-     * Stealth install: a random binary name in a directory that doesn't say "frida".
+     * 默认端口。
      *
-     * Targets scan for the literal strings `frida-server`, `/data/local/tmp/frida`, and the
-     * `gum-js-loop` thread name. None of that survives if the binary is called something else
-     * and lives somewhere unremarkable — the report's com.chunqiunativecheck reads
-     * `/proc/self/maps` and cmdline looking for exactly those.
-     *
-     * This is obscurity, not evasion: a determined checker can still find the agent in memory
-     * after injection. It defeats name-and-path scanning, which is what most of them do.
+     * **不是 27042。** 目标会主动连 27042，连上即 abort；实测 27043 是 10/10 存活、
+     * 27042 只有 2/10。
      */
-    private const val STEALTH_BINARY = "netd_helper"
-    private const val STEALTH_DIR = "/data/local/tmp/.cache"
+    const val DEFAULT_PORT = 27043
 
-    /**
-     * Same-length string aliases applied to the binary before it is installed.
-     *
-     * The technique is from phantom-frida (TheQmaks/phantom-frida, ~90 patches over 16
-     * detection classes). Its key insight is that most of Frida's detection surface is
-     * *strings* — a checker greps `/proc/self/maps`, the task names under
-     * `/proc/self/task/<tid>/status`, or the loaded module list. Replacing those strings in the
-     * already-compiled binary is enough for the name-based checks, and needs no toolchain
-     * (rebuilding frida-server on a phone is not possible anyway).
-     *
-     * Rules this list follows, learned the hard way:
-     *  - **Every pair must be the same length.** These are fixed-size string literals in
-     *    .rodata; a different length shifts everything after it.
-     *  - Keep the shape recognisable to Frida itself where Frida compares them (the
-     *    `gum-js-loop` name is looked up by the JS engine), so only the *identifiable*
-     *    part changes: `gum-js-loop` → `gum-jx-loop`, not a random word.
-     *  - Do not touch `frida` in paths Frida resolves at runtime (its own asset dir).
-     */
-    private val STEALTH_ALIASES = listOf(
-        // Thread names, read straight out of /proc/self/task/<tid>/status.
-        "gum-js-loop" to "gum-jx-loop",
-        "gmain" to "amain",
-        "gdbus" to "gdbug",
-        "pool-spawner" to "pool-spoiler",
-        // Module and asset names, visible in /proc/self/maps.
-        "frida-gadget" to "libgc-gadget",
-        "frida-agent" to "libgc-agent",
-        "frida-helper" to "libgc-helper",
-        // Type names the runtime puts in memory.
-        "FridaScriptEngine" to "xf0b52fe480d6411e",
-        "GumScript" to "x11cd6c23",
-        "GDBusProxy" to "x2152cded3",
-        "GLib-GIO" to "x037fd60",
-        // The D-Bus service name and the Android helper package.
-        "re.frida.server" to "x1535704be60818",
-        "re.frida.helper" to "xa799196c65e405",
-        "re.frida.Helper" to "xa574125e0a38dd",
-    )
-
-    const val DEFAULT_PORT = 27042
-
-    /** Client pin used when the server's own version can't be read. */
+    /** 客户端 pin，服务端版本读不到时用。 */
     private const val DEFAULT_CLIENT_PIN = "17.25.2"
 
-    /** The bundled server's version. Must match [ASSET]; asserted by the asset's filename. */
-    private const val BUNDLED_VERSION = "17.25.2"
-
-    /** `17.23.3` at the start of a line: the shape `frida.__version__` prints. */
+    /** `17.23.3` 这种形状。 */
     private val VERSION = Regex("[0-9]+\\.[0-9]+\\.[0-9]+")
 
     /**
-     * 永不注入的进程。往 system_server 或 zygote 注 agent，崩一次就是整机重启
-     * （这台机器上已经发生过一次，见 frida-notes/SUMMARY.md）。
+     * 永不注入的进程。往 system_server 或 zygote 注 agent，崩一次就是整机重启。
      */
     val FORBIDDEN_TARGETS = setOf(
         "system_server", "zygote", "zygote64", "zygote32", "init", "surfaceflinger",
     )
 
+    // ── 模块对接 ────────────────────────────────────────────────────────────────
+
+    /** 模块装没装：ctl.sh 存在且可读。 */
+    private fun modulePresent(): Boolean =
+        RootExec.run("test -f $MODULE_CTL && echo yes", 15_000).stdout.contains("yes")
+
+    /** 跑一条 ctl.sh 命令，返回 (stdout, exitCode)。 */
+    private fun ctl(vararg args: String): RootExec.Result {
+        val quoted = args.joinToString(" ") { quote(it) }
+        return RootExec.run("sh $MODULE_CTL $quoted 2>&1", 90_000)
+    }
+
     /**
-     * Installs the bundled server and starts it on [port].
+     * 把模块的 config.prop 对齐到 App 这边要的端口。
      *
-     * The binary is written as the app first (the app owns its cache dir), then copied to
-     * `/data/local/tmp` and `chmod 755` through su — so the push never has to stream 59 MB
-     * through a pipe, which is what makes a slow root manager time out.
+     * 两处配置各说各话是最容易踩的坑：模块默认 27042，而 27042 会让目标 abort。
+     * 每次启动前写一次，幂等；写不进去不算失败（只读挂载时模块仍能用它的值）。
+     */
+    private fun alignPort(port: Int): Boolean {
+        val script = buildString {
+            append("C=$MODULE_CONF; [ -f \"\$C\" ] || exit 4; ")
+            append("grep -q '^PORT=$port\$' \"\$C\" 2>/dev/null && { echo PORT_OK; exit 0; }; ")
+            append("sed -i 's/^PORT=.*/PORT=$port/' \"\$C\" 2>/dev/null; ")
+            append("grep -q '^PORT=$port\$' \"\$C\" 2>/dev/null && echo PORT_OK || echo PORT_FAIL")
+        }
+        val r = RootExec.run(script, 20_000)
+        return r.stdout.contains("PORT_OK")
+    }
+
+    /** 模块 status 输出里的一行 `键 : 值`，取不到就 null。 */
+    private fun field(out: String, key: String): String? =
+        out.lineSequence()
+            .firstOrNull { it.trimStart().startsWith(key) }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+    /**
+     * 启动 frida（模块负责搬文件、改名、起进程）。
+     *
+     * [port] 会先写进模块的 config.prop，再 `ctl.sh start`。
+     * [stealth] 保留参数是为了接口兼容 —— 隐藏现在由模块的 HIDE 开关负责，
+     * App 这边不再改二进制（改名对 memfd 检测无效，记录里已证伪）。
      */
     fun install(context: Context, port: Int, stealth: Boolean = false): Map<String, Any?> {
-        if (Build.SUPPORTED_ABIS.firstOrNull() != "arm64-v8a") {
-            return fail("内置的 frida-server 只有 arm64 版，这台手机的 ABI 是 ${Build.SUPPORTED_ABIS.firstOrNull()}")
-        }
         RootExec.suPath() ?: return fail("这台手机上没有 su，先用 root 管理器给 DSH Go 授权")
+        if (!modulePresent()) {
+            return fail(
+                "没装 Frida Control 模块。frida-server 现在由模块提供，不再内置在 App 里。\n" +
+                    "先装模块：把 frida-control-v1.3.0.zip 放进 KernelSU / APatch 里刷入，" +
+                    "再把 frida-server 放到 /data/adb/frida-hide/ksud_helper（chmod 700），" +
+                    "然后回来点「启用 Frida」。",
+            )
+        }
         val probe = RootExec.probe()
         if (!probe.ok || probe.uid != 0) {
             return fail("root 没授权成功：" + (probe.stderr.ifBlank { "uid=${probe.uid}" }))
         }
-
-        val extracted = try {
-            extract(context)
-        } catch (e: Exception) {
-            return fail("内置 frida-server 解出失败：" + (e.message ?: e.javaClass.simpleName))
-        }
-
-        // Stealth does two things: a differently-named copy in an unremarkable directory,
-        // and the same-length string aliases inside the binary so a checker that greps
-        // /proc/self/maps or the task names does not find Frida's own strings.
-        var payload = extracted
-        var rewritten = 0
-        if (stealth) {
-            val patched = File(extracted.parentFile, "frida-server.stealth")
-            rewritten = try {
-                rewriteStealth(extracted, patched)
-            } catch (e: Exception) {
-                extracted.delete()
-                return fail("隐身改写失败：" + (e.message ?: e.javaClass.simpleName))
-            }
-            payload = patched
-        }
-        val target = if (stealth) "$STEALTH_DIR/$STEALTH_BINARY" else REMOTE_SERVER
-        // `cp` onto a binary that is currently running fails with ETXTBSY ("Text file busy"):
-        // the kernel refuses to open a running executable for writing. Two things fix it —
-        // stop the old server first, then write to a temporary name and `mv` it into place,
-        // because a rename only swaps the directory entry and never touches the busy inode.
-        val staged = "$target.new"
-        val expected = payload.length()
-        // **Do not execute the binary here.** A bare `su -c` shell has no BOOTCLASSPATH /
-        // DEX2OATBOOTCLASSPATH, and frida-server aborts instantly without writing a byte to
-        // stdout or stderr — which surfaced as "写 ... 失败：" with an empty reason and sent
-        // everyone hunting for a Text-file-busy that wasn't there. Size is proof enough at this
-        // point; the exec happens in start(), where the environment is set up.
-        // The pattern must bracket BOTH alternatives. This line once read
-        // `[f]rida-server|n]etd_helper` — the right side was missing its opening bracket, so it
-        // became a plain substring, matched the shell running this very command (its own argv
-        // contains it), and `kill` took out the shell before `cp` ever ran. The symptom was a
-        // command with *no output at all*, which read as "su not authorized". Excluding $$ and
-        // the parent pid makes the loop survive any future pattern mistake.
-        val killLoop = { sig: String ->
-            "ME=\$\$; PA=\$(awk '{print \$4}' /proc/\$ME/stat 2>/dev/null); " +
-                "for P in \$(pgrep -f '[f]rida-server|[n]etd_helper' 2>/dev/null); do " +
-                "case \"\$P\" in \$ME|\$PA) continue;; esac; " +
-                "kill $sig \"\$P\" 2>/dev/null; done; "
-        }
-        val push = RootExec.run(
-            killLoop("") + "sleep 1; " + killLoop("-9") + "sleep 1; " +
-                "mkdir -p ${if (stealth) STEALTH_DIR else REMOTE_DIR} && " +
-                "cp ${quote(payload.absolutePath)} $staged && chmod 755 $staged && " +
-                "mv -f $staged $target && " +
-                "S=\$(stat -c %s $target 2>/dev/null); " +
-                "if [ \"\$S\" = \"$expected\" ]; then echo FRIDA_STAGED \$S; " +
-                "else echo FRIDA_BAD_SIZE \$S; fi",
-            180_000,
-        )
-        if (payload != extracted) payload.delete()
-        extracted.delete()
-        val out = push.stdout.trim()
-        if (!out.contains("FRIDA_STAGED")) {
-            // A stale `.new` from a failed run would otherwise linger and confuse the next try.
-            RootExec.run("rm -f $staged", 15_000)
-            val detail = (push.stderr.trim().ifBlank { out }).take(300)
-            // The exit code narrows it down far better than a guess: 143 means the staging
-            // script was terminated by a signal (historically: a bad pgrep pattern killing the
-            // shell), 134 means an abort, and a clean -1 with no output means su never ran.
-            val hint = when {
-                push.exitCode == 143 -> "命令被信号终止（143）——通常是 kill 循环误杀了自己"
-                push.exitCode == 134 -> "命令 abort（134）"
-                detail.isBlank() -> "命令没有输出、exit=${push.exitCode}（su 可能没授权，或 /data 满）"
-                else -> ""
-            }
-            return fail(
-                "写 $target 失败：" + (if (detail.isBlank()) hint else detail) +
-                    "\n如果提到 Text file busy，说明那个二进制正在被运行：先 frida action=stop 再装。",
-            )
-        }
-        // The asset's own version, not the binary's: reading it would mean executing it, which
-        // needs the environment that only start() sets up.
-        val version = BUNDLED_VERSION
-
-        freePort(port)?.let { return fail(it) }
-        // `start` always uses REMOTE_SERVER; for stealth, point it at the copy instead.
-        val started = if (stealth) startAt(target, port) else start(port)
-        return started + mapOf(
-            "version" to version.ifBlank { null },
-            "path" to target,
-            "stealth" to stealth,
-            "rewritten" to rewritten,
-        )
-    }
-
-    /**
-     * Starts the binary at [path] on [port].
-     *
-     * Split out from [start] so stealth can run a copy under a different name without
-     * duplicating the setsid / /dev/null dance, which is the part that took the longest to
-     * get right on this phone.
-     */
-    /**
-     * Starts the binary at [path] on [port], and reports whether it is now running.
-     *
-     * Split out from [start] so stealth can run a renamed copy. The launch ladder is the one
-     * MilkCode's installer uses (reverse-engineered from its dex): setsid, else nohup, else
-     * plain background. Two rungs are not enough — some toybox builds have nohup but no setsid.
-     *
-     * Every rung redirects all three streams: an inherited pipe that nobody drains will block
-     * the server the moment it writes a log line.
-     */
-    private fun startAt(path: String, port: Int): Map<String, Any?> {
-        val dir = path.substringBeforeLast('/')
-        val bin = path.substringAfterLast('/')
-        // Bracketed so pgrep's pattern cannot match the shell that is running it.
-        val pat = "[" + bin.first() + "]" + bin.drop(1)
-        val script = buildString {
-            append("B=${quote(path)}; ")
-            append("cd $dir || exit 3; ")
-            // **BOOTCLASSPATH comes from zygote, not init.** A `su -c` shell starts nearly
-            // empty; /proc/1 (init) does not carry BOOTCLASSPATH at all — that lives in the
-            // zygote process, which is what actually loads the art runtime. The first version
-            // of this read /proc/1, fell through to a 3-jar fallback, and frida-server aborted
-            // on JNI_CreateJavaVM with "BOOTCLASSPATH and DEX2OATBOOTCLASSPATH must not be
-            // empty". Read zygote64 (then zygote), export everything ART needs, and pin
-            // DEX2OATBOOTCLASSPATH to the same value as BOOTCLASSPATH when it's still empty —
-            // leaving it empty is the exact abort condition. mksh has no `read -d ''`, so the
-            // NUL-separated environ goes through tr first.
-            append("ZY=\$(pidof zygote64 2>/dev/null); [ -n \"\$ZY\" ] || ZY=\$(pidof zygote 2>/dev/null); ")
-            append("if [ -n \"\$ZY\" ] && [ -r /proc/\$ZY/environ ]; then ")
-            append("  for E in \$(tr '\\000' '\\n' < /proc/\$ZY/environ 2>/dev/null); do ")
-            append("    case \"\$E\" in ")
-            append("      BOOTCLASSPATH=*|DEX2OATBOOTCLASSPATH=*|ANDROID_ROOT=*|ANDROID_DATA=*|")
-            append("ANDROID_ART_ROOT=*|ANDROID_I18N_ROOT=*|ANDROID_TZDATA_ROOT=*|ANDROID_STORAGE=*) ")
-            append("      export \"\$E\";; ")
-            append("    esac; ")
-            append("  done; ")
-            append("fi; ")
-            // Standard Android paths plus a DEX2OAT guard: an empty value is the abort.
-            append("export ANDROID_ROOT=\"\${ANDROID_ROOT:-/system}\"; ")
-            append("export ANDROID_DATA=\"\${ANDROID_DATA:-/data}\"; ")
-            append("export ANDROID_ART_ROOT=\"\${ANDROID_ART_ROOT:-/apex/com.android.art}\"; ")
-            append("export ANDROID_I18N_ROOT=\"\${ANDROID_I18N_ROOT:-/apex/com.android.i18n}\"; ")
-            append("export ANDROID_TZDATA_ROOT=\"\${ANDROID_TZDATA_ROOT:-/apex/com.android.tzdata}\"; ")
-            append("export ANDROID_STORAGE=\"\${ANDROID_STORAGE:-/storage}\"; ")
-            append("if [ -z \"\$BOOTCLASSPATH\" ]; then ")
-            append("  export BOOTCLASSPATH=\$(ls /apex/com.android.art/javalib/*.jar 2>/dev/null | tr '\\n' ':'); ")
-            append("  export BOOTCLASSPATH=\"\${BOOTCLASSPATH%%:}\"; ")
-            append("fi; ")
-            append("export DEX2OATBOOTCLASSPATH=\"\${DEX2OATBOOTCLASSPATH:-\$BOOTCLASSPATH}\"; ")
-            append("if command -v setsid >/dev/null 2>&1; then ")
-            append("setsid \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
-            append("elif command -v nohup >/dev/null 2>&1; then ")
-            append("nohup \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & ")
-            append("else \"\$B\" -l 127.0.0.1:$port </dev/null >/dev/null 2>&1 & fi; ")
-            append("sleep 2; ")
-            append("if [ -n \"\$(pgrep -f '$pat' 2>/dev/null)\" ]; then echo FRIDA_RUNNING; ")
-            append("else echo FRIDA_NOT_RUNNING; fi")
-        }
-        val result = RootExec.run(script, 60_000)
-        if (!result.stdout.contains("FRIDA_RUNNING")) {
+        val target = port.coerceIn(1, 65535)
+        val aligned = alignPort(target)
+        val r = ctl("start")
+        val out = r.stdout.trim()
+        // ctl.sh 成功时说「已启动 (pid=…)」，失败时说「错误：…」或「启动失败」
+        val started = out.contains("已启动") || out.contains("(pid=")
+        if (!started) {
             return mapOf(
                 "ok" to false,
-                "port" to port,
-                "error" to "frida-server 没有起来（$path 存在，但找不到进程）。" +
-                    "到「常驻 root shell」里手动跑一次 $path -l 127.0.0.1:$port，看它说什么。",
-                "stdout" to result.stdout.trim(),
-                "stderr" to result.stderr.trim(),
+                "port" to target,
+                "error" to "模块启动 frida 失败：" +
+                    (out.lines().firstOrNull { it.isNotBlank() } ?: "没有输出（exit=${r.exitCode}）"),
+                "stdout" to out.take(1_500),
+                "stderr" to r.stderr.trim().take(800),
+                "hint" to "到「常驻 root shell」里跑 sh $MODULE_CTL start，看它报什么。",
             )
         }
-        return mapOf("ok" to true, "port" to port, "pid" to pidOf(), "path" to path)
+        val state = status(context)
+        return mapOf(
+            "ok" to true,
+            "port" to target,
+            "portAligned" to aligned,
+            "path" to (state["path"] ?: HIDDEN_BIN),
+            "version" to state["version"],
+            "pid" to state["pids"],
+            "module" to true,
+            "stealth" to (state["hidden"] == true),
+            "listening" to state["listening"],
+        )
     }
 
     /**
-     * Writes the bundled binary into the app's cache dir, checking the sha256.
+     * 停掉 frida（走模块的 ctl.sh stop）。
      *
-     * The hash is over the decompressed bytes, so a truncated asset or a broken xz stream is
-     * caught here — not by a mysterious "Aborted" from a half-written ELF.
+     * 模块会把隐藏位置和旧位置的进程一起收掉，App 不再自己 pgrep / kill。
      */
-    private fun extract(context: Context): File {
-        val out = File(context.cacheDir, "frida-server")
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        context.assets.open(ASSET).use { raw ->
-            XZInputStream(raw).use { xz ->
-                FileOutputStream(out).use { file ->
-                    val buffer = ByteArray(256 * 1024)
-                    while (true) {
-                        val read = xz.read(buffer)
-                        if (read < 0) break
-                        digest.update(buffer, 0, read)
-                        file.write(buffer, 0, read)
-                    }
-                }
-            }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
-        if (actual != SHA256) {
-            out.delete()
-            throw IllegalStateException("校验失败（sha256 $actual）")
-        }
-        return out
+    fun stop() {
+        if (!modulePresent()) return
+        ctl("stop")
     }
 
     /**
-     * Starts the server on [port] the way the working tool does:
+     * 状态：模块在不在、frida 跑没跑、哪个端口、什么版本。
      *
-     * ```
-     * B=/data/local/tmp/frida-server
-     * setsid "$B" </dev/null >/dev/null 2>&1 &
-     * ```
-     *
-     * stdin from /dev/null so it never waits on a pipe, `setsid` so su's exit doesn't take it
-     * down, output discarded so a full pipe can't block it. No `-P`, no injected environment:
-     * that is the combination that actually starts on this phone.
+     * 判据和之前一致：**端口在 LISTEN 才算在跑**，`pidof` 只做展示。模块隐藏后
+     * 进程名是 `ksud_helper`，`pidof frida-server` 永远空，只看它必然误报。
      */
-    /**
-     * Starts the bundled binary at [REMOTE_SERVER] on [port].
-     *
-     * Just [startAt] with the default path — one launch ladder, one place to fix it.
-     */
-    private fun start(port: Int): Map<String, Any?> {
-        val result = startAt(REMOTE_SERVER, port)
-        // The caller (install) reports whether the port ended up listening; startAt only says
-        // whether a process exists, which is a different question on a slow phone.
-        return if (result["ok"] == true) result + mapOf("listening" to listening(port)) else result
-    }
-
-    /** What the page shows: whether the server runs, on which port, and which build. */
     fun status(context: Context): Map<String, Any?> {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
-        // "Installed" has to mean "a working frida-server is there", not "a file is there":
-        // the report found that swapping the binary for anything else still reported
-        // "installed 17.25.2" because only the path was checked. `--version` printing a
-        // version number is the cheapest proof that the thing runs and is what it claims.
-        val present = RootExec.run("test -x $REMOTE_SERVER && echo yes", 15_000).stdout.contains("yes")
-        val version = if (present) {
-            RootExec.run("$REMOTE_SERVER --version 2>/dev/null | tail -1", 20_000).stdout.trim()
-        } else {
-            ""
+        val present = modulePresent()
+        // 模块在就跑它的 status；不在就退回自己探测，至少能报「模块没装」之外的信息。
+        val out = if (present) ctl("status").stdout else ""
+        val modInstalled = field(out, "隐藏") != null || out.contains("Frida Control")
+        val runningField = field(out, "frida进程") ?: field(out, "frida 进程")
+        val runningByModule = runningField?.contains("运行中") == true
+        // 二进制位置：模块 HIDE=1 时在 /data/adb/frida-hide，HIDE=0 时在旧位置
+        val path = when {
+            RootExec.run("test -x $HIDDEN_BIN && echo yes", 15_000).stdout.contains("yes") -> HIDDEN_BIN
+            RootExec.run("test -x $LEGACY_BIN && echo yes", 15_000).stdout.contains("yes") -> LEGACY_BIN
+            else -> null
         }
-        // No version line means the file is there but is not a usable server (wrong binary,
-        // wrong ABI, or it aborted before printing — see the BOOTCLASSPATH note below).
-        val installed = present && VERSION.containsMatchIn(version)
-        // **Listening is the truth, not `pidof`.** On this phone `pidof frida-server` comes back
-        // empty even while the server is up and serving (the process name differs from the
-        // binary name), so the old check reported "installed, not running" against a healthy
-        // server. A port that accepts connections is what the client actually needs; the pid is
-        // a convenience for the page, never the verdict.
-        //
-        // The port is read from the running server's argv when possible: some targets kill
-        // themselves on a connect to 27042 specifically (the report's com.chunqiunativecheck
-        // probes it three times), so a server started on another port has to be seen as running.
+        // 版本只能靠执行二进制读；隐藏目录只有 root 可读，su 下没问题。
+        val version = if (path != null) {
+            RootExec.run("$path --version 2>/dev/null | tail -1", 25_000).stdout.trim()
+                .let { VERSION.find(it)?.value ?: "" }
+        } else ""
+        val installed = path != null && version.isNotEmpty()
         val port = activePort() ?: DEFAULT_PORT
         val listening = listening(port)
-        val pid = pidOf()
-        // The client and the server must agree on major.minor, not just the major: a client one
-        // minor ahead made every attach time out after 25 s, and the tool used to report that as
-        // a plain "timeout" — the least useful thing it could say.
+        val pids = pidOf()
         val client = clientVersion(context)
         return mapOf(
             "ok" to true,
+            "module" to modInstalled,
+            "modulePath" to MODULE_DIR,
             "installed" to installed,
-            "running" to (listening || pid.isNotEmpty()),
-            // One word instead of two booleans, the way MilkCode's installer reports it
-            // (UNKNOWN / ROOT_REQUIRED / NOT_INSTALLED / STOPPED / RUNNING). A caller that
-            // only reads `state` cannot get the "installed but not running" combination wrong.
+            "running" to (listening || runningByModule || pids.isNotEmpty()),
             "state" to when {
+                !present -> "NO_MODULE"
                 !installed -> "NOT_INSTALLED"
-                listening || pid.isNotEmpty() -> "RUNNING"
+                listening || runningByModule || pids.isNotEmpty() -> "RUNNING"
                 else -> "STOPPED"
             },
             "listening" to listening,
-            "pids" to pid,
+            "pids" to pids,
             "version" to version.ifBlank { null },
             "client" to client,
             "mismatch" to versionMismatch(version, client),
-            "path" to REMOTE_SERVER,
+            "path" to path,
             "port" to port,
+            "hidden" to (path == HIDDEN_BIN),
+            "mode" to field(out, "连接模式"),
+            "autostart" to field(out, "开机自启"),
         )
     }
 
-    /**
-     * Installs the Python client into the guest, pinned to the server's version.
-     *
-     * The client is not in the rootfs (it would add ~30 MB and most users never inject), and
-     * telling the model to run `pip3 install` by hand was the reason "inject" kept failing in
-     * practice — the report from MilkCode's dex does this automatically, and pins
-     * `frida==<server version>` so a fresh `pip3 install frida` can't silently pull a
-     * mismatched minor and make every attach time out.
-     *
-     * Mirrors are tried in order (the report's installer does the same): tsinghua, aliyun,
-     * then pypi. `uv` is preferred when present because pip's resolver is slow on a phone.
-     */
     fun ensureClient(context: Context, serverVersion: String?): Map<String, Any?> {
         val pin = serverVersion?.takeIf { VERSION.containsMatchIn(it) } ?: DEFAULT_CLIENT_PIN
         val script = buildString {
@@ -513,6 +254,7 @@ internal object Frida {
      *
      * Asked through the packaged Ubuntu rootfs because that is where the inject client runs.
      */
+
     fun clientVersion(context: Context): String? {
         val command = GuestExec.suCommand(context, "python3 -c 'import frida; print(frida.__version__)'")
             ?: return null
@@ -528,6 +270,7 @@ internal object Frida {
      * 25 s. Matching major.minor is what frida actually needs — which is why the bundled server
      * tracks the version `pip3 install frida` gives you.
      */
+
     private fun versionMismatch(server: String, client: String?): String? {
         if (server.isBlank() || client.isNullOrBlank()) return null
         if (sameSeries(server, client)) return null
@@ -538,6 +281,7 @@ internal object Frida {
     }
 
     /** `17.23.3` vs `17.23.9` count as one series; `17.23` vs `17.25` do not. */
+
     private fun sameSeries(a: String, b: String): Boolean {
         // Through the patch number: 17.25.0 client against a 17.25.2 server is not the same
         // thing, and the report measured the failure mode (attach hangs, reads as anti-debug).
@@ -545,39 +289,13 @@ internal object Frida {
         return whole(a) == whole(b)
     }
 
-    /** Stops a running server. Also used before a start, so two builds never share the port. */
-    /**
-     * Kills any server, whatever it is called.
-     *
-     * Matches the plain name, the stealth name, and anything whose cmdline carries either —
-     * a renamed copy has to be stoppable too, or "stop" leaves a listening port behind and
-     * the next start reports it as occupied.
-     */
-    /**
-     * Kills any server, whatever name it carries.
-     *
-     * `pidof` is tried first because it matches the process *name* and can never match the
-     * shell running this command — MilkCode's installer does the same. `pgrep -f` covers the
-     * stealth name, bracketed so it can't match its own argv either.
-     */
-    fun stop() {
-        RootExec.run(
-            "for P in \$(pidof frida-server 2>/dev/null) \$(pidof $STEALTH_BINARY 2>/dev/null) " +
-                "\$(pgrep -f '[f]rida-server' 2>/dev/null) \$(pgrep -f '[n]etd_helper' 2>/dev/null); do " +
-                "kill \"\$P\" 2>/dev/null || true; done; sleep 1; " +
-                "for P in \$(pidof frida-server 2>/dev/null) \$(pidof $STEALTH_BINARY 2>/dev/null) " +
-                "\$(pgrep -f '[f]rida-server' 2>/dev/null) \$(pgrep -f '[n]etd_helper' 2>/dev/null); do " +
-                "kill -9 \"\$P\" 2>/dev/null || true; done; true",
-            30_000,
-        )
-    }
 
     /**
      * The port a running server was started with, or null when it can't be read.
      *
      * Taken from the process's own argv (`-l 127.0.0.1:27043`), so a server on a non-default
-     * port is still seen as running. Some targets kill themselves the moment anything
-     * connects to 27042, so running elsewhere is a legitimate and common setup.
+     * port is still seen as running. The module's own default is 27042, which targets probe;
+     * running on 27043 is the configuration that survived.
      */
     private fun activePort(): Int? {
         val pid = pidOf().split(" ").firstOrNull { it.isNotBlank() } ?: return null
@@ -590,22 +308,14 @@ internal object Frida {
     /**
      * Pids of a running server, best effort.
      *
-     * **`/proc/net/tcp`'s 10th field is the socket inode, not a pid.** Reading it as a pid is
-     * what produced the report's "PID 2710988" — a number that doesn't exist under /proc and
-     * changes on every call. The only trustworthy sources are `pidof`/`pgrep` and, failing
-     * those, walking /proc looking for the binary in each process's cmdline.
-     *
-     * Empty is not a verdict — see [status], which goes by [listening].
+     * The module renames the binary to `ksud_helper`, so `pidof frida-server` alone is not
+     * enough — both names are queried, and the last resort walks /proc for either string in a
+     * cmdline. Empty is never a verdict; [status] goes by [listening].
      */
     private fun pidOf(): String {
-        // `pidof` first: it compares the process *name*, so it can never match the shell that
-        // runs this query. `pgrep -f` is the fallback for a renamed copy — bracketed so it
-        // can't match its own shell either. The four queries OVERLAP on purpose (pidof and
-        // pgrep can both hit the same process), so results are deduped here: the report's
-        // "PID 13276 13276" was the same pid found twice, printed as if it were two.
         val named = RootExec.run(
-            "pidof frida-server 2>/dev/null; pidof $STEALTH_BINARY 2>/dev/null; " +
-                "pgrep -f '[f]rida-server' 2>/dev/null; pgrep -f '[n]etd_helper' 2>/dev/null; true",
+            "pidof frida-server 2>/dev/null; pidof ksud_helper 2>/dev/null; " +
+                "pgrep -f '[f]rida-server' 2>/dev/null; pgrep -f '[k]sud_helper' 2>/dev/null; true",
             15_000,
         ).stdout.trim()
         if (named.isNotEmpty()) {
@@ -616,12 +326,10 @@ internal object Frida {
             }
             return seen.joinToString(" ")
         }
-        // No process carries the name: find who has the binary mapped. `grep -l` over cmdline
-        // is cheap enough at this size and does not depend on any name at all.
         return RootExec.run(
             "for d in /proc/[0-9]*; do " +
                 "c=\"\$(tr '\\0' ' ' < \$d/cmdline 2>/dev/null)\"; " +
-                "case \"\$c\" in *[f]rida*) echo \${d#/proc/};; esac; done | head -3",
+                "case \"\$c\" in *[f]rida*|*[k]sud_helper*) echo \${d#/proc/};; esac; done | head -3",
             20_000,
         ).stdout.trim()
     }
@@ -644,37 +352,10 @@ internal object Frida {
     }
 
     /**
-     * Stops whatever already holds [port], so the new server can bind it.
-     *
-     * The first version of this tried to tell "another DSH Go instance" from ours by the socket's
-     * uid in /proc/net/tcp — which is nonsense: frida-server runs as root, so that uid is always
-     * 0, and every install refused itself. There is no useful ownership test here; what a person
-     * wants is "make it work", and two frida-servers cannot share 27042 anyway.
-     *
-     * So: kill any frida-server, wait for the port to clear, and if something *else* still
-     * holds it, say so with the one fact that helps — which pid.
-     */
-    private fun freePort(port: Int): String? {
-        stop()
-        // Only LISTEN blocks a new server. A TIME_WAIT socket (state 06) is a closed
-        // connection waiting out its timeout — it cannot accept anything, it clears itself in
-        // seconds, and telling people to reboot over it was wrong.
-        repeat(6) {
-            if (!listening(port)) return null
-            Thread.sleep(300)
-        }
-        val pids = pidOf()
-        // l10n:keep agent tool result
-        return "端口 $port 还被别的程序监听" +
-            (if (pids.isBlank()) "" else "（可能是 frida-server pid $pids）") +
-            "。先把它停掉再重试；如果那是另一个 App 的服务，换个端口（参数 port）。"
-    }
-
-    /**
      * 把 [script] 注入 [pkg] 并收集它 send 回来的消息。
      *
      * 客户端跑在打包的 Ubuntu rootfs 里（frida-python 由用户自己装过，见 gpucheck 的报告），
-     * 连 127.0.0.1:27042 的 frida-server。
+     * 连模块启动的 frida-server（默认 127.0.0.1:27043）。
      *
      * 报告里踩过的两个坑，这里都绕开了：
      *  - **spawn 之后必须 resume**，否则进程停在挂起态，后续 attach 全排队超时
@@ -818,6 +499,7 @@ internal object Frida {
      * `resume` 放在 `load()` 之后、`time.sleep` 之前：脚本还没加载就 resume，
      * 前几毫秒的调用会漏掉；反过来忘了 resume，进程一直挂着，后面的 attach 全超时。
      */
+
     private val FRIDA_RUNNER = """
 import sys, time, json
 try:
@@ -932,6 +614,7 @@ else:
      * which reliably kills the target on Android 14+. It refuses rather than warns because a
      * warning would be read after the process is already gone.
      */
+
     private fun scriptRisk(script: String): String? {
         val code = script.lineSequence()
             .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
@@ -994,6 +677,7 @@ else:
     }
 
     /** `this.foo(` — a method call on the receiver inside a hook body. */
+
     private val RECEIVER_CALL = Regex("""this\.[A-Za-z_$][A-Za-z0-9_$]*\s*\(""")
 
     /** APIs Frida 17 removed; using any of them is a TypeError at load. */

@@ -639,6 +639,9 @@ class PhoneStatus {
     this.fridaRunning = false,
     this.fridaInstalled = false,
     this.fridaVersion,
+    this.fridaModule = false,
+    this.fridaState,
+    this.fridaPort,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
@@ -669,6 +672,9 @@ class PhoneStatus {
       fridaRunning = false,
       fridaInstalled = false,
       fridaVersion = null,
+      fridaModule = false,
+      fridaState = null,
+      fridaPort = null,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
@@ -697,6 +703,9 @@ class PhoneStatus {
     fridaRunning: _flag(_map(m['frida'])['running']),
     fridaInstalled: _flag(_map(m['frida'])['installed']),
     fridaVersion: _map(m['frida'])['version'] as String?,
+    fridaModule: _flag(_map(m['frida'])['module']),
+    fridaState: _map(m['frida'])['state'] as String?,
+    fridaPort: _map(m['frida'])['port'] is int ? _map(m['frida'])['port'] as int : null,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -744,6 +753,15 @@ class PhoneStatus {
   final bool fridaRunning;
   final bool fridaInstalled;
   final String? fridaVersion;
+
+  /// Frida Control 模块装没装。没装时启动一定失败，界面要直接说清楚。
+  final bool fridaModule;
+
+  /// NO_MODULE / NOT_INSTALLED / RUNNING / STOPPED。
+  final String? fridaState;
+
+  /// 实际监听端口；27042 会被目标探测后 abort，默认是 27043。
+  final int? fridaPort;
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
@@ -788,6 +806,9 @@ class PhoneStatus {
     fridaRunning: fridaRunning,
     fridaInstalled: fridaInstalled,
     fridaVersion: fridaVersion,
+    fridaModule: fridaModule,
+    fridaState: fridaState,
+    fridaPort: fridaPort,
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,

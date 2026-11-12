@@ -83,10 +83,11 @@ class RootDockSlot extends ConsumerWidget {
 
 /// 「▣ 启用 Frida                点击启动」
 /// 「▣ Frida 已启用 · 17.25.2   点击关闭」
+/// 「▣ Frida 未装 · 需要模块     点击看说明」
 ///
-/// 和 root 胶囊同形，紧挨着它出现。存在的理由：模型没法从「我能跑 shell」
-/// 推断出「这台手机上 frida-server 装在哪、监听哪个端口」，所以它常常想不到要用；
-/// 这一行把「有没有在跑」摆在它眼前，也让人能一键起停。
+/// 和 root 胶囊同形，紧挨着它出现。frida-server 现在由 Frida Control 模块提供，
+/// 不在 App 里：模型没法从「我能跑 shell」推断出「模块装没装、监听哪个端口」，
+/// 这一行把状态摆在它眼前，也让人能一键起停。
 class FridaPill extends ConsumerStatefulWidget {
   const FridaPill({super.key});
 
@@ -106,10 +107,14 @@ class _FridaPillState extends ConsumerState<FridaPill> {
     final dsh = DshColors.of(context);
     final color = on ? dsh.warning : theme.colorScheme.onSurfaceVariant;
     final version = status.fridaVersion;
+    final module = status.fridaModule;
+    // 没装模块时启动一定失败，与其让人点了才看到错误，不如直接说清楚。
     final title = on
         ? (version == null ? 'Frida 已启用' : 'Frida 已启用 · $version')
-        : (installed ? 'Frida 已装未启动' : '启用 Frida');
-    final detail = _busy ? '处理中…' : (on ? '点击关闭' : '点击启动');
+        : (installed ? 'Frida 已装未启动' : (module ? '启用 Frida' : 'Frida 需要模块'));
+    final detail = _busy
+        ? '处理中…'
+        : (on ? '点击关闭' : (installed || module ? '点击启动' : '看说明'));
     return Semantics(
       button: true,
       label: on ? '$title，点击关闭' : '$title，点击启动',
@@ -132,6 +137,27 @@ class _FridaPillState extends ConsumerState<FridaPill> {
     final notifier = ref.read(phoneProvider.notifier);
     if (running) {
       await notifier.stopFrida();
+      return;
+    }
+    // 没装模块：给一句能照做的说明，别让人以为点了没反应。
+    if (!ref.read(phoneProvider).status.fridaModule) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('需要 Frida Control 模块'),
+          content: const Text(
+            'frida-server 现在由模块提供，不再打包进 App。\n\n'
+            '1. 把 frida-control-v1.3.0.zip 放进 KernelSU / APatch 刷入\n'
+            '2. 把 frida-server 放到 /data/adb/frida-hide/ksud_helper（chmod 700）\n'
+            '3. 回来点这一行启动\n\n'
+            '默认端口 27043：27042 会被部分目标探测后 abort。',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('知道了')),
+          ],
+        ),
+      );
       return;
     }
     setState(() => _busy = true);

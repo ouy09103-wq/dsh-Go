@@ -976,13 +976,23 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
 
-    /** frida 的三项状态；一次 su 探测同时喂满，不在状态快照里反复 spawn。 */
+    /**
+     * frida 状态。现在由 Frida Control 模块提供，所以多报三项：
+     * 模块装没装、二进制在哪、监听哪个端口 —— 胶囊和设置页都要靠它说话。
+     *
+     * 这个函数每次调用都会跑一次 su（模块 ctl.sh status），所以只在 emitStatus 的
+     * 快照里调一次，不在每次读状态时重复。
+     */
     private fun fridaSummary(): Map<String, Any?> {
         val s = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
         return mapOf(
             "running" to (s["running"] == true),
             "installed" to (s["installed"] == true),
             "version" to s["version"],
+            "module" to (s["module"] == true),
+            "state" to s["state"],
+            "port" to s["port"],
+            "hidden" to (s["hidden"] == true),
         )
     }
 
@@ -1038,7 +1048,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     }
 
-    /** Frida 胶囊：装上并启动。没开 root 模式就直接说不行，不弹授权。 */
+    /**
+     * Frida 胶囊：让模块启动 frida。没开 root 模式就直接说不行，不弹授权。
+     *
+     * 端口固定用 [Frida.DEFAULT_PORT]（27043）：27042 会被目标主动探测后 abort。
+     */
     fun startFrida(): Boolean {
         if (!rootShellEnabled()) return false
         val ok = Frida.install(app, Frida.DEFAULT_PORT, false)["ok"] == true

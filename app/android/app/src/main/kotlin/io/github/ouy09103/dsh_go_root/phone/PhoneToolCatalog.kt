@@ -293,8 +293,9 @@ object PhoneToolCatalog {
             // l10n:keep agent tool catalog
             "查 frida-server 在不在、跑没跑，或者把它装上并启动、停掉。" +
                 // l10n:keep agent tool catalog
-                "二进制随 App 分发（17.23.3，arm64），不联网下载；装到 /data/local/tmp，" +
-                "监听 127.0.0.1:27042。Linux 环境里的 frida 客户端可以直接连。",
+                "frida-server 由 Frida Control 模块提供（二进制在 /data/adb/frida-hide/ksud_helper，" +
+                "进程名不含 frida），App 只负责调用模块的 ctl.sh，不自带也不自己起进程。" +
+                "默认监听 127.0.0.1:27043 —— 27042 会被目标主动探测后 abort。",
             linkedMapOf(
                 // l10n:keep agent tool catalog
                 "action" to str("status（默认，只读）/ start（装上并启动）/ stop（停掉）/ " +
@@ -307,8 +308,8 @@ object PhoneToolCatalog {
                 // l10n:keep agent tool catalog
                 "timeoutMs" to int("inject 收集消息多久，默认 20000（5000–300000）"),
                 // l10n:keep agent tool catalog
-                "port" to int("frida-server 监听端口，默认 27042。有的目标会探测 27042，" +
-                    "连 3 次都通就自杀；遇到这类目标换成 27043 之类，客户端再连那个端口"),
+                "port" to int("监听端口，默认 27043。27042 会被部分目标探测后 abort（实测 27042 只有 2/10 存活，" +
+                    "27043 是 10/10）；换端口时客户端要连同一个"),
                 // l10n:keep agent tool catalog
                 "stealth" to bool("隐身模式：二进制改名、放在不起眼的目录，" +
                     "躲开目标对 frida-server 名字和路径的扫描。配合换端口用"),
