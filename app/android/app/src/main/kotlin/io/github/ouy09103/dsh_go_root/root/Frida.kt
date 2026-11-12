@@ -157,7 +157,7 @@ internal object Frida {
         // v2 模块的 start 直接返回状态 JSON：成功和失败都有结构化原因。
         val m = parseJson(r.stdout)
         if (m.isEmpty()) {
-            val out = r.stdout.trim()
+            val raw = r.stdout.trim()
             return result { o ->
                 o["ok"] = r.exitCode == 0
                 o["port"] = target
