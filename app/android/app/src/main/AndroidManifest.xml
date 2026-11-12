@@ -52,7 +52,7 @@
          TODO(targetSdk >= 31): also configure dataExtractionRules. -->
     <application
         android:allowBackup="false"
-        android:label="DSH Go"
+        android:label="DSH Go Root"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -282,7 +282,7 @@
             android:name=".phone.background.AdbPairingNotification$Receiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="io.github.ccch1mneyyy.dsh_app.PHONE_ADB_PAIR_CODE" />
+                <action android:name="io.github.ouy09103.dsh_go_root.PHONE_ADB_PAIR_CODE" />
             </intent-filter>
         </receiver>
 

@@ -268,7 +268,7 @@ void main() {
       http.routes[_apkUrl('1.2.0')] = fileRoute(_apk('1.2.0'));
       installer.inspection = const ApkInspection(
         valid: true,
-        packageName: 'io.github.ccch1mneyyy.dsh_app',
+        packageName: 'io.github.ouy09103.dsh_go_root',
         versionName: '1.1.0',
         versionCode: 9,
         signatureMatches: true,
@@ -283,7 +283,7 @@ void main() {
 
       installer.inspection = const ApkInspection(
         valid: true,
-        packageName: 'io.github.ccch1mneyyy.dsh_app',
+        packageName: 'io.github.ouy09103.dsh_go_root',
         versionName: '1.2.0',
         versionCode: 9,
         signatureMatches: true,

@@ -5,7 +5,7 @@
 # 流程：拉上游 release 里的预编译运行时（rootfs + proot jniLibs）到 runtime/out，
 # 再走官方 tooling/build-apk.sh，最后用 release_assets.py 出 update.json / SHA256SUMS。
 #
-# 包名沿用上游 io.github.ccch1mneyyy.dsh_app，应用名「DSH Go」。
+# 包名 io.github.ouy09103.dsh_go_root，应用名「DSH Go Root」，可与原版共存安装。
 # 没有配置 keystore secrets 时用 debug 签名，够自己装手机上试。
 name: Build root APK
 
@@ -116,13 +116,14 @@ jobs:
         with:
           tag_name: v${{ env.VERSION }}
           name: DSH Go Root ${{ env.VERSION }}
-          draft: true
+          draft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
           prerelease: false
           files: dist/*
           body: |
             DSH Go **Root** ${{ env.VERSION }} —— 个人 fork，含 root `shell` 工具。
 
             - 基于上游 v1.0.15，运行时 1.0.15
+            - 包名 `io.github.ouy09103.dsh_go_root`，应用名「DSH Go Root」，**可与原版同时安装**
             - arm64 · Android 8.0（API 26）以上
             - 没有配置签名 secrets 时是 debug 签名
 

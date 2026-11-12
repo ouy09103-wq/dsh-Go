@@ -112,7 +112,7 @@ Map<String, Object?> withKeeper(Map<String, Object?> status) => {
   'a11yKeeper': {
     'granted': false,
     'path': 'setup',
-    'command': 'adb shell pm grant io.github.ccch1mneyyy.dsh_app android.permission.WRITE_SECURE_SETTINGS',
+    'command': 'adb shell pm grant io.github.ouy09103.dsh_go_root android.permission.WRITE_SECURE_SETTINGS',
   },
 };
 

@@ -1,4 +1,4 @@
-package io.github.ccch1mneyyy.dsh_app.runtime
+package io.github.ouy09103.dsh_go_root.runtime
 
 import android.content.Context
 import android.system.Os

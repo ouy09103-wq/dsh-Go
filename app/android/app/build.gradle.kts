@@ -33,7 +33,7 @@ fun buildMinuteVersionCode(): Int {
 }
 
 android {
-    namespace = "io.github.ccch1mneyyy.dsh_app"
+    namespace = "io.github.ouy09103.dsh_go_root"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -43,7 +43,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        applicationId = "io.github.ouy09103.dsh_go_root"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
