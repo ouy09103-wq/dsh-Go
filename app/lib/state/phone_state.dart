@@ -312,6 +312,20 @@ class PhoneController extends Notifier<PhoneState> {
 
   Future<PhoneResult> adbPair(String code, {int? port}) => _thenRefresh(_channel.adbPair(code, port: port));
 
+  /// 聊天页的「启用 root」。只翻一个开关，不重启引擎：`shell` / `frida` 每次调用时现查。
+  Future<bool> setRootShell(bool on) async {
+    final ok = await _channel.setRootShell(on);
+    if (ref.mounted && ok) state = state.copyWith(status: state.status.copyWith(rootShell: on));
+    return ok;
+  }
+
+  /// 设置 › Root 权限：严格模式。
+  Future<bool> setRootShellStrict(bool on) async {
+    final ok = await _channel.setRootShellStrict(on);
+    if (ref.mounted && ok) state = state.copyWith(status: state.status.copyWith(rootShellStrict: on));
+    return ok;
+  }
+
   Future<PhoneResult> adbConnect({int? port}) => _thenRefresh(_channel.adbConnect(port: port));
 
   /// Changes one app's rule; false when the native side refused (nothing changes).

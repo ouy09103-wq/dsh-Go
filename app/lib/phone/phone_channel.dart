@@ -632,6 +632,11 @@ class PhoneStatus {
     this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
+    this.rootShell = false,
+    this.rootShellStrict = false,
+    this.fridaRunning = false,
+    this.fridaInstalled = false,
+    this.fridaVersion,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
@@ -655,6 +660,11 @@ class PhoneStatus {
       statusRevision = null,
       statusRevisionPresent = false,
       enabled = false,
+      rootShell = false,
+      rootShellStrict = false,
+      fridaRunning = false,
+      fridaInstalled = false,
+      fridaVersion = null,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
@@ -676,6 +686,11 @@ class PhoneStatus {
         ? m['statusRevision'] as int : null,
     statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
+    rootShell: _flag(m['rootShell']),
+    rootShellStrict: _flag(m['rootShellStrict']),
+    fridaRunning: _flag(_map(m['frida'])['running']),
+    fridaInstalled: _flag(_map(m['frida'])['installed']),
+    fridaVersion: _map(m['frida'])['version'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -706,6 +721,17 @@ class PhoneStatus {
 
   /// The master switch 「手机操控」.
   final bool enabled;
+
+  /// 聊天页的「启用 root」：关着时 `shell` / `frida` 工具拒绝执行。
+  final bool rootShell;
+
+  /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
+  final bool rootShellStrict;
+
+  /// frida-server 是否在跑、是否已装、什么版本。
+  final bool fridaRunning;
+  final bool fridaInstalled;
+  final String? fridaVersion;
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
@@ -731,12 +757,23 @@ class PhoneStatus {
   /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
   bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
 
-  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
+  PhoneStatus copyWith({
+    bool? enabled,
+    bool? rootShell,
+    bool? rootShellStrict,
+    bool? ready,
+    Object? error = _keepError,
+  }) => PhoneStatus(
     ready: ready ?? this.ready,
     error: identical(error, _keepError) ? this.error : error as String?,
     statusRevision: statusRevision,
     statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
+    rootShell: rootShell ?? this.rootShell,
+    rootShellStrict: rootShellStrict ?? this.rootShellStrict,
+    fridaRunning: fridaRunning,
+    fridaInstalled: fridaInstalled,
+    fridaVersion: fridaVersion,
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,
@@ -1429,6 +1466,12 @@ class PhoneChannel {
     }
   }
 
+
+  /// 聊天页的「启用 root」：只影响之后的 `shell` / `frida` 调用，不重启引擎。
+  Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
+
+  /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
+  Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

@@ -822,6 +822,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val value = linkedMapOf<String, Any?>(
             "enabled" to isEnabled(),
             "rootShell" to rootShellEnabled(),
+            "rootShellStrict" to rootShellStrict(),
+            "frida" to fridaSummary(),
             "skills" to skillsStatus(),
             "bridgeListening" to bridge.listening,
             "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
@@ -971,6 +973,16 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
 
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
+
+    /** frida 的三项状态；一次 su 探测同时喂满，不在状态快照里反复 spawn。 */
+    private fun fridaSummary(): Map<String, Any?> {
+        val s = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
+        return mapOf(
+            "running" to (s["running"] == true),
+            "installed" to (s["installed"] == true),
+            "version" to s["version"],
+        )
+    }
 
     override fun onTaskStarted(owner: PhoneTasks.Owner) = skillLifecycle.started(owner)
     /** root 授权开关：带过期时间与连续失败计数，读一律走 RootGrant。 */
