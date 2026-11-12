@@ -1039,6 +1039,21 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     }
 
+    /** Frida 胶囊：装上并启动。没开 root 模式就直接说不行，不弹授权。 */
+    fun startFrida(): Boolean {
+        if (!rootShellEnabled()) return false
+        val ok = Frida.install(app, Frida.DEFAULT_PORT, false)["ok"] == true
+        emitStatus()
+        return ok
+    }
+
+    /** Frida 胶囊：停掉。 */
+    fun stopFrida(): Boolean {
+        Frida.stop()
+        emitStatus()
+        return true
+    }
+
     override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
     override fun fridaStart(port: Int?, stealth: Boolean): Map<String, Any?> =
         Frida.install(app, port ?: Frida.DEFAULT_PORT, stealth)

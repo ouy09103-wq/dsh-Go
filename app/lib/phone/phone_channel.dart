@@ -1487,6 +1487,12 @@ class PhoneChannel {
   /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
   Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
 
+  /// 装上并启动内置的 frida-server（二进制在 APK 里，不下载）。要 root 模式开着。
+  Future<bool> startFrida() => _bool('startFrida');
+
+  /// 停掉正在跑的 frida-server。
+  Future<bool> stopFrida() => _bool('stopFrida');
+
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 
   Future<PhoneResult> grantSecureSettings() => _result('grantSecureSettings');

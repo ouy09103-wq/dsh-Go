@@ -319,6 +319,11 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
+  /// 起 / 停内置的 frida-server。成功后刷新状态，胶囊上的版本跟着变。
+  Future<bool> startFrida() => _thenRefresh(_channel.startFrida());
+
+  Future<bool> stopFrida() => _thenRefresh(_channel.stopFrida());
+
   /// 设置 › Root 权限：严格模式。
   Future<bool> setRootShellStrict(bool on) async {
     final ok = await _channel.setRootShellStrict(on);

@@ -331,6 +331,10 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 control.setRootShellStrict(call.argument<Boolean>("on") ?: false)
                 result.success(true)
             }
+            // Frida 胶囊：装上并启动内置的 frida-server（要 root 模式开着）。
+            "startFrida" -> result.success(control.startFrida())
+            // Frida 胶囊：停掉。
+            "stopFrida" -> result.success(control.stopFrida())
             else -> result.notImplemented()
         }
         if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {
