@@ -1380,7 +1380,7 @@ class PhoneCore(
      * status 只读，任何模式都能调；start / stop / client / inject 要「启用 root」。
      */
     private fun fridaTool(a: Args, owner: PhoneTasks.Owner): Out {
-        if (!current(owner)) return stoppedOut(FRIDA_ACTIONS)
+        if (!current(owner)) return stoppedOut("frida")
         val action = a.str("action") ?: "status"
         if (action !in FRIDA_ACTIONS) {
             return Out("frida 的 action 只能是 ${FRIDA_ACTIONS.joinToString(" / ")}。", error = true,
@@ -1451,7 +1451,7 @@ class PhoneCore(
     }
 
     private val FRIDA_ACTIONS = listOf("status", "start", "stop", "client", "inject")
-    private const val FRIDA_INJECT_MS = 20_000
+    private val FRIDA_INJECT_MS = 20_000L
 
     private fun rootOff(tool: String): Out = Out(
         "root 未启用：请用户先在聊天页输入框上方点「启用 root」，再调用 $tool。",

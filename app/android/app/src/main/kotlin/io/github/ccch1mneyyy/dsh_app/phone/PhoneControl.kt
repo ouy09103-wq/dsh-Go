@@ -10,7 +10,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import io.github.ccch1mneyyy.dsh_app.root.Frida
-import io.github.ccch1mneyyy.dsh_app.root.RootGrant
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
