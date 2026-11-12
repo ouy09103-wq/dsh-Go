@@ -634,6 +634,8 @@ class PhoneStatus {
     this.enabled = false,
     this.rootShell = false,
     this.rootShellStrict = false,
+    this.rootShellUntil,
+    this.rootShellOffReason,
     this.fridaRunning = false,
     this.fridaInstalled = false,
     this.fridaVersion,
@@ -662,6 +664,8 @@ class PhoneStatus {
       enabled = false,
       rootShell = false,
       rootShellStrict = false,
+      rootShellUntil = null,
+      rootShellOffReason = null,
       fridaRunning = false,
       fridaInstalled = false,
       fridaVersion = null,
@@ -688,6 +692,8 @@ class PhoneStatus {
     enabled: _flag(m['enabled']),
     rootShell: _flag(m['rootShell']),
     rootShellStrict: _flag(m['rootShellStrict']),
+    rootShellUntil: m['rootShellUntil'] is int ? m['rootShellUntil'] as int : null,
+    rootShellOffReason: m['rootShellOffReason'] as String?,
     fridaRunning: _flag(_map(m['frida'])['running']),
     fridaInstalled: _flag(_map(m['frida'])['installed']),
     fridaVersion: _map(m['frida'])['version'] as String?,
@@ -727,6 +733,12 @@ class PhoneStatus {
 
   /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
   final bool rootShellStrict;
+
+  /// 授权到期时间（毫秒时间戳）；null 表示没记录。
+  final int? rootShellUntil;
+
+  /// 自动关掉的原因：expired（到期）/ strikes（连续拿不到 root）。
+  final String? rootShellOffReason;
 
   /// frida-server 是否在跑、是否已装、什么版本。
   final bool fridaRunning;
@@ -771,6 +783,8 @@ class PhoneStatus {
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
     rootShellStrict: rootShellStrict ?? this.rootShellStrict,
+    rootShellUntil: rootShellUntil,
+    rootShellOffReason: rootShellOffReason,
     fridaRunning: fridaRunning,
     fridaInstalled: fridaInstalled,
     fridaVersion: fridaVersion,

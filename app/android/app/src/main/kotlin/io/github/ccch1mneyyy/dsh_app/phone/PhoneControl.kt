@@ -823,6 +823,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "enabled" to isEnabled(),
             "rootShell" to rootShellEnabled(),
             "rootShellStrict" to rootShellStrict(),
+            // 授权到期时间与自动关掉的原因：设置页和胶囊都靠它说明「还剩多久」。
+            "rootShellUntil" to rootGrant.expiresAt(),
+            "rootShellOffReason" to (if (rootShellEnabled()) null else lastRootOffReason),
             "frida" to fridaSummary(),
             "skills" to skillsStatus(),
             "bridgeListening" to bridge.listening,
@@ -988,12 +991,21 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** root 授权开关：带过期时间与连续失败计数，读一律走 RootGrant。 */
     private val rootGrant: RootGrant get() = RootGrant(prefs)
 
+    /** 上次自动关掉开关的原因（expired / strikes）；开着时为 null。 */
+    private var lastRootOffReason: String? = null
+
     /** 聊天页输入框上方的「启用 root」：关着时 shell / frida 拒绝执行。 */
-    override fun rootShellEnabled(): Boolean = rootGrant.enabled()
+    override fun rootShellEnabled(): Boolean {
+        val was = prefs.getBoolean("root_shell", false)
+        val now = rootGrant.enabled()
+        if (was && !now && lastRootOffReason == null) lastRootOffReason = "expired"
+        return now
+    }
 
     /** 打开开关：记一个新的截止时间，并清掉失败计数。 */
     fun setRootShell(on: Boolean) {
         rootGrant.set(on)
+        if (on) lastRootOffReason = null
         emitStatus()
     }
 
@@ -1021,7 +1033,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     /** 拿不到 root：累计失败，连续失败到上限就把开关自己关掉，免得一直弹授权。 */
     override fun noteRootFailure(reason: String) {
-        if (rootGrant.recordFailure()) emitStatus()
+        if (rootGrant.recordFailure()) {
+            lastRootOffReason = "strikes"
+            emitStatus()
+        }
     }
 
     override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
