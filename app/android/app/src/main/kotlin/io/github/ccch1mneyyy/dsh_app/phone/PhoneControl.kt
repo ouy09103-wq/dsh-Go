@@ -9,6 +9,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import io.github.ccch1mneyyy.dsh_app.root.Frida
+import io.github.ccch1mneyyy.dsh_app.root.RootGrant
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
@@ -819,6 +821,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private fun captureStatus(): Map<String, Any?> {
         val value = linkedMapOf<String, Any?>(
             "enabled" to isEnabled(),
+            "rootShell" to rootShellEnabled(),
             "skills" to skillsStatus(),
             "bridgeListening" to bridge.listening,
             "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
@@ -970,6 +973,56 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
 
     override fun onTaskStarted(owner: PhoneTasks.Owner) = skillLifecycle.started(owner)
+    /** root 授权开关：带过期时间与连续失败计数，读一律走 RootGrant。 */
+    private val rootGrant: RootGrant get() = RootGrant(prefs)
+
+    /** 聊天页输入框上方的「启用 root」：关着时 shell / frida 拒绝执行。 */
+    override fun rootShellEnabled(): Boolean = rootGrant.enabled()
+
+    /** 打开开关：记一个新的截止时间，并清掉失败计数。 */
+    fun setRootShell(on: Boolean) {
+        rootGrant.set(on)
+        emitStatus()
+    }
+
+    /** 严格模式：在 root 工具上按 RootCommandPolicy 逐条判定。默认关。 */
+    override fun rootShellStrict(): Boolean = rootGrant.strict()
+
+    fun setRootShellStrict(on: Boolean) {
+        rootGrant.setStrict(on)
+        emitStatus()
+    }
+
+    override fun appLabel(pkg: String): String? = runCatching {
+        app.packageManager.getApplicationLabel(app.packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrNull()
+
+    /** 只有 RootShell 自己落盘的文件算数：路径必须在本 App 的缓存目录里。 */
+    override fun shellSpillFile(path: String): java.io.File? {
+        val file = runCatching { java.io.File(path).canonicalFile }.getOrNull() ?: return null
+        val cache = runCatching { app.cacheDir.canonicalFile }.getOrNull() ?: return null
+        return file.takeIf { it.path.startsWith(cache.path + java.io.File.separator) && it.isFile }
+    }
+
+    /** 命令跑通了：清失败计数。 */
+    override fun noteRootSuccess() = rootGrant.recordSuccess()
+
+    /** 拿不到 root：累计失败，连续失败到上限就把开关自己关掉，免得一直弹授权。 */
+    override fun noteRootFailure(reason: String) {
+        if (rootGrant.recordFailure()) emitStatus()
+    }
+
+    override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
+    override fun fridaStart(port: Int?, stealth: Boolean): Map<String, Any?> =
+        Frida.install(app, port ?: Frida.DEFAULT_PORT, stealth)
+    override fun fridaStop(): Map<String, Any?> {
+        Frida.stop()
+        return mapOf("ok" to true)
+    }
+    override fun fridaClient(): Map<String, Any?> = Frida.ensureClient(app, Frida.clientVersion(app))
+    override fun fridaInject(pkg: String, script: String?, timeoutMs: Long, port: Int?): Map<String, Any?> =
+        Frida.inject(app, pkg, script, timeoutMs, port)
+
 
     override fun enabled(): Boolean = isEnabled()
 
@@ -1052,6 +1105,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         private const val PREFS = "dsh_phone"
         private const val K_ENABLED = "enabled"
         private const val K_SKILL_PROMPT = "skillSavePrompt"
+
 
         /** Only master preference publication and the keeper's final settings writes share this lock. */
         internal val keeperSwitchLock = Any()

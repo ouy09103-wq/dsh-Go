@@ -1,6 +1,8 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.background.BoundedShell
 import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
+import io.github.ccch1mneyyy.dsh_app.phone.background.RootShell
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneTaskTrace
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
@@ -35,6 +37,23 @@ interface PhoneEnv {
      * Cleanup may outlive the active Owner; it must never adopt a successor's resource.
      */
     fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? = null
+    /** 聊天页的「启用 root」开关。关着时 shell / frida 工具拒绝执行。 */
+    fun rootShellEnabled(): Boolean = false
+    /** 严格模式：开着时按 RootCommandPolicy 逐条判定，默认关。 */
+    fun rootShellStrict(): Boolean = false
+    fun appLabel(pkg: String): String? = null
+
+    /** 上一次 `shell` 落盘的完整输出文件；null 表示 path 不是它自己的临时文件。 */
+    fun shellSpillFile(path: String): java.io.File? = null
+    fun noteRootSuccess() = Unit
+    fun noteRootFailure(reason: String) = Unit
+
+    /** frida-server 的状态与起停，由 host 实现（root/Frida.kt）。 */
+    fun fridaStatus(): Map<String, Any?> = emptyMap()
+    fun fridaStart(port: Int? = null, stealth: Boolean = false): Map<String, Any?> = emptyMap()
+    fun fridaStop(): Map<String, Any?> = emptyMap()
+    fun fridaClient(): Map<String, Any?> = emptyMap()
+    fun fridaInject(pkg: String, script: String?, timeoutMs: Long, port: Int? = null): Map<String, Any?> = emptyMap()
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
@@ -54,6 +73,8 @@ class PhoneCore(
     },
 ) {
     private val ui: PhoneUiText get() = env.uiText()
+    private val rootPolicy = RootCommandPolicy()
+    private val shellBudget = ShellBudget()
     val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
 
     // An abandoned body may overlap a later execution of the same Owner. Keep its display
@@ -377,6 +398,9 @@ class PhoneCore(
                 PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                 PhoneToolCatalog.KEY -> key(a, owner)
                 PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
+                PhoneToolCatalog.SHELL -> shell(a, scope, owner)
+                PhoneToolCatalog.SHELL_READ -> shellRead(a, owner)
+                PhoneToolCatalog.FRIDA -> fridaTool(a, owner)
                 // l10n:keep agent tool result
                 else -> Out("没有这个手机工具：$name", error = true)
             }
@@ -1251,6 +1275,188 @@ class PhoneCore(
             }
         } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
     }
+
+    /**
+     * root shell：经 su 执行一条命令。放不放行由聊天页的「启用 root」开关决定。
+     *
+     * 执行交给 [RootShell]：输出写临时文件而不是管道（超过 64 KiB 时管道会填满、子进程阻塞、
+     * waitFor 等到超时再杀掉一个其实已经跑完的命令），超时杀整棵进程树，并且认得出 PRoot 里
+     * 那个答 uid=0 却没有真 root 权限的假 su。
+     */
+    private fun shell(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+        if (!current(owner)) return stoppedOut("shell")
+        if (!env.rootShellEnabled()) return rootOff("shell")
+        val command = a.str("command")?.takeIf { it.isNotBlank() }
+            ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = "shell",
+                decision = "refused:no-command")
+        val timeoutMs = (a.int("timeoutMs") ?: RootShell.DEFAULT_TIMEOUT_MS.toInt()).toLong()
+        // 严格模式默认关：打开「启用 root」就是要它能干活，不该再被自己的规则管着。
+        // 在 设置 › Root 权限 里打开严格模式才逐条判定。
+        if (env.rootShellStrict()) {
+            val verdict = rootPolicy.judge(command, env.policies()) { pkg -> env.appLabel(pkg) }
+            if (verdict is RootCommandPolicy.Verdict.Refuse) {
+                return Out(verdict.message, error = true, summary = "shell",
+                    decision = "refused:${verdict.rule}")
+            }
+            if (verdict is RootCommandPolicy.Verdict.Confirm) {
+                val names = verdict.packages.joinToString("、") { env.appLabel(it) ?: it }
+                val sentence = "以 root 执行这条命令，动到「$names」（这个应用每次写入都要确认）：\n$command"
+                val asked = safety.resolve(
+                    safety.confirmation(sentence, verdict.packages.first(), names, verdict.reason), scope, owner)
+                if (asked is SafetyGate.Result.No) {
+                    return Out(asked.message, error = true, summary = "shell", decision = asked.decision)
+                }
+            }
+        }
+        if (!shellBudget.tryAcquire()) {
+            return Out(
+                "root 命令太密了：每任务每分钟最多 ${ShellBudget.PER_MINUTE} 条。把这次要做的合成一条命令，或等一会儿再试。",
+                error = true, summary = "shell", decision = "refused:rate-limit",
+            )
+        }
+        val output = try {
+            RootShell.run(command, timeoutMs)
+        } finally {
+            shellBudget.release()
+        }
+        // 只有「拿不到 root」才算掉授权；命令跑了但退出码非零是命令本身的问题。
+        if (output.failure == null) env.noteRootSuccess() else env.noteRootFailure(output.failure)
+        val decision = when {
+            output.failure != null -> "refused:no-root"
+            output.timedOut -> "timeout"
+            output.exitCode == 0 -> "ok"
+            else -> "failed"
+        }
+        return Out(
+            RootShell.describe(command, output),
+            error = output.failure != null || output.exitCode != 0,
+            summary = "shell",
+            decision = decision,
+        )
+    }
+
+    /** 接着读上一次 shell 落盘的完整输出。偏移和长度都按字符算。 */
+    private fun shellRead(a: Args, owner: PhoneTasks.Owner): Out {
+        if (!current(owner)) return stoppedOut("shell_read")
+        val path = a.str("path")?.takeIf { it.isNotBlank() }
+            ?: return Out("shell_read 需要 path：上一次 shell 结果里给出的输出文件。", error = true,
+                summary = "shell_read", decision = "refused:no-path")
+        val offset = (a.int("offset") ?: 0).coerceAtLeast(0)
+        val length = (a.int("length") ?: 8_000).coerceIn(1, 32_000)
+        // Only files the root shell itself spilled count: the host owns that check, so this can't
+        // become an arbitrary file read.
+        val file = env.shellSpillFile(path)
+            ?: return Out("只能读 shell 自己落盘的输出文件：把上一次 shell 结果里给出的路径原样传进来。",
+                error = true, summary = "shell_read", decision = "refused:path")
+        if (!file.isFile) return Out("没有这个输出文件：$path。可能已经被清理了，重新跑一次命令。",
+            error = true, summary = "shell_read", decision = "refused:missing")
+        val text = runCatching {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                val total = raf.length()
+                val start = offset * 4L
+                if (start >= total) return@use ""
+                raf.seek(start)
+                val want = ((length + 1) * 4).toInt().coerceAtMost((total - start).toInt())
+                val buf = ByteArray(want)
+                val read = raf.read(buf)
+                String(buf, 0, read.coerceAtLeast(0), Charsets.UTF_8).take(length + 1)
+            }
+        }.getOrElse { return Out("读不了 $path：${it.message ?: it.javaClass.simpleName}", error = true,
+            summary = "shell_read", decision = "failed") }
+        if (text.isEmpty()) return Out("已经读到末尾了（offset=$offset）。", summary = "shell_read", decision = "ok")
+        val more = text.length > length
+        val body = if (more) text.take(length) else text
+        return Out(
+            body + if (more) "\n[还有，用 offset=${offset + length} 接着读]" else "",
+            summary = "shell_read", decision = "ok",
+        )
+    }
+
+    /**
+     * frida：查状态，或者装上并启动、停掉。
+     *
+     * 模型从「我能跑 shell」推得出「我能跑 frida」，但推不出「server 装在
+     * /data/local/tmp、监听 27042、二进制随 App 分发」。做成工具它就能直接问。
+     * status 只读，任何模式都能调；start / stop / client / inject 要「启用 root」。
+     */
+    private fun fridaTool(a: Args, owner: PhoneTasks.Owner): Out {
+        if (!current(owner)) return stoppedOut(FRIDA_ACTIONS)
+        val action = a.str("action") ?: "status"
+        if (action !in FRIDA_ACTIONS) {
+            return Out("frida 的 action 只能是 ${FRIDA_ACTIONS.joinToString(" / ")}。", error = true,
+                summary = "frida", decision = "refused:bad-action")
+        }
+        if (action != "status" && !env.rootShellEnabled()) return rootOff("frida")
+        val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
+        if (action == "client") {
+            val installed = env.fridaClient()
+            return Out(describeFrida("client", installed), error = installed["ok"] != true,
+                summary = "frida", decision = if (installed["ok"] == true) "ok" else "failed")
+        }
+        if (action == "inject") {
+            val script = a.str("script")
+                ?: return Out("inject 需要 script：要注入的 Frida 脚本全文。", error = true,
+                    summary = "frida", decision = "refused:no-script")
+            val pkg = a.str("package")
+                ?: return Out("inject 需要 package：要注入的 App 包名（必须是普通应用）。", error = true,
+                    summary = "frida", decision = "refused:no-package")
+            val timeout = (a.int("timeoutMs") ?: FRIDA_INJECT_MS).toLong()
+            val injected = env.fridaInject(pkg, script, timeout, port)
+            return Out(describeFrida("inject", injected), error = injected["ok"] != true,
+                summary = "frida", decision = if (injected["ok"] == true) "ok" else "failed")
+        }
+        val result = when (action) {
+            "start" -> env.fridaStart(port, a.bool("stealth") == true)
+            "stop" -> env.fridaStop()
+            else -> env.fridaStatus()
+        }
+        return Out(describeFrida(action, result), error = result["ok"] != true, summary = "frida",
+            decision = if (result["ok"] == true) "ok" else "failed")
+    }
+
+    /** frida 结果的一句话说明。空 map 说明 host 没实现（测试里的假环境）。 */
+    private fun describeFrida(action: String, result: Map<String, Any?>): String {
+        if (result.isEmpty()) return "这台设备上没有 frida 支持。"
+        if (result["ok"] != true) {
+            return "frida $action 失败：" + (result["error"] as? String ?: "未知原因")
+        }
+        if (action == "client") {
+            val version = result["version"] as? String
+            val pinned = result["pinned"] as? String
+            return "Linux 里的 frida 客户端已就绪" +
+                (if (version != null) "（$version）" else "") +
+                (if (pinned != null && version != pinned) "，但服务端是 $pinned，可能对不上" else "") +
+                "。"
+        }
+        if (action == "inject") {
+            val pkg = result["package"] as? String ?: "?"
+            val messages = (result["messages"] as? String).orEmpty().trim()
+            val hint = result["hint"] as? String
+            return buildString {
+                append("已对 $pkg 注入并开始收消息。")
+                if (messages.isNotEmpty()) append("\n脚本消息：\n").append(messages.take(6_000))
+                if (hint != null) append("\n").append(hint)
+            }
+        }
+        val running = result["listening"] == true || result["running"] == true
+        val version = result["version"] as? String
+        val where = result["port"] ?: result["path"]
+        return buildString {
+            append(if (running) "frida-server 在跑" else "frida-server 没在跑")
+            if (version != null) append("（$version）")
+            if (where != null) append("，$where")
+            append("。")
+            (result["hint"] as? String)?.let { append(" ").append(it) }
+        }
+    }
+
+    private val FRIDA_ACTIONS = listOf("status", "start", "stop", "client", "inject")
+    private const val FRIDA_INJECT_MS = 20_000
+
+    private fun rootOff(tool: String): Out = Out(
+        "root 未启用：请用户先在聊天页输入框上方点「启用 root」，再调用 $tool。",
+        error = true, summary = tool, decision = "refused:root-off",
+    )
 
     private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("handoff")
