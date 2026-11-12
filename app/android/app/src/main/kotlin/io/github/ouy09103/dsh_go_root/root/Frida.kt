@@ -105,10 +105,17 @@ internal object Frida {
         return map
     }
 
-    /** 结果 map 的构造器：显式 Any? 值类型，避免 mapOf 把 Boolean/Int/String 推断成交叉类型。 */
-    private fun out(vararg pairs: Pair<String, Any?>): Map<String, Any?> {
-        val m = LinkedHashMap<String, Any?>(pairs.size)
-        for (p in pairs) m[p.first] = p.second
+    /**
+     * 结果 map 的构造器。
+     *
+     * 不用 `mapOf("k" to v)`，也不用 `vararg Pair`：同一个 map 里混 `Boolean` / `Int` /
+     * `String` / null 时，`to` 会把值推断成 `Comparable<...> & Serializable` 这种交叉类型，
+     * 而交叉类型不是 `Any?` 的子类型，编译报 "actual type is 'Serializable'"。
+     * 改成 builder lambda，每个值写进 `MutableMap<String, Any?>`，类型从一开始就固定。
+     */
+    private inline fun result(build: (MutableMap<String, Any?>) -> Unit): Map<String, Any?> {
+        val m = LinkedHashMap<String, Any?>()
+        build(m)
         return m
     }
 
@@ -151,40 +158,40 @@ internal object Frida {
         val m = parseJson(r.stdout)
         if (m.isEmpty()) {
             val out = r.stdout.trim()
-            return out(
-                "ok" to (r.exitCode == 0),
-                "port" to target,
-                "error" to if (r.exitCode == 0) null else
+            return result { o ->
+                o["ok"] = r.exitCode == 0
+                o["port"] = target
+                o["error"] = if (r.exitCode == 0) null else
                     "模块没有返回 JSON（可能还是 v1）。原文：" +
-                        (out.lines().firstOrNull { it.isNotBlank() } ?: "空（exit=${r.exitCode}）"),
-                "stdout" to out.take(1_500),
-                "hint" to "建议升级到 frida-control v2：它输出 JSON，失败时给 errorCode。",
-            )
+                        (raw.lines().firstOrNull { it.isNotBlank() } ?: "空（exit=${r.exitCode}）")
+                o["stdout"] = raw.take(1_500)
+                o["hint"] = "建议升级到 frida-control v2：它输出 JSON，失败时给 errorCode。"
+            }
         }
         val running = flag(m, "running")
         val listening = flag(m, "listening")
         if (!running || !listening) {
-            return out(
-                "ok" to false,
-                "port" to (m["port"] as? Int) ?: target,
-                "state" to text(m, "state"),
-                "error" to (text(m, "error") ?: "模块启动了，但进程或端口没就绪"),
-                "errorCode" to text(m, "errorCode"),
-                "hint" to "到「常驻 root shell」里跑 sh $MODULE_CTL log 20 看日志。",
-            )
+            return result { o ->
+                o["ok"] = false
+                o["port"] = (m["port"] as? Int) ?: target
+                o["state"] = text(m, "state")
+                o["error"] = text(m, "error") ?: "模块启动了，但进程或端口没就绪"
+                o["errorCode"] = text(m, "errorCode")
+                o["hint"] = "到「常驻 root shell」里跑 sh $MODULE_CTL log 20 看日志。"
+            }
         }
-        return out(
-            "ok" to true,
-            "port" to (m["port"] as? Int) ?: target,
-            "portAligned" to aligned,
-            "path" to text(m, "path"),
-            "version" to text(m, "version_server"),
-            "pid" to text(m, "pid"),
-            "module" to true,
-            "stealth" to flag(m, "hidden"),
-            "listening" to listening,
-            "state" to text(m, "state"),
-        )
+        return result { o ->
+            o["ok"] = true
+            o["port"] = (m["port"] as? Int) ?: target
+            o["portAligned"] = aligned
+            o["path"] = text(m, "path")
+            o["version"] = text(m, "version_server")
+            o["pid"] = text(m, "pid")
+            o["module"] = true
+            o["stealth"] = flag(m, "hidden")
+            o["listening"] = listening
+            o["state"] = text(m, "state")
+        }
     }
 
     /**
@@ -207,11 +214,12 @@ internal object Frida {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
         val present = modulePresent()
         if (!present) {
-            return out(
-                "ok" to true, "module" to false, "installed" to false, "running" to false,
-                "state" to "NO_MODULE", "listening" to false, "pids" to "",
-                "version" to null, "path" to null, "port" to DEFAULT_PORT, "hidden" to false,
-            )
+            return result { o ->
+                o["ok"] = true; o["module"] = false; o["installed"] = false; o["running"] = false
+                o["state"] = "NO_MODULE"; o["listening"] = false; o["pids"] = ""
+                o["version"] = null; o["path"] = null; o["port"] = DEFAULT_PORT
+                o["hidden"] = false
+            }
         }
         // v2 模块：一次 ctl.sh json 拿全部状态，不再逐个 su 探测。
         val m = parseJson(ctl("json").stdout)
@@ -224,38 +232,38 @@ internal object Frida {
             }
             val port = activePort() ?: DEFAULT_PORT
             val up = listening(port)
-            return out(
-                "ok" to true, "module" to true, "installed" to (path != null),
-                "running" to up,
-                "state" to if (path == null) "NOT_INSTALLED" else if (up) "RUNNING" else "STOPPED",
-                "listening" to up, "pids" to pidOf(),
-                "version" to null, "path" to path, "port" to port, "hidden" to false,
-                "legacyModule" to true,
-            )
+            return result { o ->
+                o["ok"] = true; o["module"] = true; o["installed"] = path != null
+                o["running"] = up
+                o["state"] = if (path == null) "NOT_INSTALLED" else if (up) "RUNNING" else "STOPPED"
+                o["listening"] = up; o["pids"] = pidOf()
+                o["version"] = null; o["path"] = path; o["port"] = port
+                o["hidden"] = false; o["legacyModule"] = true
+            }
         }
         val client = clientVersion(context)
         val serverVersion = text(m, "version_server")
-        return out(
-            "ok" to true,
-            "module" to true,
-            "moduleVersion" to text(m, "version"),
-            "modulePath" to MODULE_DIR,
-            "installed" to flag(m, "binary"),
-            "running" to flag(m, "running"),
-            "state" to text(m, "state"),
-            "listening" to flag(m, "listening"),
-            "pids" to text(m, "pid").orEmpty(),
-            "version" to serverVersion,
-            "client" to client,
-            "mismatch" to versionMismatch(serverVersion.orEmpty(), client),
-            "path" to text(m, "path"),
-            "port" to (m["port"] as? Int) ?: DEFAULT_PORT,
-            "hidden" to flag(m, "hidden"),
-            "mode" to text(m, "mode"),
-            "autostart" to flag(m, "autostart"),
-            "artEnv" to flag(m, "art_env"),
-            "error" to text(m, "error"),
-        )
+        return result { o ->
+            o["ok"] = true
+            o["module"] = true
+            o["moduleVersion"] = text(m, "version")
+            o["modulePath"] = MODULE_DIR
+            o["installed"] = flag(m, "binary")
+            o["running"] = flag(m, "running")
+            o["state"] = text(m, "state")
+            o["listening"] = flag(m, "listening")
+            o["pids"] = text(m, "pid").orEmpty()
+            o["version"] = serverVersion
+            o["client"] = client
+            o["mismatch"] = versionMismatch(serverVersion.orEmpty(), client)
+            o["path"] = text(m, "path")
+            o["port"] = (m["port"] as? Int) ?: DEFAULT_PORT
+            o["hidden"] = flag(m, "hidden")
+            o["mode"] = text(m, "mode")
+            o["autostart"] = flag(m, "autostart")
+            o["artEnv"] = flag(m, "art_env")
+            o["error"] = text(m, "error")
+        }
     }
 
     fun ensureClient(context: Context, serverVersion: String?): Map<String, Any?> {
@@ -492,15 +500,16 @@ internal object Frida {
             // The cgroup freezer has the target stopped; nothing can attach until it is back
             // in the foreground, and the 25 s timeout would otherwise read as anti-debugging.
             val frozenTarget = out.contains("[DSH] target-frozen")
-            return out(
-                "ok" to (loaded && result.ok && !crashed),
-                "package" to pkg,
-                "attached" to loaded,
-                "crashed" to crashed,
-                "frozen" to frozenTarget,
-                "messages" to out.take(8_000),
-                "stderr" to err.take(2_000),
-                "error" to when {
+            return result { o ->
+
+                o["ok"] = (loaded && result.ok && !crashed)
+                o["package"] = pkg
+                o["attached"] = loaded
+                o["crashed"] = crashed
+                o["frozen"] = frozenTarget
+                o["messages"] = out.take(8_000)
+                o["stderr"] = err.take(2_000)
+                o["error"] = when {
                     // Each exit code in the runner maps to the one thing the model should do next.
                     frozenTarget ->
                         "目标进程被系统冻结了（cgroup freezer 把它挂起），frida 注入不了。" +
@@ -537,8 +546,8 @@ internal object Frida {
                         append(if (detail.isEmpty()) "没有任何输出（脚本可能没跑起来）" else detail.take(500))
                     }
                     else -> null
-                },
-            )
+                }
+            }
         } finally {
             runCatching { dir.deleteRecursively() }
         }
