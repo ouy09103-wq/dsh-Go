@@ -1,6 +1,7 @@
 package io.github.ouy09103.dsh_go_root.root
 
 import android.content.Context
+import java.io.File
 
 /**
  * frida-server 由 **Frida Control 模块**（KernelSU 模块 `frida-control`）提供，App 不再自带。
