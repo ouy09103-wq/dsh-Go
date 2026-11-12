@@ -1,0 +1,129 @@
+# 构建带真 root 能力的 DSH Go Root APK（arm64）。
+#
+# 触发：推送到 v1.0.15-root 分支时自动跑；也可以手动 dispatch。
+#
+# 流程：拉上游 release 里的预编译运行时（rootfs + proot jniLibs）到 runtime/out，
+# 再走官方 tooling/build-apk.sh，最后用 release_assets.py 出 update.json / SHA256SUMS。
+#
+# 包名沿用上游 io.github.ccch1mneyyy.dsh_app，应用名「DSH Go」。
+# 没有配置 keystore secrets 时用 debug 签名，够自己装手机上试。
+name: Build root APK
+
+on:
+  push:
+    branches: [v1.0.15-root]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本名（如 1.0.15-root.1）
+        required: false
+        default: 1.0.15-root.1
+      draft:
+        description: 发布为 draft release
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: build-root-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  VERSION: ${{ github.event.inputs.version || '1.0.15-root.1' }}
+
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Fetch prebuilt runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
+          bash tooling/fetch-runtime.sh arm64-v8a 1.0.15
+          ls -la runtime/out/arm64-v8a/assets/runtime
+          head -c 400 runtime/out/arm64-v8a/assets/runtime/manifest.json; echo
+
+      - name: Pub get
+        working-directory: app
+        run: |
+          flutter config --no-analytics
+          flutter precache --android
+          flutter pub get
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "no release keystore configured; the APK is debug-signed"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > app/android/key.properties
+
+      - name: Build APK
+        run: bash tooling/build-apk.sh -f arm64 --build-name "$VERSION"
+
+      - name: Release assets
+        run: |
+          python3 tooling/release_assets.py --version "$VERSION" --delta-from 0 --out dist
+          ls -lh dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-root-arm64
+          path: dist/
+          retention-days: 30
+
+      - name: Publish release
+        if: github.event_name == 'workflow_dispatch' || vars.PUBLISH_ROOT_RELEASE == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: DSH Go Root ${{ env.VERSION }}
+          draft: true
+          prerelease: false
+          files: dist/*
+          body: |
+            DSH Go **Root** ${{ env.VERSION }} —— 个人 fork，含 root `shell` 工具。
+
+            - 基于上游 v1.0.15，运行时 1.0.15
+            - arm64 · Android 8.0（API 26）以上
+            - 没有配置签名 secrets 时是 debug 签名
+
+            ⚠️ 打开「启用 root」后，模型能以 root 身份执行任意命令。先备份，别装在主力机上。
