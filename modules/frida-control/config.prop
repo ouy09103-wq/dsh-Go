@@ -1,0 +1,30 @@
+# Frida Control v2 配置
+#
+# 改完不需要重启：ctl.sh 每次调用都重新读本文件。
+#
+# 监听模式：
+#   local -> 127.0.0.1   只有设备自身进程能连（默认，最隐蔽）
+#   usb   -> 127.0.0.1   同上，供 adb forward 使用，语义标记
+#   wifi  -> 0.0.0.0     局域网可连
+MODE=local
+
+# 监听端口。
+#
+# 27042 是 frida 默认端口，但部分目标（如 com.chunqiunativecheck）会主动连它，
+# 连上即 abort —— 实测 27042 存活 2/10，27043 是 10/10。所以默认 27043。
+PORT=27043
+
+# 1 = 开机自启。默认 0：常驻会留下进程/端口特征，建议按需手动启。
+AUTOSTART=0
+
+# 1 = 隐藏：二进制搬到 /data/adb/frida-hide/ksud_helper（0700，非 root 内核层被拒），
+#     进程名与路径都不含 frida。
+# 0 = 用 /data/local/tmp/frida-server（0731，普通 App 能列目录看到文件名）。
+HIDE=1
+
+# 启动时补 ART 环境（BOOTCLASSPATH 等）。frida-server 要它才能起来，
+# su -c 的环境里这些是空的。除非你自己注入环境，否则保持 1。
+ART_ENV=1
+
+# 启动后等多久确认进程存活（毫秒）。慢机型可以调大。
+START_WAIT_MS=8000

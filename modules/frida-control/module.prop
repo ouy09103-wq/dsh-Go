@@ -1,0 +1,6 @@
+id=frida-control
+name=Frida Control
+version=v2.0.0
+versionCode=200
+author=DSH
+description=给 DSH Go 提供 frida-server。JSON 接口、自动补 ART 环境、默认端口 27043、启动失败给原因。二进制藏在 /data/adb/frida-hide（0700）。

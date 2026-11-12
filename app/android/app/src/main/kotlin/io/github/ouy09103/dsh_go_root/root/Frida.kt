@@ -83,13 +83,38 @@ internal object Frida {
         return r.stdout.contains("PORT_OK")
     }
 
-    /** 模块 status 输出里的一行 `键 : 值`，取不到就 null。 */
-    private fun field(out: String, key: String): String? =
-        out.lineSequence()
-            .firstOrNull { it.trimStart().startsWith(key) }
-            ?.substringAfter(':')
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+    /**
+     * 把模块 `ctl.sh json` 的输出解析成 Map。
+     *
+     * v2 起模块直接吐 JSON，App 不再解析中文。解析失败返回空 map —— 老模块（v1）
+     * 只会输出中文，这时 status 退化成「模块在但读不到状态」，不会崩。
+     */
+    private fun parseJson(out: String): Map<String, Any?> {
+        val text = out.trim()
+        if (!text.startsWith("{")) return emptyMap()
+        return runCatching {
+            val obj = org.json.JSONObject(text)
+            val map = linkedMapOf<String, Any?>()
+            for (key in obj.keys()) {
+                when (val v = obj.get(key)) {
+                    is org.json.JSONObject.NULL -> map[key] = null
+                    else -> map[key] = v
+                }
+            }
+            map
+        }.getOrDefault(emptyMap())
+    }
+
+    /** JSON 里的布尔值；缺省 false。 */
+    private fun flag(m: Map<String, Any?>, key: String): Boolean = when (val v = m[key]) {
+        is Boolean -> v
+        is String -> v == "true"
+        else -> false
+    }
+
+    /** JSON 里的字符串；缺省 null。 */
+    private fun text(m: Map<String, Any?>, key: String): String? =
+        (m[key] as? String)?.takeIf { it.isNotBlank() }
 
     /**
      * 启动 frida（模块负责搬文件、改名、起进程）。
@@ -115,31 +140,43 @@ internal object Frida {
         val target = port.coerceIn(1, 65535)
         val aligned = alignPort(target)
         val r = ctl("start")
-        val out = r.stdout.trim()
-        // ctl.sh 成功时说「已启动 (pid=…)」，失败时说「错误：…」或「启动失败」
-        val started = out.contains("已启动") || out.contains("(pid=")
-        if (!started) {
+        // v2 模块的 start 直接返回状态 JSON：成功和失败都有结构化原因。
+        val m = parseJson(r.stdout)
+        if (m.isEmpty()) {
+            val out = r.stdout.trim()
             return mapOf(
-                "ok" to false,
+                "ok" to (r.exitCode == 0),
                 "port" to target,
-                "error" to "模块启动 frida 失败：" +
-                    (out.lines().firstOrNull { it.isNotBlank() } ?: "没有输出（exit=${r.exitCode}）"),
+                "error" to if (r.exitCode == 0) null else
+                    "模块没有返回 JSON（可能还是 v1）。原文：" +
+                        (out.lines().firstOrNull { it.isNotBlank() } ?: "空（exit=${r.exitCode}）"),
                 "stdout" to out.take(1_500),
-                "stderr" to r.stderr.trim().take(800),
-                "hint" to "到「常驻 root shell」里跑 sh $MODULE_CTL start，看它报什么。",
+                "hint" to "建议升级到 frida-control v2：它输出 JSON，失败时给 errorCode。",
             )
         }
-        val state = status(context)
+        val running = flag(m, "running")
+        val listening = flag(m, "listening")
+        if (!running || !listening) {
+            return mapOf(
+                "ok" to false,
+                "port" to (m["port"] as? Int) ?: target,
+                "state" to text(m, "state"),
+                "error" to (text(m, "error") ?: "模块启动了，但进程或端口没就绪"),
+                "errorCode" to text(m, "errorCode"),
+                "hint" to "到「常驻 root shell」里跑 sh $MODULE_CTL log 20 看日志。",
+            )
+        }
         return mapOf(
             "ok" to true,
-            "port" to target,
+            "port" to (m["port"] as? Int) ?: target,
             "portAligned" to aligned,
-            "path" to (state["path"] ?: HIDDEN_BIN),
-            "version" to state["version"],
-            "pid" to state["pids"],
+            "path" to text(m, "path"),
+            "version" to text(m, "version_server"),
+            "pid" to text(m, "pid"),
             "module" to true,
-            "stealth" to (state["hidden"] == true),
-            "listening" to state["listening"],
+            "stealth" to flag(m, "hidden"),
+            "listening" to listening,
+            "state" to text(m, "state"),
         )
     }
 
@@ -162,49 +199,55 @@ internal object Frida {
     fun status(context: Context): Map<String, Any?> {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
         val present = modulePresent()
-        // 模块在就跑它的 status；不在就退回自己探测，至少能报「模块没装」之外的信息。
-        val out = if (present) ctl("status").stdout else ""
-        val modInstalled = field(out, "隐藏") != null || out.contains("Frida Control")
-        val runningField = field(out, "frida进程") ?: field(out, "frida 进程")
-        val runningByModule = runningField?.contains("运行中") == true
-        // 二进制位置：模块 HIDE=1 时在 /data/adb/frida-hide，HIDE=0 时在旧位置
-        val path = when {
-            RootExec.run("test -x $HIDDEN_BIN && echo yes", 15_000).stdout.contains("yes") -> HIDDEN_BIN
-            RootExec.run("test -x $LEGACY_BIN && echo yes", 15_000).stdout.contains("yes") -> LEGACY_BIN
-            else -> null
+        if (!present) {
+            return mapOf(
+                "ok" to true, "module" to false, "installed" to false, "running" to false,
+                "state" to "NO_MODULE", "listening" to false, "pids" to "",
+                "version" to null, "path" to null, "port" to DEFAULT_PORT, "hidden" to false,
+            )
         }
-        // 版本只能靠执行二进制读；隐藏目录只有 root 可读，su 下没问题。
-        val version = if (path != null) {
-            RootExec.run("$path --version 2>/dev/null | tail -1", 25_000).stdout.trim()
-                .let { VERSION.find(it)?.value ?: "" }
-        } else ""
-        val installed = path != null && version.isNotEmpty()
-        val port = activePort() ?: DEFAULT_PORT
-        val listening = listening(port)
-        val pids = pidOf()
+        // v2 模块：一次 ctl.sh json 拿全部状态，不再逐个 su 探测。
+        val m = parseJson(ctl("json").stdout)
+        if (m.isEmpty()) {
+            // v1 模块：JSON 解析不了，退回自己探测，至少让界面能显示。
+            val path = when {
+                RootExec.run("test -x $HIDDEN_BIN && echo yes", 15_000).stdout.contains("yes") -> HIDDEN_BIN
+                RootExec.run("test -x $LEGACY_BIN && echo yes", 15_000).stdout.contains("yes") -> LEGACY_BIN
+                else -> null
+            }
+            val port = activePort() ?: DEFAULT_PORT
+            val up = listening(port)
+            return mapOf(
+                "ok" to true, "module" to true, "installed" to (path != null),
+                "running" to up,
+                "state" to if (path == null) "NOT_INSTALLED" else if (up) "RUNNING" else "STOPPED",
+                "listening" to up, "pids" to pidOf(),
+                "version" to null, "path" to path, "port" to port, "hidden" to false,
+                "legacyModule" to true,
+            )
+        }
         val client = clientVersion(context)
+        val serverVersion = text(m, "version_server")
         return mapOf(
             "ok" to true,
-            "module" to modInstalled,
+            "module" to true,
+            "moduleVersion" to text(m, "version"),
             "modulePath" to MODULE_DIR,
-            "installed" to installed,
-            "running" to (listening || runningByModule || pids.isNotEmpty()),
-            "state" to when {
-                !present -> "NO_MODULE"
-                !installed -> "NOT_INSTALLED"
-                listening || runningByModule || pids.isNotEmpty() -> "RUNNING"
-                else -> "STOPPED"
-            },
-            "listening" to listening,
-            "pids" to pids,
-            "version" to version.ifBlank { null },
+            "installed" to flag(m, "binary"),
+            "running" to flag(m, "running"),
+            "state" to text(m, "state"),
+            "listening" to flag(m, "listening"),
+            "pids" to text(m, "pid").orEmpty(),
+            "version" to serverVersion,
             "client" to client,
-            "mismatch" to versionMismatch(version, client),
-            "path" to path,
-            "port" to port,
-            "hidden" to (path == HIDDEN_BIN),
-            "mode" to field(out, "连接模式"),
-            "autostart" to field(out, "开机自启"),
+            "mismatch" to versionMismatch(serverVersion.orEmpty(), client),
+            "path" to text(m, "path"),
+            "port" to (m["port"] as? Int) ?: DEFAULT_PORT,
+            "hidden" to flag(m, "hidden"),
+            "mode" to text(m, "mode"),
+            "autostart" to flag(m, "autostart"),
+            "artEnv" to flag(m, "art_env"),
+            "error" to text(m, "error"),
         )
     }
 

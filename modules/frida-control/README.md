@@ -1,34 +1,56 @@
-# Frida Control 模块（App 对接用）
+# Frida Control v2
 
-App 不再内置 frida-server，改为调用本模块的 `ctl.sh`。
+给 DSH Go 提供 frida-server 的 KernelSU / APatch 模块。
+
+## 为什么用模块
+
+目标 App 的检测判据是「存在可执行段但没有对应磁盘文件」。frida-server 注入时 agent 走
+memfd，`/proc/self/maps` 里天生是 `/memfd:frida-agent-64.so (deleted)` —— 改名、改线程名、
+mprotect、替换 abort 全部无效，因为它读内核原始 maps。
+
+模块能做的是挡住**进程/路径扫描**：二进制放 `/data/adb/frida-hide/`（0700，非 root 内核层
+就被拒），改名 `ksud_helper`，进程名和路径都不含 frida。
 
 ## 安装
 
-1. 把 `frida-control-v1.3.0.zip` 放进 KernelSU / APatch 刷入
-2. 把 frida-server（17.25.x，arm64）放到：
-   ```
-   /data/adb/frida-hide/ksud_helper
-   ```
-   然后 `chmod 700 /data/adb/frida-hide/ksud_helper`
-3. 回到 App 点「启用 Frida」
+1. 刷入本模块
+2. 把 frida-server（17.25.x，arm64）放到 `/data/adb/frida-hide/ksud_helper`，`chmod 700`
+3. `sh /data/adb/modules/frida-control/ctl.sh start`
 
-## App 用到的接口
+## 接口（v2 起输出 JSON）
 
-| 命令 | 作用 |
-|---|---|
-| `sh ctl.sh start` | 起 frida（模块负责搬文件、改名、起进程） |
-| `sh ctl.sh stop` | 停 |
-| `sh ctl.sh status` | 状态（App 解析其中的 `frida进程` / `连接模式` / `开机自启`） |
-| `sh ctl.sh set-mode usb\|wifi\|local` | 切监听地址 |
+```sh
+ctl.sh start      # 启动，返回 JSON；退出码 0/3/4/5
+ctl.sh stop       # 停止，返回 JSON
+ctl.sh restart    # 重启
+ctl.sh json       # 状态 JSON（机器可读，stdout 只有 JSON）
+ctl.sh status     # 人读状态到 stderr + JSON 到 stdout
+ctl.sh probe      # 只读探测，不起进程
+ctl.sh get PORT   # 读配置
+ctl.sh set PORT 27043   # 写配置（带校验）
+ctl.sh log [n]    # 最近 n 行日志
+```
 
-App 启动前会把 `config.prop` 的 `PORT` 改成 **27043**：27042 会被部分目标主动探测后 abort
-（实测 27042 存活 2/10，27043 是 10/10）。
+## v2 相对 v1 的改动
 
-## 为什么模块能绕开检测
+| # | v1 的问题 | v2 的做法 |
+|---|---|---|
+| 1 | 默认端口 27042（目标会探测后 abort） | 默认 **27043** |
+| 2 | 启动不补 BOOTCLASSPATH，frida-server 直接 abort | `ART_ENV=1` 时从 zygote 读，拿不到用 apex jar 兜底 |
+| 3 | 失败只说「启动失败，日志: …」 | JSON 里给 `error` + `errorCode` |
+| 4 | `pidof -x` / `ps\|awk` 兜底会匹配到自己 | 只比 argv[0]，排除 `$$` 与父进程 |
+| 5 | 只看进程在不在 | 进程 + 端口双就绪才算成功 |
+| 6 | 输出中文，调用方要解析 | `json` / `probe` 输出机器可读 JSON |
+| 7 | 配置只能手改文件 | `ctl.sh get/set`，带校验 |
+| 8 | 端口被占时静默失败 | 启动前检查，报 `port_busy` |
 
-目标判据是「存在可执行段但没有对应磁盘文件」。frida-server 注入时 agent 走 memfd，
-`/proc/self/maps` 里天生是 `/memfd:frida-agent-64.so (deleted)`，改名字改线程名都没用。
+## 配置（config.prop）
 
-模块把二进制放在 `/data/adb/frida-hide/`（0700，非 root 进程内核层被拒），改名
-`ksud_helper`，进程名与路径都不含 frida —— 这挡住的是**进程/路径扫描**，
-memfd 那一层仍然需要 gadget + 自定义 linker 路线（见交接记录第九节）。
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `MODE` | `local` | `local` / `usb` / `wifi` |
+| `PORT` | `27043` | 监听端口 |
+| `AUTOSTART` | `0` | 开机自启，建议保持 0 |
+| `HIDE` | `1` | 藏到 `/data/adb/frida-hide/ksud_helper` |
+| `ART_ENV` | `1` | 启动时补 ART 环境 |
+| `START_WAIT_MS` | `8000` | 等就绪的上限 |
