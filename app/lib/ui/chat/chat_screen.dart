@@ -81,6 +81,7 @@ import 'composer.dart';
 import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
 import 'dock/dock_stack.dart';
+import 'dock/root_pill.dart';
 import 'empty_state.dart';
 import 'new_chat_options.dart';
 import 'media/generate_mode.dart';
@@ -1975,6 +1976,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     child: DockStack(
                                       cards: [
                                         if (sessionId != null) ...[
+                                          // root / Frida 开着才出现：关着时和原版一样。
+                                          const RootDockSlot(),
+                                          const FridaDockSlot(),
                                           TodoDockSlot(sessionId: sessionId),
                                           GoalDockSlot(sessionId: sessionId),
                                           ActivityStripSlot(
