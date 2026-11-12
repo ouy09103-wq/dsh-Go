@@ -90,19 +90,26 @@ internal object Frida {
      * 只会输出中文，这时 status 退化成「模块在但读不到状态」，不会崩。
      */
     private fun parseJson(out: String): Map<String, Any?> {
-        val text = out.trim()
-        if (!text.startsWith("{")) return emptyMap()
-        return runCatching {
-            val obj = org.json.JSONObject(text)
-            val map = linkedMapOf<String, Any?>()
-            for (key in obj.keys()) {
-                when (val v = obj.get(key)) {
-                    is org.json.JSONObject.NULL -> map[key] = null
-                    else -> map[key] = v
-                }
-            }
-            map
-        }.getOrDefault(emptyMap())
+        val body = out.trim()
+        if (!body.startsWith("{")) return emptyMap()
+        val parsed = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return emptyMap()
+        val map = HashMap<String, Any?>()
+        val keys = parsed.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            // JSONObject.NULL is a sentinel object, not a Kotlin null: comparing with ==
+            // is the documented test. `is JSONObject.NULL` does not compile (it is a field).
+            val value = parsed.opt(key)
+            map[key] = if (value === org.json.JSONObject.NULL) null else value
+        }
+        return map
+    }
+
+    /** 结果 map 的构造器：显式 Any? 值类型，避免 mapOf 把 Boolean/Int/String 推断成交叉类型。 */
+    private fun out(vararg pairs: Pair<String, Any?>): Map<String, Any?> {
+        val m = LinkedHashMap<String, Any?>(pairs.size)
+        for (p in pairs) m[p.first] = p.second
+        return m
     }
 
     /** JSON 里的布尔值；缺省 false。 */
@@ -144,7 +151,7 @@ internal object Frida {
         val m = parseJson(r.stdout)
         if (m.isEmpty()) {
             val out = r.stdout.trim()
-            return mapOf(
+            return out(
                 "ok" to (r.exitCode == 0),
                 "port" to target,
                 "error" to if (r.exitCode == 0) null else
@@ -157,7 +164,7 @@ internal object Frida {
         val running = flag(m, "running")
         val listening = flag(m, "listening")
         if (!running || !listening) {
-            return mapOf(
+            return out(
                 "ok" to false,
                 "port" to (m["port"] as? Int) ?: target,
                 "state" to text(m, "state"),
@@ -166,7 +173,7 @@ internal object Frida {
                 "hint" to "到「常驻 root shell」里跑 sh $MODULE_CTL log 20 看日志。",
             )
         }
-        return mapOf(
+        return out(
             "ok" to true,
             "port" to (m["port"] as? Int) ?: target,
             "portAligned" to aligned,
@@ -200,7 +207,7 @@ internal object Frida {
         RootExec.suPath() ?: return fail("这台手机上没有 su")
         val present = modulePresent()
         if (!present) {
-            return mapOf(
+            return out(
                 "ok" to true, "module" to false, "installed" to false, "running" to false,
                 "state" to "NO_MODULE", "listening" to false, "pids" to "",
                 "version" to null, "path" to null, "port" to DEFAULT_PORT, "hidden" to false,
@@ -217,7 +224,7 @@ internal object Frida {
             }
             val port = activePort() ?: DEFAULT_PORT
             val up = listening(port)
-            return mapOf(
+            return out(
                 "ok" to true, "module" to true, "installed" to (path != null),
                 "running" to up,
                 "state" to if (path == null) "NOT_INSTALLED" else if (up) "RUNNING" else "STOPPED",
@@ -228,7 +235,7 @@ internal object Frida {
         }
         val client = clientVersion(context)
         val serverVersion = text(m, "version_server")
-        return mapOf(
+        return out(
             "ok" to true,
             "module" to true,
             "moduleVersion" to text(m, "version"),
@@ -485,7 +492,7 @@ internal object Frida {
             // The cgroup freezer has the target stopped; nothing can attach until it is back
             // in the foreground, and the 25 s timeout would otherwise read as anti-debugging.
             val frozenTarget = out.contains("[DSH] target-frozen")
-            return mapOf(
+            return out(
                 "ok" to (loaded && result.ok && !crashed),
                 "package" to pkg,
                 "attached" to loaded,
