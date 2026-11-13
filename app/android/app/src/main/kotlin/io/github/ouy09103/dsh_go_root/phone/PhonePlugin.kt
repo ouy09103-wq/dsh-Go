@@ -195,7 +195,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 val args = call.arguments as? Map<*, *>
                 val enabled = args?.get("enabled") as? Boolean
                 val backend = args?.get("backend") as? String
-                if (args?.keys != setOf("enabled", "backend") || enabled == null || backend !in setOf("shizuku", "adb")) {
+                if (args?.keys != setOf("enabled", "backend") || enabled == null || backend !in setOf("shizuku", "adb", "root")) {
                     result.success(mapOf("ok" to false, "errorCode" to "invalidArguments"))
                 } else if (enabled && !control.isEnabled()) {
                     result.success(mapOf("ok" to false, "errorCode" to "disabled"))

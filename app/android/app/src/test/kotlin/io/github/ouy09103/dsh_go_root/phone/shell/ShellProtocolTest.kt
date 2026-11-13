@@ -43,7 +43,11 @@ class ShellProtocolTest {
         assertTrue(ShellProtocol.validUid("shizuku", 2000))
         assertTrue(ShellProtocol.validUid("shizuku", 0))
         assertFalse(ShellProtocol.validUid("shizuku", 10_000))
-        assertFalse(ShellProtocol.validUid("root", 0))
+        assertTrue(ShellProtocol.validUid("root", 0))
+        // The root channel never accepts the app identity: that is a su that did not escalate.
+        assertFalse(ShellProtocol.validUid("root", 2000))
+        assertFalse(ShellProtocol.validUid("root", 10_000))
+        assertFalse(ShellProtocol.validUid("unknown", 0))
     }
 
     @Test fun failureHasConsistentSafeResultShape() {

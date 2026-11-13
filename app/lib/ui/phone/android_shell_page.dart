@@ -14,6 +14,38 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'phone_widgets.dart';
 
+/// Root codes are spelled out here because the l10n parts cannot be regenerated offline.
+String _rootErrorText(L10n l10n, String code) {
+  final en = l10n.localeName == 'en';
+  return switch (code) {
+    'suMissing' => en
+        ? 'No su on this phone: root is not available, or the root manager does not expose su.'
+        : '这台手机上没有 su：没有 root，或者 root 管理器没把 su 暴露出来。',
+    'suNotExecutable' => en
+        ? 'su exists but cannot be executed. Do not delete it: fix it from a root shell on the phone.'
+        : 'su 存在但执行不了。不要直接删，请在手机上的 root shell 里修。',
+    'rootNotGranted' => en
+        ? 'The root manager has no grant for this app. Authorize it there, then retry.'
+        : 'root 管理器里没有给这个应用的授权。去那里授权后再试。',
+    'rootSuFailed' => en
+        ? 'su started but returned a failure. Check the root manager grant and its logs.'
+        : 'su 起来了但返回失败。检查 root 管理器的授权和日志。',
+    'rootNotRoot' => en
+        ? 'su returned the app identity, not uid 0. This is not root; nothing was run as root.'
+        : 'su 返回的是应用身份而不是 uid 0。这不是 root，没有以 root 执行任何命令。',
+    'rootDomainUnknown' => en
+        ? 'uid 0 but SELinux domain could not be read, so the grant is unverified.'
+        : 'uid 0 但读不到 SELinux 域，无法确认授权真的生效。',
+    'rootWrongDomain' => en
+        ? 'uid 0 but still in an untrusted_app SELinux domain: no real power over the files it claims.'
+        : 'uid 0 但仍在 untrusted_app 域：对它声称拥有的文件没有实际权限。',
+    'rootHostFailed' => en
+        ? 'The root shell host did not start. Check the root manager grant, then retry.'
+        : 'root shell 宿主没起来。检查 root 管理器授权后重试。',
+    _ => '',
+  };
+}
+
 String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'disabled' => l10n.androidShellErrorDisabled,
   'notConnected' => l10n.androidShellErrorNotConnected,
@@ -36,6 +68,9 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'nativeUnavailable' => l10n.androidShellErrorNativeUnavailable,
   'invalidResponse' => l10n.androidShellErrorInvalidResponse,
   'stopFailed' => l10n.androidShellErrorStopFailed,
+  // The root channel keeps one code per failure so the page can name what actually broke.
+  'suMissing' || 'suNotExecutable' || 'rootNotGranted' || 'rootSuFailed' || 'rootNotRoot' ||
+  'rootDomainUnknown' || 'rootWrongDomain' || 'rootHostFailed' => _rootErrorText(l10n, code),
   _ => l10n.androidShellErrorUnknown,
 };
 
@@ -172,7 +207,11 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     final reasonCode = _status.reasonCode;
     final timeout = _status.limits['maxTimeoutMs'];
     final output = _status.limits['maxOutputBytes'];
-    final shizuku = _status.backend == AndroidShellBackend.shizuku;
+    final selected = _status.backend;
+    final shizuku = selected == AndroidShellBackend.shizuku;
+    final adb = selected == AndroidShellBackend.adb;
+    final root = selected == AndroidShellBackend.root;
+    final en = l10n.localeName == 'en';
     final authorize = ListPageRow(
       key: const ValueKey('android-shell-authorize'),
       title: l10n.androidShellAuthorize,
@@ -251,7 +290,12 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                 child: ListPageRow(
                   key: ValueKey('android-shell-backend-${backend.name}'),
                   leading: Icon(_status.backend == backend ? AppIcons.radioOn : AppIcons.radioOff),
-                  title: backend == AndroidShellBackend.shizuku ? 'Shizuku' : l10n.androidShellAdb,
+                  title: switch (backend) {
+                    AndroidShellBackend.shizuku => 'Shizuku',
+                    AndroidShellBackend.adb => l10n.androidShellAdb,
+                    // Identical in both locales, like 'Shizuku' above.
+                    AndroidShellBackend.root => 'Root',
+                  },
                   onTap: !canSetup || _status.backend == backend
                       ? null
                       : () => unawaited(_run(() => _channel.configure(enabled: _status.enabled, backend: backend))),
@@ -261,19 +305,30 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
         ),
         if (shizuku && !_status.shizuku.granted)
           ListPageCard(margin: _margin, children: [authorize])
-        else if (!shizuku && !_status.adb.paired)
+        else if (adb && !_status.adb.paired)
           ListPageCard(margin: _margin, children: pairing),
-        if (!_status.ready && (shizuku ? _status.shizuku.granted : _status.adb.paired))
+        if (!_status.ready && (shizuku ? _status.shizuku.granted : !adb || _status.adb.paired))
           ListPageCard(
             margin: _margin,
             children: [
               ListPageRow(
-                key: ValueKey(shizuku ? 'android-shell-connect-shizuku' : 'android-shell-connect'),
+                key: ValueKey(
+                  shizuku
+                      ? 'android-shell-connect-shizuku'
+                      : adb
+                      ? 'android-shell-connect'
+                      : 'android-shell-connect-root',
+                ),
                 title: shizuku ? l10n.androidShellConnectChannel : l10n.androidShellConnect,
                 titleMaxLines: 2,
-                subtitle: !_status.enabled ? l10n.androidShellErrorDisabled : null,
-                onTap: canSetup && _status.enabled
-                    ? () => unawaited(shizuku ? _run(_channel.connect) : _adbInput(pairing: false))
+                subtitle: !_status.enabled
+                    ? l10n.androidShellErrorDisabled
+                    : root && !_status.root.available
+                    ? _rootErrorText(l10n, 'suMissing')
+                    : null,
+                subtitleMaxLines: 3,
+                onTap: canSetup && _status.enabled && !(root && !_status.root.available)
+                    ? () => unawaited(adb ? _adbInput(pairing: false) : _run(_channel.connect))
                     : null,
               ),
             ],
@@ -297,7 +352,19 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
           children: [
             PhoneNote(text: l10n.androidShellSubtitle),
             PhoneNote(text: l10n.androidShellEnableHint),
-            PhoneNote(text: shizuku ? l10n.androidShellShizukuHint : l10n.androidShellAdbHint),
+            PhoneNote(
+              text: shizuku
+                  ? l10n.androidShellShizukuHint
+                  : adb
+                  ? l10n.androidShellAdbHint
+                  : en
+                  ? 'Root runs each command through su as uid 0, and only after the root manager '
+                        'authorizes this app. A su that answers with the app identity is reported as a '
+                        'failure, never as root.'
+                  : 'Root 通道每次执行都通过 su 以 uid 0 运行，'
+                        '且必须先由 root 管理器给本应用授权。'
+                        'su 如果返回的是应用身份，会按失败报告，不会当作 root。',
+            ),
             ListPageCard(
               margin: _margin,
               children: [
@@ -320,14 +387,35 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                   _fact(l10n.androidShellRunning, _status.shizuku.running),
                   _fact(l10n.androidShellGranted, _status.shizuku.granted),
                   if (_status.shizuku.granted) authorize,
-                ] else ...[
+                ] else if (adb) ...[
                   _fact(l10n.androidShellPaired, _status.adb.paired),
                   _fact(l10n.androidShellConnected, _status.adb.connected),
                   if (_status.adb.paired) ...pairing,
+                ] else ...[
+                  ListPageRow(
+                    title: 'su',
+                    value: _status.root.su ?? l10n.androidShellUidUnknown,
+                    titleMaxLines: 2,
+                  ),
+                  ListPageRow(
+                    title: en ? 'Root manager' : 'Root 管理器',
+                    value: _status.root.manager.isEmpty ? l10n.androidShellUidUnknown : _status.root.manager,
+                    titleMaxLines: 2,
+                  ),
                 ],
               ],
             ),
-            PhoneNote(text: shizuku ? l10n.androidShellAuthorizeHint : l10n.androidShellPairingGuide),
+            PhoneNote(
+              text: shizuku
+                  ? l10n.androidShellAuthorizeHint
+                  : adb
+                  ? l10n.androidShellPairingGuide
+                  : en
+                  ? 'Authorize in the root manager first. Root does not skip the risk confirmation: '
+                        'each command still shows the real identity before it runs.'
+                  : '先在 root 管理器里授权。Root 也不跳过风险确认：'
+                        '每条命令执行前仍会显示真实身份。',
+            ),
             PhoneNote(text: l10n.androidShellStopHint),
           ],
         ),

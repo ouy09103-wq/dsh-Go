@@ -53,7 +53,8 @@ object PhoneAndroidShell {
         if (executor == null) return failure("unsupported")
         return executor.execute(owner.taskId, request.command, request.timeoutMs, ::live) { backend, uid ->
             if (!live()) Decision.STOP
-            else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000))) Decision.DENY
+            else if (!(backend == "adb" && uid == 2000 || backend == "shizuku" && uid in setOf(0, 2000) ||
+                    backend == "root" && uid == 0)) Decision.DENY
             else {
                 val prompt = ConfirmRequest(
                     ui.get("phone_shell_confirm",

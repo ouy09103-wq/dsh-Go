@@ -154,6 +154,37 @@ void main() {
     expect(_switch(tester).value, isFalse);
   });
 
+  testWidgets('root is a third channel with its own setup and no pairing step', (tester) async {
+    final native = await _pump(
+      tester,
+      native: ShellNative(
+        status: shellStatus(enabled: true, backend: 'root', reasonCode: 'suMissing'),
+      ),
+    );
+    expect(find.byKey(const ValueKey('android-shell-backend-root')), findsOneWidget);
+    // No su means no connect attempt and no pairing detour: the reason is stated up front.
+    final missing = tester.widget<ListPageRow>(find.byKey(const ValueKey('android-shell-connect-root')));
+    expect(missing.onTap, isNull);
+    expect(missing.subtitle, isNotEmpty);
+    expect(find.byKey(const ValueKey('android-shell-pair')), findsNothing);
+    expect(find.byKey(const ValueKey('android-shell-authorize')), findsNothing);
+
+    native.status = shellStatus(
+      enabled: true,
+      backend: 'root',
+      su: '/system/bin/su',
+      rootManager: 'KernelSU',
+      reasonCode: 'rootNotGranted',
+    );
+    await tester.tap(find.text(appL10n.androidShellRefresh));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListPageRow>(find.byKey(const ValueKey('android-shell-connect-root'))).onTap, isNotNull);
+    await openPhoneFold(tester, 'android-shell-details');
+    expect(find.text('/system/bin/su'), findsOneWidget);
+    expect(find.text('KernelSU'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('every enable needs high risk notice despite screen always mode', (tester) async {
     final native = await _pump(tester);
     for (var attempt = 0; attempt < 2; attempt++) {
@@ -372,6 +403,15 @@ void main() {
         'nativeUnavailable',
         'invalidResponse',
         'stopFailed',
+        // Root channel: each failure mode keeps its own wording.
+        'suMissing',
+        'suNotExecutable',
+        'rootNotGranted',
+        'rootSuFailed',
+        'rootNotRoot',
+        'rootDomainUnknown',
+        'rootWrongDomain',
+        'rootHostFailed',
       ]) {
         expect(androidShellErrorText(l10n, code), isNot(l10n.androidShellErrorUnknown));
       }

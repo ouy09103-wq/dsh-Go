@@ -223,11 +223,12 @@ class PhoneAndroidShellTest {
     }
 
     @Test fun backendAndActualUidMustBeRecognizedBeforeAsking() {
-        for ((backend, uid) in listOf("adb" to 2000, "shizuku" to 0, "shizuku" to 2000,
-                "adb" to 0, "adb" to 10000, "shizuku" to -1, "unknown" to 0)) Fixture().use { f ->
+        for ((backend, uid) in listOf("adb" to 2000, "shizuku" to 0, "shizuku" to 2000, "root" to 0,
+                "root" to 2000, "adb" to 0, "adb" to 10000, "shizuku" to -1, "unknown" to 0)) Fixture().use { f ->
             f.backend = backend
             f.uid = uid
-            val valid = (backend == "adb" && uid == 2000) || (backend == "shizuku" && uid in setOf(0, 2000))
+            val valid = (backend == "adb" && uid == 2000) || (backend == "shizuku" && uid in setOf(0, 2000)) ||
+                (backend == "root" && uid == 0)
             assertEquals(!valid, f.call().isError)
             assertEquals(if (valid) 1 else 0, f.asks.size)
             assertEquals(if (valid) 1 else 0, f.dispatches)

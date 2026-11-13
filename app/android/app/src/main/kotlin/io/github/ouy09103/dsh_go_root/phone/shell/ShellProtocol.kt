@@ -27,6 +27,8 @@ object ShellProtocol {
     fun validUid(backend: String, uid: Int): Boolean = when (backend) {
         "adb" -> uid == 2000
         "shizuku" -> uid == 2000 || uid == 0
+        // The root channel is only ever uid 0: a su that hands back the app identity is not root.
+        "root" -> uid == 0
         else -> false
     }
 
