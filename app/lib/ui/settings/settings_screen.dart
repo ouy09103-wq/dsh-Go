@@ -310,8 +310,7 @@ class SettingsScreen extends ConsumerWidget {
             SettingsTile(
               icon: AppIcons.terminal,
               tint: SettingsHues.help,
-              title: 'Root 权限',
-              subtitle: 'su、Ubuntu rootfs、常驻 root shell',
+              spot: Spots.root,
               onTap: () => _push(context, const RootPage()),
             ),
             SettingsTile(
