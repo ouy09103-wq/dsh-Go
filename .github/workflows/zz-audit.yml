@@ -1,0 +1,26 @@
+name: zz-audit
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: ref
+        default: v1.0.15-root
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: frida refs
+        run: |
+          echo "=== FILES WITH frida IN PATH ==="
+          git ls-files | grep -i frida || true
+          echo "=== GREP frida ==="
+          grep -rniI 'frida' --exclude-dir=.git . || true
+          echo "=== END ==="
