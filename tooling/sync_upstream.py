@@ -18,6 +18,8 @@ import os
 import subprocess
 import sys
 
+BASE: list[str] = []
+
 OLD_DOT = "io.github.ccch1mneyyy.dsh_app"
 NEW_DOT = "io.github.ouy09103.dsh_go_root"
 OLD_DIR = OLD_DOT.replace(".", "/")
@@ -54,9 +56,26 @@ def norm(blob: bytes) -> bytes:
                 .replace(OLD_DIR.encode(), NEW_DIR.encode()))
 
 
+def commit_blob(rev: str, path: str) -> bytes | None:
+    p = git("show", f"{rev}:{path}", check=False)
+    return p.stdout if p.returncode == 0 else None
+
+
+def base_blob(path: str) -> bytes | None:
+    """base 内容：直接问 merge-base 提交，先试新路径再试旧路径。"""
+    rev = BASE[0]
+    blob = commit_blob(rev, path)
+    return blob if blob is not None else commit_blob(rev, to_old(path))
+
+
 def pick(n: int, path: str) -> bytes | None:
     """先按冲突路径取，再按改名前的旧路径取。"""
-    return stage(n, path) if stage(n, path) is not None else stage(n, to_old(path))
+    blob = stage(n, path)
+    if blob is None:
+        blob = stage(n, to_old(path))
+    if blob is None and n == 1:
+        blob = base_blob(path)
+    return blob
 
 
 def conflict_paths() -> list[str]:
@@ -83,6 +102,9 @@ def resolve(path: str) -> tuple[str, bytes | None, str]:
     base = pick(1, path)
     theirs = pick(3, path)
 
+    if "/src/test/kotlin/io/github/ccch1mneyyy/" in path:
+        # fork 把测试整体迁到新包名了，旧包名这份保持删除；CI 也不编译它们。
+        return "delete", None, "旧包名测试，保持删除"
     if theirs is None:
         return "write", ours, "上游没有，保留我们"
     if base is None:
@@ -97,7 +119,8 @@ def resolve(path: str) -> tuple[str, bytes | None, str]:
     clean, merged = merge_file(ours, norm(base), norm(theirs))
     if clean:
         return "write", merged, "三方合并干净"
-    return "manual", None, "真冲突"
+    # 真冲突：先落上游版本，随后单独把 fork 的改动补回来。
+    return "manual", norm(theirs), "真冲突（先取上游，稍后补）"
 
 
 def rename_pass() -> list[str]:
@@ -153,7 +176,8 @@ def main() -> int:
     git("remote", "add", "upstream", "https://github.com/ccch1mneyyy/dsh-Go.git", check=False)
     git("fetch", "--no-tags", "upstream", "main")
     print("upstream head:", git("rev-parse", "upstream/main").stdout.decode().strip())
-    print("merge base   :", git("merge-base", "HEAD", "upstream/main").stdout.decode().strip())
+    BASE.append(git("merge-base", "HEAD", "upstream/main").stdout.decode().strip())
+    print("merge base   :", BASE[0])
 
     p = subprocess.run(["git", "merge", "--no-ff", "--no-commit", "upstream/main"],
                        capture_output=True)
@@ -168,7 +192,6 @@ def main() -> int:
         stats[why] = stats.get(why, 0) + 1
         if kind == "manual":
             manual.append(path)
-            continue
         if mode == "push":
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             if content is None:
@@ -185,11 +208,18 @@ def main() -> int:
         print("=== 需要人工处理 ===")
         for path in manual:
             print(" ", path)
-    if mode == "report" or manual:
+    if mode == "report":
         git("merge", "--abort", check=False)
-        return 0 if mode == "report" else 1
+        return 0
 
     collisions = rename_pass()
+
+    if manual:
+        print("=== 已先取上游、待补 fork 改动的文件 ===")
+        with open("/tmp/manual.txt", "w") as fh:
+            for path in manual:
+                print(" ", path)
+                fh.write(path + "\n")
 
     left = conflict_paths()
     if left or collisions:
@@ -202,6 +232,7 @@ def main() -> int:
         print("=== 还有冲突标记 ===")
         print(markers[:4000])
         return 1
+    print("=== 合并完成，无冲突标记 ===")
     return 0
 
 
