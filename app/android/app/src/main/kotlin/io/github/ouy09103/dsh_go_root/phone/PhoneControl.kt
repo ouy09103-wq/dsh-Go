@@ -9,7 +9,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
-import io.github.ouy09103.dsh_go_root.root.Frida
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
@@ -834,7 +833,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             // 授权到期时间与自动关掉的原因：设置页和胶囊都靠它说明「还剩多久」。
             "rootShellUntil" to rootGrant.expiresAt(),
             "rootShellOffReason" to (if (rootShellEnabled()) null else lastRootOffReason),
-            "frida" to fridaSummary(),
             "skills" to skillsStatus(),
             "bridgeListening" to bridge.listening,
             "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
@@ -985,26 +983,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
 
-    /**
-     * frida 状态。现在由 Frida Control 模块提供，所以多报三项：
-     * 模块装没装、二进制在哪、监听哪个端口 —— 胶囊和设置页都要靠它说话。
-     *
-     * 这个函数每次调用都会跑一次 su（模块 ctl.sh status），所以只在 emitStatus 的
-     * 快照里调一次，不在每次读状态时重复。
-     */
-    private fun fridaSummary(): Map<String, Any?> {
-        val s = runCatching { Frida.status(app) }.getOrDefault(emptyMap())
-        return mapOf(
-            "running" to (s["running"] == true),
-            "installed" to (s["installed"] == true),
-            "version" to s["version"],
-            "module" to (s["module"] == true),
-            "state" to s["state"],
-            "port" to s["port"],
-            "hidden" to (s["hidden"] == true),
-        )
-    }
-
     override fun onTaskStarted(owner: PhoneTasks.Owner) = skillLifecycle.started(owner)
     /** root 授权开关：带过期时间与连续失败计数，读一律走 RootGrant。 */
     private val rootGrant: RootGrant get() = RootGrant(prefs)
@@ -1012,7 +990,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** 上次自动关掉开关的原因（expired / strikes）；开着时为 null。 */
     private var lastRootOffReason: String? = null
 
-    /** 聊天页输入框上方的「启用 root」：关着时 shell / frida 拒绝执行。 */
+    /** 设置页的「启用 root」：关着时 shell 拒绝执行。 */
     override fun rootShellEnabled(): Boolean {
         val was = prefs.getBoolean("root_shell", false)
         val now = rootGrant.enabled()
@@ -1056,37 +1034,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             emitStatus()
         }
     }
-
-    /**
-     * Frida 胶囊：让模块启动 frida。没开 root 模式就直接说不行，不弹授权。
-     *
-     * 端口固定用 [Frida.DEFAULT_PORT]（27043）：27042 会被目标主动探测后 abort。
-     */
-    fun startFrida(): Boolean {
-        if (!rootShellEnabled()) return false
-        val ok = Frida.install(app, Frida.DEFAULT_PORT, false)["ok"] == true
-        emitStatus()
-        return ok
-    }
-
-    /** Frida 胶囊：停掉。 */
-    fun stopFrida(): Boolean {
-        Frida.stop()
-        emitStatus()
-        return true
-    }
-
-    override fun fridaStatus(): Map<String, Any?> = Frida.status(app)
-    override fun fridaStart(port: Int?, stealth: Boolean): Map<String, Any?> =
-        Frida.install(app, port ?: Frida.DEFAULT_PORT, stealth)
-    override fun fridaStop(): Map<String, Any?> {
-        Frida.stop()
-        return mapOf("ok" to true)
-    }
-    override fun fridaClient(): Map<String, Any?> = Frida.ensureClient(app, Frida.clientVersion(app))
-    override fun fridaInject(pkg: String, script: String?, timeoutMs: Long, port: Int?): Map<String, Any?> =
-        Frida.inject(app, pkg, script, timeoutMs, port)
-
 
     override fun enabled(): Boolean = isEnabled()
 

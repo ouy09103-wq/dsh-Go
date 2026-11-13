@@ -23,9 +23,6 @@ import kotlin.concurrent.thread
  * - `exec`     → one command through `su -c`: `{command, timeoutMs}`.
  * - `guest`    → the same command inside the bundled Ubuntu rootfs, under real root:
  *                 `{command, timeoutMs}`.
- * - `installFrida` → writes the **bundled** frida-server to /data/local/tmp and starts it:
- *                 `{port?}`. No download: the binary ships in the APK (see [Frida]).
- * - `fridaStatus` → whether frida-server is installed, runs, and which build.
  * - `shellOpen` / `shellWrite` / `shellPoll` / `shellClose` → one persistent root shell.
  *
  * Everything runs on one worker thread per call; the shell owns its own process.
@@ -75,11 +72,6 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     RootExec.run(line, timeout).map()
                 }
             }
-            "installFrida" -> {
-                val port = call.argument<Int>("port") ?: Frida.DEFAULT_PORT
-                background(result) { Frida.install(context, port) }
-            }
-            "fridaStatus" -> background(result) { Frida.status(context) }
             "shellOpen" -> {
                 val su = RootExec.suPath() ?: run {
                     result.error("noRoot", "no su on this device", null); return

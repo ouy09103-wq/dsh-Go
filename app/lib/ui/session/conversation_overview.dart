@@ -10,6 +10,7 @@ import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/chat_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/models_state.dart';
+import '../../state/phone_state.dart';
 import '../../state/session_search.dart' show folderLabel;
 import '../../state/sessions_state.dart';
 import '../../plugins/native/native_state.dart';
@@ -81,6 +82,7 @@ class ConversationOverview extends ConsumerWidget {
           onTap: readOnly ? null : () => _pickModel(context, ref, effective),
         ),
         _Row(icon: AppIcons.remoteHosts, label: l10n.shellPanelHost, value: host ?? l10n.commonThisPhone),
+        const _RootRow(),
         // What plugins can do to this conversation, each signed with whose it is.
         for (final action in ref.watch(nativeSessionActionsProvider))
           _Row(
@@ -92,6 +94,69 @@ class ConversationOverview extends ConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+/// Root 权限的开关，摆在主机下面一点：和 设置 › Root 权限 里那个是同一个开关，
+/// 只是不用为了开一下翻进设置。
+class _RootRow extends ConsumerStatefulWidget {
+  const _RootRow();
+
+  @override
+  ConsumerState<_RootRow> createState() => _RootRowState();
+}
+
+class _RootRowState extends ConsumerState<_RootRow> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(phoneProvider.select((s) => s.status));
+    final on = status.rootShell;
+    final value = _busy
+        ? '处理中…'
+        : on
+        ? '已启用'
+        : switch (status.rootShellOffReason) {
+            'expired' => '已到期',
+            'strikes' => '已自动关闭',
+            _ => '关闭',
+          };
+    return _Row(
+      key: const ValueKey('overview-root'),
+      icon: AppIcons.terminal,
+      label: 'Root 权限',
+      value: value,
+      onTap: _busy ? null : () => _toggle(on),
+    );
+  }
+
+  /// 开启前问一句；关闭不需要。确认这一步只是拦一下误触，不保护什么。
+  Future<void> _toggle(bool on) async {
+    if (!on) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('启用 root？'),
+          content: const Text(
+            '打开后，模型可以以 root 身份执行任意命令：无确认、无预览，能改系统、读所有应用的数据。\n\n'
+            '不用的时候记得关掉。',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('启用')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    setState(() => _busy = true);
+    try {
+      // 写完会回读原生状态，所以这里 await 到的是落盘后的真相。
+      await ref.read(phoneProvider.notifier).setRootShell(!on);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

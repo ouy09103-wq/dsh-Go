@@ -647,12 +647,6 @@ class PhoneStatus {
     this.rootShellStrict = false,
     this.rootShellUntil,
     this.rootShellOffReason,
-    this.fridaRunning = false,
-    this.fridaInstalled = false,
-    this.fridaVersion,
-    this.fridaModule = false,
-    this.fridaState,
-    this.fridaPort,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
@@ -680,12 +674,6 @@ class PhoneStatus {
       rootShellStrict = false,
       rootShellUntil = null,
       rootShellOffReason = null,
-      fridaRunning = false,
-      fridaInstalled = false,
-      fridaVersion = null,
-      fridaModule = false,
-      fridaState = null,
-      fridaPort = null,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
@@ -711,12 +699,6 @@ class PhoneStatus {
     rootShellStrict: _flag(m['rootShellStrict']),
     rootShellUntil: m['rootShellUntil'] is int ? m['rootShellUntil'] as int : null,
     rootShellOffReason: m['rootShellOffReason'] as String?,
-    fridaRunning: _flag(_map(m['frida'])['running']),
-    fridaInstalled: _flag(_map(m['frida'])['installed']),
-    fridaVersion: _map(m['frida'])['version'] as String?,
-    fridaModule: _flag(_map(m['frida'])['module']),
-    fridaState: _map(m['frida'])['state'] as String?,
-    fridaPort: _map(m['frida'])['port'] is int ? _map(m['frida'])['port'] as int : null,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -748,7 +730,7 @@ class PhoneStatus {
   /// The master switch 「手机操控」.
   final bool enabled;
 
-  /// 聊天页的「启用 root」：关着时 `shell` / `frida` 工具拒绝执行。
+  /// 设置 › Root 权限的开关：关着时 `shell` 工具拒绝执行。
   final bool rootShell;
 
   /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
@@ -760,19 +742,6 @@ class PhoneStatus {
   /// 自动关掉的原因：expired（到期）/ strikes（连续拿不到 root）。
   final String? rootShellOffReason;
 
-  /// frida-server 是否在跑、是否已装、什么版本。
-  final bool fridaRunning;
-  final bool fridaInstalled;
-  final String? fridaVersion;
-
-  /// Frida Control 模块装没装。没装时启动一定失败，界面要直接说清楚。
-  final bool fridaModule;
-
-  /// NO_MODULE / NOT_INSTALLED / RUNNING / STOPPED。
-  final String? fridaState;
-
-  /// 实际监听端口；27042 会被目标探测后 abort，默认是 27043。
-  final int? fridaPort;
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
@@ -802,6 +771,10 @@ class PhoneStatus {
     bool? enabled,
     bool? rootShell,
     bool? rootShellStrict,
+    int? rootShellUntil,
+    bool clearRootShellUntil = false,
+    String? rootShellOffReason,
+    bool clearRootShellOffReason = false,
     bool? ready,
     Object? error = _keepError,
   }) => PhoneStatus(
@@ -812,14 +785,9 @@ class PhoneStatus {
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
     rootShellStrict: rootShellStrict ?? this.rootShellStrict,
-    rootShellUntil: rootShellUntil,
-    rootShellOffReason: rootShellOffReason,
-    fridaRunning: fridaRunning,
-    fridaInstalled: fridaInstalled,
-    fridaVersion: fridaVersion,
-    fridaModule: fridaModule,
-    fridaState: fridaState,
-    fridaPort: fridaPort,
+    rootShellUntil: clearRootShellUntil ? null : (rootShellUntil ?? this.rootShellUntil),
+    rootShellOffReason:
+        clearRootShellOffReason ? null : (rootShellOffReason ?? this.rootShellOffReason),
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,
@@ -1513,17 +1481,11 @@ class PhoneChannel {
   }
 
 
-  /// 聊天页的「启用 root」：只影响之后的 `shell` / `frida` 调用，不重启引擎。
+  /// 设置 › Root 权限的开关：只影响之后的 `shell` 调用，不重启引擎。
   Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
 
   /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
   Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
-
-  /// 装上并启动内置的 frida-server（二进制在 APK 里，不下载）。要 root 模式开着。
-  Future<bool> startFrida() => _bool('startFrida');
-
-  /// 停掉正在跑的 frida-server。
-  Future<bool> stopFrida() => _bool('stopFrida');
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

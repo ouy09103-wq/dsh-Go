@@ -38,7 +38,7 @@ interface PhoneEnv {
      * Cleanup may outlive the active Owner; it must never adopt a successor's resource.
      */
     fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? = null
-    /** 聊天页的「启用 root」开关。关着时 shell / frida 工具拒绝执行。 */
+    /** 聊天页的「启用 root」开关。关着时 shell 工具拒绝执行。 */
     fun rootShellEnabled(): Boolean = false
     /** 严格模式：开着时按 RootCommandPolicy 逐条判定，默认关。 */
     fun rootShellStrict(): Boolean = false
@@ -49,12 +49,6 @@ interface PhoneEnv {
     fun noteRootSuccess() = Unit
     fun noteRootFailure(reason: String) = Unit
 
-    /** frida-server 的状态与起停，由 host 实现（root/Frida.kt）。 */
-    fun fridaStatus(): Map<String, Any?> = emptyMap()
-    fun fridaStart(port: Int? = null, stealth: Boolean = false): Map<String, Any?> = emptyMap()
-    fun fridaStop(): Map<String, Any?> = emptyMap()
-    fun fridaClient(): Map<String, Any?> = emptyMap()
-    fun fridaInject(pkg: String, script: String?, timeoutMs: Long, port: Int? = null): Map<String, Any?> = emptyMap()
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
@@ -402,7 +396,6 @@ class PhoneCore(
                 PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
                 PhoneToolCatalog.SHELL -> shell(a, scope, owner)
                 PhoneToolCatalog.SHELL_READ -> shellRead(a, owner)
-                PhoneToolCatalog.FRIDA -> fridaTool(a, owner)
                 // l10n:keep agent tool result
                 else -> Out("没有这个手机工具：$name", error = true)
             }
@@ -1398,87 +1391,6 @@ class PhoneCore(
             summary = "shell_read", decision = "ok",
         )
     }
-
-    /**
-     * frida：查状态，或者装上并启动、停掉。
-     *
-     * 模型从「我能跑 shell」推得出「我能跑 frida」，但推不出「server 装在
-     * 模块目录、默认端口 27043、二进制藏在哪」。做成工具它就能直接问。
-     * status 只读，任何模式都能调；start / stop / client / inject 要「启用 root」。
-     */
-    private fun fridaTool(a: Args, owner: PhoneTasks.Owner): Out {
-        if (!current(owner)) return stoppedOut("frida")
-        val action = a.str("action") ?: "status"
-        if (action !in FRIDA_ACTIONS) {
-            return Out("frida 的 action 只能是 ${FRIDA_ACTIONS.joinToString(" / ")}。", error = true,
-                summary = "frida", decision = "refused:bad-action")
-        }
-        if (action != "status" && !env.rootShellEnabled()) return rootOff("frida")
-        val port = (a.int("port") ?: 0).takeIf { it in 1..65535 }
-        if (action == "client") {
-            val installed = env.fridaClient()
-            return Out(describeFrida("client", installed), error = installed["ok"] != true,
-                summary = "frida", decision = if (installed["ok"] == true) "ok" else "failed")
-        }
-        if (action == "inject") {
-            val script = a.str("script")
-                ?: return Out("inject 需要 script：要注入的 Frida 脚本全文。", error = true,
-                    summary = "frida", decision = "refused:no-script")
-            val pkg = a.str("package")
-                ?: return Out("inject 需要 package：要注入的 App 包名（必须是普通应用）。", error = true,
-                    summary = "frida", decision = "refused:no-package")
-            val timeout = (a.int("timeoutMs") ?: FRIDA_INJECT_MS).toLong()
-            val injected = env.fridaInject(pkg, script, timeout, port)
-            return Out(describeFrida("inject", injected), error = injected["ok"] != true,
-                summary = "frida", decision = if (injected["ok"] == true) "ok" else "failed")
-        }
-        val result = when (action) {
-            "start" -> env.fridaStart(port, a.bool("stealth") == true)
-            "stop" -> env.fridaStop()
-            else -> env.fridaStatus()
-        }
-        return Out(describeFrida(action, result), error = result["ok"] != true, summary = "frida",
-            decision = if (result["ok"] == true) "ok" else "failed")
-    }
-
-    /** frida 结果的一句话说明。空 map 说明 host 没实现（测试里的假环境）。 */
-    private fun describeFrida(action: String, result: Map<String, Any?>): String {
-        if (result.isEmpty()) return "这台设备上没有 frida 支持。"
-        if (result["ok"] != true) {
-            return "frida $action 失败：" + (result["error"] as? String ?: "未知原因")
-        }
-        if (action == "client") {
-            val version = result["version"] as? String
-            val pinned = result["pinned"] as? String
-            return "Linux 里的 frida 客户端已就绪" +
-                (if (version != null) "（$version）" else "") +
-                (if (pinned != null && version != pinned) "，但服务端是 $pinned，可能对不上" else "") +
-                "。"
-        }
-        if (action == "inject") {
-            val pkg = result["package"] as? String ?: "?"
-            val messages = (result["messages"] as? String).orEmpty().trim()
-            val hint = result["hint"] as? String
-            return buildString {
-                append("已对 $pkg 注入并开始收消息。")
-                if (messages.isNotEmpty()) append("\n脚本消息：\n").append(messages.take(6_000))
-                if (hint != null) append("\n").append(hint)
-            }
-        }
-        val running = result["listening"] == true || result["running"] == true
-        val version = result["version"] as? String
-        val where = result["port"] ?: result["path"]
-        return buildString {
-            append(if (running) "frida-server 在跑" else "frida-server 没在跑")
-            if (version != null) append("（$version）")
-            if (where != null) append("，$where")
-            append("。")
-            (result["hint"] as? String)?.let { append(" ").append(it) }
-        }
-    }
-
-    private val FRIDA_ACTIONS = listOf("status", "start", "stop", "client", "inject")
-    private val FRIDA_INJECT_MS = 20_000L
 
     private fun rootOff(tool: String): Out = Out(
         "root 未启用：请用户先在聊天页输入框上方点「启用 root」，再调用 $tool。",

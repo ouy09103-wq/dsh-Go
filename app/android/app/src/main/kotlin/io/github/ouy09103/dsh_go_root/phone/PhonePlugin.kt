@@ -353,20 +353,19 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             // 设置 → 手机操控 → 悬浮条: {idleOpacity 0.3–1, autoCollapse}; a showing overlay follows at once.
             "overlayPrefs" -> result.success(OverlayPrefs.read(appContext).toMap())
             "setOverlayPrefs" -> result.success(OverlayPrefs.write(appContext, call.arguments as? Map<*, *>).toMap())
-            // 聊天页输入框上方的「启用 root」胶囊：{on: bool}。只影响之后对 shell / frida 的调用。
+            // 设置 › Root 权限的开关：{on: bool}。只影响之后对 shell 的调用。
+            // 写完立刻回推一次状态：界面拿到的就是落盘后的真相，不会先亮再弹回去。
             "setRootShell" -> {
                 control.setRootShell(call.argument<Boolean>("on") ?: false)
+                control.emitStatus()
                 result.success(true)
             }
             // 设置 › Root 权限：严格模式。开着时逐条判定 root 命令。
             "setRootShellStrict" -> {
                 control.setRootShellStrict(call.argument<Boolean>("on") ?: false)
+                control.emitStatus()
                 result.success(true)
             }
-            // Frida 胶囊：装上并启动内置的 frida-server（要 root 模式开着）。
-            "startFrida" -> result.success(control.startFrida())
-            // Frida 胶囊：停掉。
-            "stopFrida" -> result.success(control.stopFrida())
             else -> result.notImplemented()
         }
         if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {

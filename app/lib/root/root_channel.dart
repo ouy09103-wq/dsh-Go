@@ -1,5 +1,5 @@
 // Real-root channel (app/android/.../root/RootPlugin.kt)：设备上的 su、单条命令执行、
-// 打包的 Ubuntu rootfs（以真 root 身份）、frida-server 安装与常驻 root shell。
+// 打包的 Ubuntu rootfs（以真 root 身份）与常驻 root shell。
 //
 // 只有显式点按钮才会 spawn su：管理器的授权弹窗出现在 [probe] / [exec] / [guest] 里。
 
@@ -78,61 +78,6 @@ class RootResult {
   }
 }
 
-/// frida-server 状态。由 Frida Control 模块提供，App 只调它的 ctl.sh。
-class FridaState {
-  const FridaState({
-    required this.ok,
-    this.version,
-    this.path,
-    this.port,
-    this.pid,
-    this.error,
-    this.running = false,
-    this.pids = '',
-    this.listening = false,
-    this.installed = false,
-  });
-
-  final bool ok;
-  final String? version;
-  final String? path;
-  final int? port;
-  final String? pid;
-  final String? error;
-  final bool running;
-  final String pids;
-  final bool listening;
-
-  /// 二进制已就位（模块隐藏目录 /data/adb/frida-hide，或旧位置；还没起来也算 true）。
-  final bool installed;
-
-  String get report {
-    if (!ok) return '失败：${error ?? '未知原因'}';
-    final buffer = StringBuffer(running ? 'frida-server 运行中' : 'frida-server 未运行');
-    if (pids.trim().isNotEmpty) buffer.write(' · PID ${pids.trim()}');
-    if (listening) buffer.write(' · ${port ?? 27043} 在监听');
-    if (version != null) buffer.write('\n版本 $version');
-    if (path != null) buffer.write('\n$path');
-    return buffer.toString();
-  }
-
-  static FridaState from(Object? raw) {
-    final map = (raw as Map?)?.cast<String, Object?>() ?? const <String, Object?>{};
-    return FridaState(
-      ok: map['ok'] == true,
-      version: map['version'] as String?,
-      path: map['path'] as String?,
-      port: (map['port'] as int?),
-      pid: map['pid'] as String?,
-      error: map['error'] as String?,
-      running: map['running'] == true || (map['pid'] as String? ?? '').isNotEmpty,
-      pids: (map['pids'] as String?) ?? (map['pid'] as String?) ?? '',
-      listening: map['listening'] == true,
-      installed: map['installed'] == true || map['ok'] == true,
-    );
-  }
-}
-
 /// 一轮 shell 输出。
 class ShellOutput {
   const ShellOutput({required this.stdout, required this.stderr, required this.closed});
@@ -169,13 +114,6 @@ class RootChannel {
   Future<RootResult> guest(String command, {int timeoutMs = 120000}) async => RootResult.from(
         await channel.invokeMethod<Object?>('guest', {'command': command, 'timeoutMs': timeoutMs}),
       );
-
-  /// 装上并启动内置的 frida-server（二进制在 APK 里，不下载）。
-  Future<FridaState> installFrida({int port = 27043}) async => FridaState.from(
-        await channel.invokeMethod<Object?>('installFrida', {'port': port}),
-      );
-
-  Future<FridaState> fridaStatus() async => FridaState.from(await channel.invokeMethod<Object?>('fridaStatus'));
 
   Future<int> shellOpen({String? cwd}) async {
     final raw = await channel.invokeMethod<Object?>('shellOpen', {'cwd': cwd});

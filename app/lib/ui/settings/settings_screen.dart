@@ -311,7 +311,7 @@ class SettingsScreen extends ConsumerWidget {
               icon: AppIcons.terminal,
               tint: SettingsHues.help,
               title: 'Root 权限',
-              subtitle: 'su、Ubuntu rootfs、frida-server、常驻 root shell',
+              subtitle: 'su、Ubuntu rootfs、常驻 root shell',
               onTap: () => _push(context, const RootPage()),
             ),
             SettingsTile(

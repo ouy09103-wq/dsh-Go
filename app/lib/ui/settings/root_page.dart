@@ -1,5 +1,5 @@
 // 设置 › Root 权限: 真 root 通道的入口页——状态、命令、Linux（Ubuntu rootfs）、
-// frida-server（由 Frida Control 模块提供）、常驻 root shell。每一项都只在点按后 spawn su。
+// 常驻 root shell。每一项都只在点按后 spawn su。
 
 import 'dart:async';
 
@@ -31,6 +31,7 @@ class _RootPageState extends ConsumerState<RootPage> {
 
   RootStatus? _status;
   bool _busy = false;
+  bool _rootBusy = false;
   int _shellId = -1;
   Timer? _poller;
 
@@ -80,42 +81,22 @@ class _RootPageState extends ConsumerState<RootPage> {
     }
   }
 
-  Future<void> _installFrida() async {
-    setState(() => _busy = true);
-    _log('让 Frida Control 模块启动 frida-server…');
-    try {
-      final state = await _root.installFrida();
-      _log(state.ok
-          ? 'frida-server 已启动：${state.version} · PID ${state.pid} · 127.0.0.1:${state.port}\n${state.path}'
-
-          : 'frida-server 安装失败：${state.error ?? '未知原因'}');
-    } on PlatformException catch (error) {
-      _log('frida-server 安装失败：${error.code} ${error.message ?? ''}');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _fridaStatus() async {
-    setState(() => _busy = true);
-    try {
-      final state = await _root.fridaStatus();
-      _log('frida 状态\n${state.report}');
-    } on PlatformException catch (error) {
-      _log('frida 状态\n失败：${error.code} ${error.message ?? ''}');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   /// 「root 模式开关」：写进 SharedPreferences，引擎每次调用时现查。
   ///
   /// 开一次只算 12 小时，到点自己关；连续 3 次拿不到 root 也会关。这两件事都由原生侧算，
   /// 这里只把那一刻说给用户看，免得他以为按钮点坏了。
   Future<void> _setAgentRoot(bool on) async {
-    final ok = await ref.read(phoneProvider.notifier).setRootShell(on);
-    if (!mounted) return;
-    if (!ok) _log('root 开关没有写进去：原生通道没接通。');
+    if (_rootBusy) return;
+    setState(() => _rootBusy = true);
+    try {
+      final ok = await ref.read(phoneProvider.notifier).setRootShell(on);
+      if (!mounted) return;
+      if (!ok) _log('root 开关没有写进去：原生通道没接通。');
+      // 原生状态已经回读过了；这里再刷一遍 su / 管理器那几行。
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _rootBusy = false);
+    }
   }
 
   /// 开关下面那行字：开着说到期时间，关着说明为什么关。
@@ -200,7 +181,7 @@ class _RootPageState extends ConsumerState<RootPage> {
                   title: 'root 模式开关',
                   subtitle: _grantSubtitle(status),
                   value: status.rootShell,
-                  onChanged: (on) => _setAgentRoot(on),
+                  onChanged: _rootBusy ? null : (on) => _setAgentRoot(on),
                 );
               },
             ),
@@ -287,25 +268,6 @@ class _RootPageState extends ConsumerState<RootPage> {
               title: '在 rootfs 里执行',
               value: Text(_busy ? '…' : '运行'),
               onTap: _busy ? null : () => _run(() => _root.guest(_guest.text), 'Linux 执行'),
-            ),
-          ],
-        ),
-        SettingsSection(
-          title: 'Frida',
-          children: [
-            SettingsTile(
-              icon: AppIcons.plugin,
-              title: '启动 frida-server（模块）',
-              subtitle: '内置 17.25.2（arm64），不联网下载。装到 /data/local/tmp，'
-                  '由 Frida Control 模块负责启动，默认 127.0.0.1:27043 —— 27042 会被部分目标探测后 abort。',
-              value: Text(_busy ? '…' : '17.25.2'),
-              onTap: _busy ? null : _installFrida,
-            ),
-            SettingsTile(
-              icon: AppIcons.engine,
-              title: 'frida-server 状态',
-              value: Text(_busy ? '…' : '查看'),
-              onTap: _busy ? null : _fridaStatus,
             ),
           ],
         ),

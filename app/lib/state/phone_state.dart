@@ -312,22 +312,22 @@ class PhoneController extends Notifier<PhoneState> {
 
   Future<PhoneResult> adbPair(String code, {int? port}) => _thenRefresh(_channel.adbPair(code, port: port));
 
-  /// 聊天页的「启用 root」。只翻一个开关，不重启引擎：`shell` / `frida` 每次调用时现查。
+  /// 设置 › Root 权限。只翻一个开关，不重启引擎：`shell` 每次调用时现查。
+  ///
+  /// 写成功后立刻回读一次原生状态：授权到期、连续 3 次拿不到 root 都会让原生
+  /// 侧把开关关掉，界面照着回读结果画，就不会先亮起来再被下一次推送弹回去。
   Future<bool> setRootShell(bool on) async {
     final ok = await _channel.setRootShell(on);
-    if (ref.mounted && ok) state = state.copyWith(status: state.status.copyWith(rootShell: on));
+    if (!ref.mounted) return ok;
+    if (ok) await refreshStatus();
     return ok;
   }
 
-  /// 起 / 停内置的 frida-server。成功后刷新状态，胶囊上的版本跟着变。
-  Future<bool> startFrida() => _thenRefresh(_channel.startFrida());
-
-  Future<bool> stopFrida() => _thenRefresh(_channel.stopFrida());
-
-  /// 设置 › Root 权限：严格模式。
+  /// 设置 › Root 权限：严格模式。同样以回读为准。
   Future<bool> setRootShellStrict(bool on) async {
     final ok = await _channel.setRootShellStrict(on);
-    if (ref.mounted && ok) state = state.copyWith(status: state.status.copyWith(rootShellStrict: on));
+    if (!ref.mounted) return ok;
+    if (ok) await refreshStatus();
     return ok;
   }
 
