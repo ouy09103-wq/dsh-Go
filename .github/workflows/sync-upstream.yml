@@ -1,0 +1,64 @@
+name: Sync upstream
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry = report conflicts only; push = push merge result'
+        required: false
+        default: 'dry'
+        type: choice
+        options:
+          - dry
+          - push
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: v1.0.15-root
+
+      - name: Configure git
+        run: |
+          git config user.name "dsh-go sync bot"
+          git config user.email "sync@users.noreply.github.com"
+          git config merge.renameLimit 100000
+          git config diff.renameLimit 100000
+
+      - name: Fetch upstream main
+        run: |
+          git remote add upstream https://github.com/ccch1mneyyy/dsh-Go.git
+          git fetch --no-tags --progress upstream main
+          echo "upstream head: $(git rev-parse upstream/main)"
+          echo "base: $(git merge-base HEAD upstream/main)"
+
+      - name: Merge upstream
+        run: |
+          set +e
+          git merge --no-ff --no-commit upstream/main
+          echo "merge exit: $?"
+          git diff --name-only --diff-filter=U > /tmp/conflicts.txt
+          echo "=== CONFLICT COUNT: $(wc -l < /tmp/conflicts.txt) ==="
+          cat /tmp/conflicts.txt
+          echo "=== STATUS SUMMARY ==="
+          git status --porcelain | awk '{print $1}' | sort | uniq -c
+          echo "=== RENAMED ==="
+          git status --porcelain | grep '^R' | head -40
+          echo "=== RENAMED COUNT: $(git status --porcelain | grep -c '^R') ==="
+
+      - name: Push merged result
+        if: inputs.mode == 'push'
+        run: |
+          if [ -s /tmp/conflicts.txt ]; then
+            echo "conflicts remain, refusing to push"
+            exit 1
+          fi
+          git commit -m "Merge upstream ccch1mneyyy/dsh-Go main into v1.0.15-root"
+          git push origin HEAD:refs/heads/upstream-sync
