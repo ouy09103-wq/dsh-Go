@@ -1,0 +1,61 @@
+name: Sync upstream v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'report = 只报告冲突分类；push = 解决并推到 sync-result'
+        required: false
+        default: 'report'
+        type: choice
+        options:
+          - report
+          - push
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: script-src
+
+      - name: Checkout fork branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: v1.0.15-root
+          path: work
+
+      - name: Run sync
+        working-directory: work
+        run: |
+          mkdir -p tooling
+          cp ../script-src/tooling/sync_upstream.py tooling/sync_upstream.py
+          git config --global --add safe.directory "$PWD"
+          python3 tooling/sync_upstream.py "${{ inputs.mode }}" 2>&1 | tail -120
+
+      - name: Show conflicts left
+        if: always()
+        working-directory: work
+        run: |
+          echo "=== unmerged ==="
+          git diff --name-only --diff-filter=U | head -60
+          echo "=== status ==="
+          git status --porcelain | awk '{print $1}' | sort | uniq -c
+
+      - name: Push result
+        if: inputs.mode == 'push'
+        working-directory: work
+        run: |
+          if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+            echo "还有未解决冲突，不推送"
+            exit 1
+          fi
+          git commit -q -m "Merge upstream ccch1mneyyy/dsh-Go main into fork (auto-resolved)" || true
+          git push -f origin HEAD:refs/heads/sync-result
