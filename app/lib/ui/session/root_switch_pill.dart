@@ -53,7 +53,7 @@ class _RootSwitchPillState extends ConsumerState<RootSwitchPill> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
         child: InkWell(
-          key: const ValueKey('quick-panel-root'),
+          key: const ValueKey('root-switch-pill'),
           onTap: _busy ? null : () => _toggle(on),
           customBorder: const StadiumBorder(),
           child: Container(
