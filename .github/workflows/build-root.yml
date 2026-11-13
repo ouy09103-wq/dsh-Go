@@ -45,8 +45,9 @@ jobs:
 
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
-            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          # 别删 ndk：tawcroot 要用它编 libtawcroot.so（flutter.ndkVersion）。
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY" || true
           df -h /
 
       - uses: actions/setup-java@v4
@@ -59,6 +60,21 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      # tawcroot（可选启动方式）要用固定版本的 NDK 编 libtawcroot.so；
+      # runner 镜像自带的版本未必对得上，缺了就装。
+      - name: Ensure NDK
+        run: |
+          ndk_version=$(python3 -c "import json;print(json.load(open('runtime/tawcroot/source.json'))['ndkVersion'])")
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -f "$sdk/ndk/$ndk_version/source.properties" ]; then
+            echo "installing NDK $ndk_version into $sdk"
+            sdkmanager_bin=$(command -v sdkmanager || echo "$sdk/cmdline-tools/latest/bin/sdkmanager")
+            yes | "$sdkmanager_bin" --sdk_root="$sdk" --install "ndk;$ndk_version" >/dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$sdk/ndk/$ndk_version" >> "$GITHUB_ENV"
+          ls "$sdk/ndk"
+          df -h /
 
       - name: Fetch prebuilt runtime
         env:
