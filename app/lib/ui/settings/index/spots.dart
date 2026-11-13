@@ -601,6 +601,15 @@ abstract final class Spots {
     title: (l) => l.hubSettingsCommunity,
     keywords: (l) => l.searchKwCommunity,
   );
+  static final root = SettingSpot(
+    'root',
+    page: SettingsPageId.hub,
+    group: _help,
+    title: (l) => l.localeName == 'en' ? 'Root access' : 'Root 权限',
+    keywords: (l) => l.localeName == 'en'
+        ? 'root,su,sudo,rootfs,Ubuntu,persistent shell,terminal'
+        : 'root,su,sudo,rootfs,Ubuntu,常驻,shell,终端',
+  );
 
   // 模型.
   static final addProvider = SettingSpot(
@@ -1086,6 +1095,7 @@ final _rows = <SettingSpot>[
   Spots.language,
   Spots.askAi,
   Spots.community,
+  Spots.root,
   Spots.addProvider,
   Spots.permissionCurrent,
   Spots.permissionDefault,
