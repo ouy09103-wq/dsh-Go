@@ -96,7 +96,7 @@ void main() {
   });
 
   test('MainActivity registers both plugins', () {
-    final source = File('android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/MainActivity.kt').readAsStringSync();
+    final source = File('android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/MainActivity.kt').readAsStringSync();
     expect(source, contains('engine.plugins.add(SharePlugin())'));
     expect(source, contains('engine.plugins.add(ShortcutsPlugin())'));
     expect(source, contains('LauncherIconPlugin()'));

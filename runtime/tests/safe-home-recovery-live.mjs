@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 assert(process.env.DSH_PREFIX, 'Set DSH_PREFIX to the prepared runtime.');
 const prefix = resolve(process.env.DSH_PREFIX);
 const repo = fileURLToPath(new URL('../../', import.meta.url));
-const kotlin = process.env.DSH_SAFE_MODE_SOURCE ?? join(repo, 'app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/SafeMode.kt');
+const kotlin = process.env.DSH_SAFE_MODE_SOURCE ?? join(repo, 'app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/runtime/SafeMode.kt');
 const source = await fs.readFile(kotlin, 'utf8');
 const constants = Object.fromEntries([...source.matchAll(/const val (\w+) = "([^"\n]*)"\s*$/gm)].map(m => [m[1], m[2]]));
 function constant(name, seen = new Set()) {

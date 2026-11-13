@@ -17,7 +17,7 @@ ENV_FILE=$1
 APK=$2
 # shellcheck disable=SC1090
 source "$ENV_FILE"
-APP=io.github.ccch1mneyyy.dsh_app
+APP=io.github.ouy09103.dsh_go_root
 log() { printf '[p2p] %s\n' "$*"; }
 
 adb install -r "$APK" >/dev/null

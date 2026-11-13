@@ -27,8 +27,8 @@ if os.geteuid() == 0:
     os.chown(owned, uid, gid)
 identity = {'user': uid, 'group': gid, 'extra_groups': []} if os.geteuid() == 0 else {}
 jar = base / 'startup.jar'
-runtime = repo / 'app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime'
-sources = [runtime / name for name in ['DshProcess.kt', 'ProotTempFiles.kt', 'LaunchDiagnostics.kt', 'DirectLaunch.kt', 'L2sMigration.kt', 'RuntimeProcessOwnership.kt', 'SpeechGuest.kt']]
+runtime = repo / 'app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/runtime'
+sources = [runtime / name for name in ['DshProcess.kt', 'LogRedactor.kt', 'ProotTempFiles.kt', 'LaunchDiagnostics.kt', 'DirectLaunch.kt', 'L2sMigration.kt', 'RuntimeProcessOwnership.kt', 'SpeechGuest.kt']]
 sources += list((here / 'startup-probe').glob('*.kt'))
 sources += [here / 'cleanup-probe' / name for name in ['AndroidContext.kt', 'AndroidOs.kt', 'AndroidProcess.kt', 'UnusedPhoneContract.kt']]
 (out / 'inputs.json').write_text(json.dumps([{'path': str(p.relative_to(repo)), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in sources], indent=2) + '\n')
@@ -59,7 +59,7 @@ try:
         'store-symlink', 'candidate-symlink',
     ]]
     for probe, case in cases:
-        command = ['java', '-cp', str(jar), 'io.github.ccch1mneyyy.dsh_app.runtime.' + probe,
+        command = ['java', '-cp', str(jar), 'io.github.ouy09103.dsh_go_root.runtime.' + probe,
                    str(owned), case]
         start = datetime.now(timezone.utc).isoformat()
         result = subprocess.run(command, env={'PATH': '/usr/bin:/bin', 'HOME': str(owned)}, cwd=owned,

@@ -12,7 +12,7 @@
 
 ```bash
 export ANDROID_SERIAL=emulator-5556
-pkg=io.github.ccch1mneyyy.dsh_app
+pkg=io.github.ouy09103.dsh_go_root
 probe() { adb shell am broadcast -a "$pkg.ICON_PROBE" -p "$pkg" "$@"; }
 # 先正常打开 App，然后调用与 Dart 相同的 onMethodCall("set")，不是 pm enable/disable。
 probe --es cmd state --es seq before

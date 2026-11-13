@@ -10,7 +10,7 @@ const require = module.createRequire(import.meta.url);
 assert.ok(process.env.DSH_PREFIX, 'set DSH_PREFIX to an existing DSH installation prefix');
 const installedRequire = module.createRequire(join(process.env.DSH_PREFIX, 'node_modules/@deepseek-ai/dsh/package.json'));
 const boot = installedRequire('@deepseek-ai/dsh-app-boot');
-const source = fs.readFileSync(new URL('../../app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/SafeMode.kt', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../../app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/runtime/SafeMode.kt', import.meta.url), 'utf8');
 const script = source.match(/const val PLUGINS_SCRIPT = """([\s\S]*?)"""/)[1];
 
 function fixture(t) {

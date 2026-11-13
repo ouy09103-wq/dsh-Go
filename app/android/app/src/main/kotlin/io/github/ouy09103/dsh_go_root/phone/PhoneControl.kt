@@ -77,6 +77,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_log_type" -> return@PhoneUiText AppStrings.plural(app, R.plurals.phone_log_type, args[2] as Int, *args.toTypedArray())
         }
         val id = when (key) {
+            "phone_shell_confirm" -> R.string.phone_shell_confirm
             "phone_waived_status" -> R.string.phone_waived_status
             "phone_move_background" -> R.string.phone_move_background
             "phone_opening_background" -> R.string.phone_opening_background
@@ -191,12 +192,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         journal = taskJournal,
         recoveryAdmission = { background.resourceAdmission() },
         backgroundCapacity = { background.parallelism().effectiveLimit },
+        screenRecoveryReady = { isEnabled() && !isLocked() },
         prepareBackground = { task, owner -> background.prepareForTask(owner) { task.tasks.isCurrent(owner) } },
         startSkillScope = skillLifecycle::startManaged,
         completeSkillScope = skillLifecycle::completeDrained,
         cancelScope = { record, state ->
             // Registry admission stays sealed until these lock-free side effects finish.
             background.sealTask(state.id)
+            shell.cancel(state.id)
             if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
             prompts.stopTask(record.tasks)
         })
@@ -303,6 +306,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun onSessionTask(task: PhoneTasks, state: PhoneTasks.Snapshot) {
+        if (!state.active || state.paused || state.stopped) shell.cancel(state.id)
         preview.refresh()
         prompts.check()
         val record = sessions.all().firstOrNull { it.tasks === task } ?: return
@@ -320,6 +324,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private var screenReceiver: BroadcastReceiver? = null
     private val sinks = CopyOnWriteArraySet<(Map<String, Any?>) -> Unit>()
     val background: BackgroundControl = BackgroundControl.get(app)
+    val shell = io.github.ouy09103.dsh_go_root.phone.shell.AndroidShellController(app) {
+        ticker.execute { emitStatus() }
+    }
     val preview = BackgroundPreview(app, background::previewTarget, { taskId ->
         val task = sessions.task(taskId)?.tasks?.snapshot()
         task?.active == true && task.id == taskId && !isLocked()
@@ -507,6 +514,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun stopBridge() {
+        shell.cancelAll()
         skillReplaySelections.retire()
         selfCheck.stop()
         background.sealTask()
@@ -604,6 +612,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun onTask(s: PhoneTasks.Snapshot) {
+        if (!s.active || s.paused || s.stopped) shell.cancel(s.id)
         preview.refresh() // Clear local pixels before endTask can enter blocking release IPC.
         skillLifecycle.changed(s)
         prompts.check()
@@ -676,7 +685,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                 selfCheck.stop()
                 preview.refresh()
                 background.requestInterrupt {
-                    sessions.stopAll("熄屏") // l10n:keep agent stop reason
+                    sessions.stopAll("熄屏", PhoneTasks.StopSource.SCREEN_OFF) // l10n:keep agent stop reason
                 }
                 cleanupIo.execute { background.finishInterrupt() }
             }
@@ -970,7 +979,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     override fun shownControls(): TaskControls? =
         displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
 
-    override fun onStopAllRequested(reason: String) { selfCheck.stop(); sessions.stopAll(reason) }
+    override fun onStopAllRequested(reason: String, source: PhoneTasks.StopSource) { shell.cancelAll(); selfCheck.stop(); sessions.stopAll(reason, source) }
 
     override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
 
@@ -1134,6 +1143,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     override fun system(): SystemApi = system
+
+    override fun androidShell(): PhoneShellExecutor = PhoneShellExecutor { ownerId, command, timeoutMs, live, confirm ->
+        shell.execute(ownerId, command, timeoutMs, live, confirm)
+    }
 
     override fun zone(): ZoneId = ZoneId.systemDefault()
 

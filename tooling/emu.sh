@@ -9,17 +9,23 @@
 #   tooling/emu.sh wait-boot         block until the emulator finished booting
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
-PKG=io.github.ccch1mneyyy.dsh_app
+PKG=io.github.ouy09103.dsh_go_root
 SHOTS="$(dirname "$0")/shots"
 
 case "${1:-}" in
   install) adb install -r -g "$2" ;;
   launch) adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null ;;
   stop) adb shell am force-stop "$PKG" ;;
-  shot) mkdir -p "$SHOTS"; adb exec-out screencap -p > "$SHOTS/$2.png"; echo "$SHOTS/$2.png" ;;
+  shot)
+    mkdir -p "$SHOTS"
+    shot_tmp=$(mktemp "$SHOTS/.shot.XXXXXX")
+    trap 'rm -f -- "$shot_tmp"' EXIT
+    adb exec-out screencap -p > "$shot_tmp"
+    mv -- "$shot_tmp" "$SHOTS/$2.png"
+    echo "$SHOTS/$2.png" ;;
   log) adb logcat -d -v time | grep -E "flutter|DshService|dsh|AndroidRuntime|$PKG" | tail -n "${2:-200}" ;;
   tap) adb shell input tap "$2" "$3" ;;
-  text) adb shell input text "$(printf '%s' "$2" | sed 's/ /%s/g')" ;;
+  text) adb shell input text "'$(printf '%s' "$2" | sed "s/'/'\\\\''/g; s/ /%s/g")'" ;;
   wait-boot)
     adb wait-for-device
     until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do sleep 2; done

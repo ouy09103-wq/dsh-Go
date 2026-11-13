@@ -133,7 +133,7 @@ void main() {
     // The floating pet (Kotlin PetPack.screenScale / devicePixels) must draw
     // at these numbers too, else it is a size off from the chat page. The
     // same table is asserted in
-    // app/android/app/src/test/kotlin/io/github/ccch1mneyyy/dsh_app/pet/PetPackTest.kt
+    // app/android/app/src/test/kotlin/io/github/ouy09103/dsh_go_root/pet/PetPackTest.kt
     // (`screenScaleMatchesTheAppForTheShippedPacks`): change one, change both.
     const expected = [
       ('whale-girl', 2.0, [1, 2, 3]),

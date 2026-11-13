@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 // Actual CLI and verbatim helper only. No model, server fixture, or executable substitute.
 const prefix = resolve(process.env.DSH_PREFIX ?? '');
 assert.ok(process.env.DSH_PREFIX, 'set DSH_PREFIX to the fully patched matching runtime');
-const candidateFile = new URL('../../app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/SafeMode.kt', import.meta.url);
+const candidateFile = new URL('../../app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/runtime/SafeMode.kt', import.meta.url);
 const baselineFile = process.env.SAFE_MODE_BASELINE_SOURCE;
 assert.ok(baselineFile, 'set SAFE_MODE_BASELINE_SOURCE to the original SafeMode.kt');
 const evidence = resolve(process.env.EVIDENCE_DIR ?? './safe-home-trial-evidence');

@@ -122,7 +122,7 @@
 现在只有 `dshgo://` 和文件能直接进 App；https 链接先到着陆页。要让 `https://<域名>/…/share/` 直接打开 App：
 
 1. 定下域名，改 `shareLandingUrl`；
-2. 在 `https://<域名>/.well-known/assetlinks.json` 放 `delegate_permission/common.handle_all_urls`，`package_name: io.github.ccch1mneyyy.dsh_app`，`sha256_cert_fingerprints` 填发布签名证书的指纹（GitHub Pages 的项目页做不到——`.well-known` 必须在域名根上，要用 `ccch1mneyyy.github.io` 用户站或自有域名）；
+2. 在 `https://<域名>/.well-known/assetlinks.json` 放 `delegate_permission/common.handle_all_urls`，`package_name: io.github.ouy09103.dsh_go_root`，`sha256_cert_fingerprints` 填发布签名证书的指纹（GitHub Pages 的项目页做不到——`.well-known` 必须在域名根上，要用 `ccch1mneyyy.github.io` 用户站或自有域名）；
 3. Manifest 里 `LinkTrampolineActivity` 加 `<intent-filter android:autoVerify="true">`：VIEW + DEFAULT + BROWSABLE，`scheme="https" host="<域名>" pathPrefix="/…/share"`。
 
 `LinkRouter` 已经按 `<host>/<path>` 注册了着陆页路由，第 3 步之后不用改 Dart。

@@ -25,7 +25,7 @@ assert.equal(JSON.parse(await readFile(join(oldPrefix, 'node_modules/@deepseek-a
 const sharp = require('sharp');
 const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 100, g: 120, b: 140 } } })
   .png().toBuffer();
-const guest = await readFile(join(source, 'app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneGuest.kt'), 'utf8');
+const guest = await readFile(join(source, 'app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/phone/PhoneGuest.kt'), 'utf8');
 const relay = guest.match(/const val RELAY_JS = """([\s\S]*?)"""/)?.[1];
 const overlay = guest.match(/val PATCH_YAML = """([\s\S]*?)"""/)?.[1];
 const timeout = guest.match(/const val TOOL_CALL_TIMEOUT_MS = ([0-9_]+)L/)?.[1].replaceAll('_', '');

@@ -8,7 +8,13 @@
 # 不打扰模式: the privileged process is started by class name, outside R8's
 # view (Shizuku UserService, `app_process … PrivilegedDisplayMain` over self-ADB),
 # and talks to the app through a hand-written Binder and Parcel/Bundle protocol.
--keep class io.github.ccch1mneyyy.dsh_app.phone.background.** { *; }
+-keep class io.github.ouy09103.dsh_go_root.phone.background.** { *; }
+
+# Independent Shizuku service and self-ADB/app_process command entry points.
+-keep class io.github.ouy09103.dsh_go_root.phone.shell.** { *; }
+
+# The one-attempt self-update UserService is loaded by Shizuku outside R8 references.
+-keep class io.github.ouy09103.dsh_go_root.update.privileged.** { *; }
 
 # Bouncy Castle and Conscrypt look providers and algorithms up by name;
 # libadb-android drives both for wireless-debugging pairing and TLS.

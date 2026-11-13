@@ -15,7 +15,7 @@ const prefix = resolve(process.env.DSH_PREFIX);
 const pkg = name => join(prefix, 'node_modules/@deepseek-ai', name);
 assert.equal(JSON.parse(await readFile(join(pkg('dsh'), 'package.json'))).version, '0.2.2-rc.1');
 const { startMockLlmServer } = await import(pathToFileURL(join(pkg('dsh-llm-mock-server'), 'lib/index.js')));
-const source = await readFile(new URL('../../app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/PhoneGuest.kt', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/phone/PhoneGuest.kt', import.meta.url), 'utf8');
 const relay = source.match(/const val RELAY_JS = """([\s\S]*?)"""/)?.[1];
 const overlay = source.match(/val PATCH_YAML = """([\s\S]*?)"""/)?.[1];
 assert.ok(relay); assert.ok(overlay);

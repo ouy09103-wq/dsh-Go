@@ -55,7 +55,8 @@ internal class PrivilegedDisplayHost(private val context: Context) {
                     putString(Proto.RECOVERY_BOOT, value.boot); putInt(Proto.RECOVERY_PID, value.pid)
                     putInt(Proto.RECOVERY_UID, value.uid); putLong(Proto.RECOVERY_PID_NS_DEV, value.nsDev)
                     putLong(Proto.RECOVERY_PID_NS_INO, value.nsIno)
-                }
+                    if (!value.nsAvailable) putBoolean(Proto.RECOVERY_PID_NS_AVAILABLE, false)
+                } ?: run { if (!containsKey(Proto.ERROR)) putString(Proto.ERROR, "recoveryUnavailable") }
             }
         }
         if (op == Proto.OP_RECOVERY_RETIRE) return retire(request)

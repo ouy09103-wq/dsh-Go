@@ -108,7 +108,7 @@ App策略上限是启动30秒、单次协议操作30秒。授予权限复用已�
 
 用户流程：主动“申请root授权” → 检查root.connected → 主动“通过root授予” → 已连接的 root 进程执行固定的授予 RPC（App 所属 userId）→ App通过checkSelfPermission确认WSS → 页面显示已授予。rootSelected为true但连接断开时grantPath为setup，不悄悄换成Sui/ADB。无已建root连接时授予方法返回失败，不隐式start。
 
-App所属userId来自Process.myUid()/100000，不使用前台用户“current”，也不默认0。个人用户、次用户、工作资料要分别核验授予目标。固定permission为android.permission.WRITE_SECURE_SETTINGS，包名为io.github.ccch1mneyyy.dsh_app。
+App所属userId来自Process.myUid()/100000，不使用前台用户“current”，也不默认0。个人用户、次用户、工作资料要分别核验授予目标。固定permission为android.permission.WRITE_SECURE_SETTINGS，包名为io.github.ouy09103.dsh_go_root。
 
 原`a11yKeeper.path`保持旧词汇；新页面读privileged.grantPath。PhonePlugin对明确root选择的原grantSecureSettings方法接线，避免修改PhoneControl；执行后核验真实permission。A11yKeeper原有恢复策略继续运行：只有手机操控总开关打开且持有所需权限时才检查恢复；不能把“root通道存活”当成“无障碍已连接”。
 

@@ -33,7 +33,7 @@ class RuntimeUpgradePackaging(unittest.TestCase):
             self.assertNotEqual(original['baseId'], changed['baseId'])
 
     def test_android_and_builder_share_the_exact_non_overlapping_owned_paths(self):
-        source = HERE.parent / 'app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/EngineUpgrade.kt'
+        source = HERE.parent / 'app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/runtime/EngineUpgrade.kt'
         declaration = source.read_text().split('internal val ENGINE_PATHS = listOf(', 1)[1].split('\n)', 1)[0]
         self.assertEqual(rtbuild.ENGINE_PATHS, re.findall(r'"([^"]+)"', declaration))
         for path in rtbuild.ENGINE_PATHS:

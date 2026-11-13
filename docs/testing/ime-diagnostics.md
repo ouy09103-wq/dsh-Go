@@ -27,9 +27,9 @@ Lead independently compiled `SystemImeEvidence.kt`, `SystemImeLogcat.kt`, the ex
 
 ```sh
 java -cp "$OUT:$TEST_CP" org.junit.runner.JUnitCore \
-  io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeEvidenceTest \
-  io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeLogcatTest \
-  io.github.ccch1mneyyy.dsh_app.phone.PhonePromptTest
+  io.github.ouy09103.dsh_go_root.diagnostics.SystemImeEvidenceTest \
+  io.github.ouy09103.dsh_go_root.diagnostics.SystemImeLogcatTest \
+  io.github.ouy09103.dsh_go_root.phone.PhonePromptTest
 ```
 
 Result: exit 0, **47 tests passed**, on Linux ARM64 with JUnit 4.13.2. `OUT` is the temporary compiled-class directory; `TEST_CP` contains the Kotlin standard library, JUnit, Hamcrest and the Android API jar used to type-check the existing framing file. Tests cover allowlisted parsing, old/new Android message shapes, app association, nullable user attribution, malformed/stale data, consent cancellation/reuse, byte/event limits, nonzero process exit, timeout cleanup and existing phone-prompt policies. The additional framed-session test only verifies consent-token revocation and a subsequent exchange; it does not execute Android `SystemImePrompt.finish()` or prove the full UI cancellation path. No real system logs were read.
