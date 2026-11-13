@@ -18,7 +18,7 @@ on:
       version:
         description: 版本名（如 1.0.16-root.1）
         required: false
-        default: 1.0.16-root.1
+        default: 1.0.16-root.2
       draft:
         description: 发布为 draft release
         type: boolean
@@ -34,7 +34,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: 3.47.7
-  VERSION: ${{ github.event.inputs.version || '1.0.16-root.1' }}
+  VERSION: ${{ github.event.inputs.version || '1.0.16-root.2' }}
   # 云端跑：走 google()/mavenCentral() 官方源。国内镜像在 Actions 上会 502。
   DSH_MAVEN_MIRRORS: '0'
 
@@ -142,6 +142,7 @@ jobs:
 
             - 已同步上游 ccch1mneyyy/dsh-Go main（至 dd0a8d5），运行时 1.0.15
             - 不含内置 frida（代码、模块、打包步骤都已移除）
+            - 修好「Root 权限」开关回弹；root 开关胶囊在右划快捷入口面板底部
             - 包名 `io.github.ouy09103.dsh_go_root`，应用名「DSH Go Root」，**可与原版同时安装**
             - arm64 · Android 8.0（API 26）以上
             - 没有配置签名 secrets 时是 debug 签名
