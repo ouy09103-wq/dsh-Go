@@ -43,11 +43,12 @@ class RootLaunchTest {
         fun guest() = File(rootfs, "tmp/dsh-root-engine-cmd.sh").readText()
     }
 
-    private fun prepare(env: Map<String, String>? = null): Prepared {
+    private fun prepare(env: (String) -> Map<String, String>? = { null }): Prepared {
         val rootfs = freshRootfs()
         val dir = freshDir()
         val base = direct(rootfs.absolutePath)
-        val plan = RootLaunch.prepare(rootfs, if (env == null) base else base.copy(environment = env), su, dir)
+        val replaced = env(rootfs.absolutePath)
+        val plan = RootLaunch.prepare(rootfs, if (replaced == null) base else base.copy(environment = replaced), su, dir)
         return Prepared(plan, rootfs, dir)
     }
 
@@ -127,7 +128,7 @@ class RootLaunchTest {
         assertFalse("no device path survives into the guest", guest.contains(p.rootfs.absolutePath))
         assertTrue(guest, guest.contains("'/opt/node/bin/node'"))
         assertTrue(guest, guest.contains("'/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1'"))
-        assertTrue(guest, guest.contains("'/opt/dsh-go/direct/preload.mjs'"))
+        assertTrue(guest, guest.contains("'--import=/opt/dsh-go/direct/preload.mjs'"))
     }
 
     @Test fun thePidFileNamesTheEngineItself() {
@@ -157,8 +158,7 @@ class RootLaunchTest {
     }
 
     @Test fun anApostropheInAValueCannotBreakOutOfTheGuestScript() {
-        val rootfs = freshRootfs().absolutePath
-        val p = prepare(mapOf("HOME" to "$rootfs/root/it's"))
+        val p = prepare { root -> mapOf("HOME" to "$root/root/it's") }
         assertTrue(p.guest(), p.guest().contains("export HOME='/root/it'\\''s'"))
     }
 }
