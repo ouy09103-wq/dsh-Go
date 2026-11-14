@@ -21,8 +21,9 @@ import java.nio.file.StandardCopyOption
  * that outlives the app and can wedge the next start. When the device cannot give a private
  * namespace this launcher refuses to run; it never mounts into the shared one.
  *
- * The command lives in a script file rather than one nested `sh -c` string: three levels of
- * quoting through su is exactly where a wrong word becomes a wrong mount.
+ * Three small scripts instead of one nested `sh -c` string. Quoting a shell command that is
+ * itself a shell command, through su, is where a single wrong quote turns into a wrong mount;
+ * each script here is one level deep and readable on its own.
  */
 internal object RootLaunch {
 
@@ -44,44 +45,76 @@ internal object RootLaunch {
      */
     private val MOUNTS = listOf("/dev", "/proc", "/sys")
 
+    private const val LAUNCH_SCRIPT = "dsh-root-engine.sh"
+    private const val MOUNT_SCRIPT = "dsh-root-engine-mount.sh"
+
+    /** Where the guest-side command script lives, as the guest sees it. */
+    private const val GUEST_COMMAND = "/tmp/dsh-root-engine-cmd.sh"
+
     data class Plan(val argv: List<String>, val environment: Map<String, String>, val cwd: File)
 
     /**
      * [direct] was prepared against device paths (`<rootfs>/opt/node/bin/node`); inside the
      * chroot those prefixes must go, or every path would name `/data/user/0/...` twice.
      */
-    fun prepare(rootfs: File, direct: DirectLaunch.Plan, su: String, scriptFile: File): Plan {
+    fun prepare(rootfs: File, direct: DirectLaunch.Plan, su: String, dir: File): Plan {
         val root = rootfs.absolutePath
-        fun guest(path: String) = path.removePrefix(root).ifEmpty { "/" }
+        /**
+         * A path under the runtime is the same path in the guest without the prefix; everything
+         * else (a flag, a bare word, a path outside the runtime) must be passed through as it is.
+         * Blanket-prefix-stripping turned `--host 127.0.0.1` into `/`, which no shell could run.
+         */
+        fun guest(value: String): String = when {
+            value == root -> "/"
+            value.startsWith("$root/") -> value.removePrefix(root)
+            // `--import=<root>/…`: the flag and its path arrive as one word.
+            value.startsWith("--") && value.substringAfter('=', "").startsWith("$root/") ->
+                value.substringBefore('=') + "=" + value.substringAfter('=').removePrefix(root)
+            else -> value
+        }
         val quote = DirectLaunch::quote
+
         val guestEnv = direct.environment
             .filterKeys { NAME.matches(it) && it !in SKIP && !it.startsWith("PROOT_") }
             .mapValues { (_, value) -> guest(value) }
-        // `exec sh` keeps one shell in the chain, so the pid file can be the engine's own.
-        val inner = guestEnv.entries.joinToString(" ") { (name, value) -> "export $name=${quote(value)}" }
-        val command = direct.argv.joinToString(" ") { quote(guest(it)) }
-        val script = buildString {
+        // The guest script: plain exports, then the engine. One quoting level, no nesting.
+        val command = buildString {
+            append("#!/bin/sh\n")
+            append("set -e\n")
+            guestEnv.forEach { (name, value) -> append("export ").append(name).append('=').append(quote(value)).append('\n') }
+            // `$$` here is the shell that the chroot's /bin/sh forked for this script.
+            append("echo \$\$ > /tmp/dsh-root-engine.pid\n")
+            append("exec ").append(direct.argv.joinToString(" ") { quote(guest(it)) }).append('\n')
+        }
+        val guestScript = File(rootfs, GUEST_COMMAND.removePrefix("/"))
+
+        // Runs inside the private namespace: bind the three device trees, then enter the guest.
+        val mounts = buildString {
             append("#!/system/bin/sh\n")
             append("set -e\n")
             append("R=").append(quote(root)).append('\n')
-            // Refuse rather than mount into the shared namespace and leave /proc on the device.
+            // Never let these mounts propagate back into the device's own mount tree.
+            append("mount --make-rslave / 2>/dev/null || true\n")
+            for (path in MOUNTS) {
+                append("mount --bind ").append(path).append(" \"\$R").append(path).append('"')
+                append(" || exit ").append(EXIT_MOUNT_FAILED).append('\n')
+            }
+            append("exec chroot \"\$R\" /bin/sh ").append(quote(GUEST_COMMAND)).append('\n')
+        }
+
+        // Started by su: refuse a device without unshare instead of mounting into the shared tree.
+        val launcher = buildString {
+            append("#!/system/bin/sh\n")
             append("command -v unshare >/dev/null 2>&1 || { echo ")
             append(quote(NO_NAMESPACE)).append(" >&2; exit ").append(EXIT_NO_NAMESPACE).append("; }\n")
-            append("exec unshare -m /system/bin/sh -c ").append(quote(buildString {
-                // Stop these mounts from propagating back into the device's own mount tree.
-                append("mount --make-rslave / 2>/dev/null || true; ")
-                for (path in MOUNTS) {
-                    append("mount --bind ").append(path).append(' ')
-                    append(quote(root)).append(path).append(" || exit ").append(EXIT_MOUNT_FAILED).append("; ")
-                }
-                append("exec chroot ").append(quote(root)).append(" /bin/sh -c ")
-                append(quote(
-                    "export $inner; echo \$\$ > /tmp/dsh-root-engine.pid; exec $command",
-                ))
-            })).append('\n')
+            append("exec unshare -m /system/bin/sh ").append(quote(File(dir, MOUNT_SCRIPT).absolutePath)).append('\n')
         }
-        write(scriptFile, script)
-        return Plan(RootIdentity.argv(su, "exec /system/bin/sh ${quote(scriptFile.absolutePath)}"), guestEnv, direct.cwd)
+
+        write(File(dir, MOUNT_SCRIPT), mounts)
+        write(File(dir, LAUNCH_SCRIPT), launcher)
+        // Written last: the launcher is useless without the other two.
+        write(guestScript, command)
+        return Plan(RootIdentity.argv(su, "exec /system/bin/sh ${quote(File(dir, LAUNCH_SCRIPT).absolutePath)}"), guestEnv, direct.cwd)
     }
 
     private fun write(file: File, text: String) {
@@ -89,6 +122,7 @@ internal object RootLaunch {
         check(dir.isDirectory || dir.mkdirs()) { "root engine: cannot create ${dir.path}" }
         val temp = File(dir, "${file.name}.tmp")
         temp.writeText(text)
+        // su runs as uid 0, so every one of these must be readable by anyone, and runnable.
         temp.setReadable(true, false)
         temp.setExecutable(true, false)
         Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)

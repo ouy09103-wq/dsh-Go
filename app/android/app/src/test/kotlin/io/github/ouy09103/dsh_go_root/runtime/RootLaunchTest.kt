@@ -8,9 +8,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RootLaunchTest {
-    private val rootfs = "/data/user/0/io.github.ouy09103.dsh_go_root/files/runtime/rootfs"
     private val su = "/system/bin/su"
-    private val direct = DirectLaunch.Plan(
+
+    /** A throwaway rootfs: the guest script is written into it, so the real one must not be used. */
+    private fun freshRootfs(): File = Files.createTempDirectory("rootfs").toFile().apply { deleteOnExit() }
+
+    private fun freshDir(): File = Files.createTempDirectory("rootlaunch").toFile().apply { deleteOnExit() }
+
+    private fun direct(rootfs: String) = DirectLaunch.Plan(
         argv = listOf(
             "$rootfs/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
             "--library-path", "$rootfs/usr/lib/aarch64-linux-gnu",
@@ -32,90 +37,128 @@ class RootLaunchTest {
         cwd = File("$rootfs/root"),
     )
 
-    private fun plan(script: File) = RootLaunch.prepare(File(rootfs), direct, su, script)
-
-    private fun freshScript(): File {
-        val dir = Files.createTempDirectory("rootlaunch").toFile()
-        dir.deleteOnExit()
-        return File(dir, "dsh-root-engine.sh")
+    private class Prepared(val plan: RootLaunch.Plan, val rootfs: File, val dir: File) {
+        fun launcher() = File(dir, "dsh-root-engine.sh").readText()
+        fun mounts() = File(dir, "dsh-root-engine-mount.sh").readText()
+        fun guest() = File(rootfs, "tmp/dsh-root-engine-cmd.sh").readText()
     }
 
-    @Test fun theEngineRunsUnderSuThroughTheScript() {
-        val script = freshScript()
-        val plan = plan(script)
-        assertEquals(listOf(su, "-c"), plan.argv.take(2))
-        assertTrue(plan.argv[2], plan.argv[2].contains("exec /system/bin/sh"))
-        assertTrue(plan.argv[2], plan.argv[2].contains(script.absolutePath))
-        assertTrue("the script is written", script.isFile)
-        assertTrue("and is executable", script.canExecute())
+    private fun prepare(env: Map<String, String>? = null): Prepared {
+        val rootfs = freshRootfs()
+        val dir = freshDir()
+        val base = direct(rootfs.absolutePath)
+        val plan = RootLaunch.prepare(rootfs, if (env == null) base else base.copy(environment = env), su, dir)
+        return Prepared(plan, rootfs, dir)
     }
 
-    @Test fun theEngineOnlyEverMountsInsideAPrivateNamespace() {
-        val script = freshScript()
-        plan(script)
-        val text = script.readText()
-        // Mounting in the shared namespace would leave /proc, /dev and /sys on the device.
-        assertTrue(text, text.contains("unshare -m"))
-        assertEquals(
-            "every mount happens after the namespace exists",
-            1,
-            text.lines().count { it.contains("mount --bind") } - 2,
-        )
-        assertTrue(text, text.indexOf("unshare -m") < text.indexOf("mount --bind"))
-        assertTrue("no propagation back to the device", text.contains("mount --make-rslave /"))
+    @Test fun theEngineRunsUnderSuThroughTheLauncher() {
+        val p = prepare()
+        assertEquals(listOf(su, "-c"), p.plan.argv.take(2))
+        assertTrue(p.plan.argv[2], p.plan.argv[2].contains("dsh-root-engine.sh"))
+        assertTrue("the launcher is written", File(p.dir, "dsh-root-engine.sh").isFile)
+        assertTrue("and is executable", File(p.dir, "dsh-root-engine.sh").canExecute())
     }
 
-    @Test fun aDeviceWithoutUnshareIsRefusedRatherThanPolluted() {
-        val script = freshScript()
-        plan(script)
-        val text = script.readText()
+    @Test fun suIsHandedAPathNotANestedShellProgram() {
+        // One quoting level through su: the argument names a file, it is not a program.
+        val inner = prepare().plan.argv[2]
+        assertFalse("no shell program in the su argument", inner.contains("unshare"))
+        assertFalse("no shell program in the su argument", inner.contains("chroot"))
+        assertFalse("no shell program in the su argument", inner.contains("mount"))
+    }
+
+    @Test fun theLauncherRefusesADeviceWithoutUnshare() {
+        val text = prepare().launcher()
         assertTrue(text, text.contains(RootLaunch.NO_NAMESPACE))
         assertTrue(text, text.contains("exit ${RootLaunch.EXIT_NO_NAMESPACE}"))
-        assertTrue("the refusal comes before any mount", text.indexOf("exit 78") < text.indexOf("mount --bind"))
+        assertTrue(text, text.contains("command -v unshare"))
+        // It refuses before anything is mounted, so a shared tree is never touched.
+        assertFalse("the launcher mounts nothing itself", text.contains("mount --bind"))
     }
 
-    @Test fun everyGuestPathIsRewrittenRelativeToTheChroot() {
-        val script = freshScript()
-        plan(script)
-        val text = script.readText()
-        val exec = text.substringAfter("exec chroot")
-        assertFalse("no device path survives into the guest", exec.contains(rootfs))
-        assertTrue(exec, exec.contains("'/opt/node/bin/node'"))
-        assertTrue(exec, exec.contains("'/opt/dsh-go/direct/preload.mjs'"))
-        assertTrue(exec, exec.contains("'/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1'"))
+    @Test fun theLauncherRunsTheMountScriptInsideAPrivateNamespace() {
+        val text = prepare().launcher()
+        assertTrue(text, text.contains("unshare -m /system/bin/sh"))
+        assertTrue(text, text.contains("dsh-root-engine-mount.sh"))
+        assertTrue("the namespace wraps the mount script", text.indexOf("unshare -m") < text.indexOf("mount.sh"))
+    }
+
+    @Test fun everyMountHappensInAPrivateNamespace() {
+        val text = prepare().mounts()
+        assertEquals("exactly the three device trees", 3, text.lines().count { it.trimStart().startsWith("mount --bind") })
+        assertTrue("no propagation back to the device", text.contains("mount --make-rslave /"))
+        for (path in listOf("/dev", "/proc", "/sys")) {
+            assertTrue("$path is bound", text.contains("mount --bind $path "))
+        }
+    }
+
+    @Test fun nothingOutsideTheThreeTreesIsMountedIn() {
+        val text = prepare().mounts()
+        assertFalse("/data stays out of reach", text.contains("mount --bind /data"))
+        assertFalse("/system stays out of reach", text.contains("mount --bind /system"))
+        assertFalse("/apex stays out of reach", text.contains("mount --bind /apex"))
+    }
+
+    @Test fun aFailedMountIsNotSilentlyIgnored() {
+        assertTrue(prepare().mounts(), prepare().mounts().contains("|| exit ${RootLaunch.EXIT_MOUNT_FAILED}"))
+    }
+
+    @Test fun flagsAndBareWordsAreNotRewritten() {
+        // A blanket prefix-strip once turned `--host 127.0.0.1` into `/`, which nothing can run.
+        val guest = prepare().guest()
+        assertTrue(guest, guest.contains("'--library-path'"))
+        assertTrue(guest, guest.contains("'--no-open'"))
+        assertTrue(guest, guest.contains("'--host' '127.0.0.1'"))
+        assertTrue(guest, guest.contains("'--port' '3080'"))
+        assertTrue(guest, guest.contains("'web'"))
+        assertFalse("no bare argument became a root path", guest.contains("'/' '/'"))
+    }
+
+    @Test fun aFlagCarryingAPathIsRewrittenWithItsFlag() {
+        val guest = prepare().guest()
+        assertTrue(guest, guest.contains("'--import=/opt/dsh-go/direct/preload.mjs'"))
+    }
+
+    @Test fun theGuestIsEnteredWithItsOwnPaths() {
+        val p = prepare()
+        val text = p.mounts()
+        assertTrue(text, text.contains("chroot \"\$R\" /bin/sh '/tmp/dsh-root-engine-cmd.sh'"))
+        val guest = p.guest()
+        assertFalse("no device path survives into the guest", guest.contains(p.rootfs.absolutePath))
+        assertTrue(guest, guest.contains("'/opt/node/bin/node'"))
+        assertTrue(guest, guest.contains("'/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1'"))
+        assertTrue(guest, guest.contains("'/opt/dsh-go/direct/preload.mjs'"))
+    }
+
+    @Test fun thePidFileNamesTheEngineItself() {
+        val guest = prepare().guest()
+        assertTrue(guest, guest.contains("echo \$\$ > /tmp/dsh-root-engine.pid"))
+        assertTrue("the pid is written before exec replaces the shell", guest.indexOf("dsh-root-engine.pid") < guest.indexOf("exec "))
     }
 
     @Test fun theEnvironmentIsReExportedWithGuestPaths() {
-        val script = freshScript()
-        val plan = plan(script)
-        val text = script.readText()
-        assertTrue(text, text.contains("export HOME='/root'"))
-        assertTrue(text, text.contains("export TMPDIR='/tmp'"))
-        assertTrue(text, text.contains("export DSH_GO_RUNTIME_ROOT='/'"))
-        assertFalse("the child never sees a device path", plan.environment.values.any { it.startsWith(rootfs) })
+        val p = prepare()
+        assertFalse("the child never sees a device path", p.plan.environment.values.any { it.startsWith(p.rootfs.absolutePath) })
+        assertEquals("/root", p.plan.environment["HOME"])
+        assertEquals("/tmp", p.plan.environment["TMPDIR"])
+        assertEquals("/", p.plan.environment["DSH_GO_RUNTIME_ROOT"])
+        assertEquals("/opt/dsh-app/direct/bin:/usr/bin:/bin", p.plan.environment["PATH"])
+        assertTrue(p.guest(), p.guest().contains("export HOME='/root'"))
     }
 
     @Test fun nothingFromTheProotWorldIsExported() {
-        val script = freshScript()
-        plan(script)
-        val text = script.readText()
-        assertFalse(text, text.contains("LD_PRELOAD"))
-        assertFalse(text, text.contains("LD_LIBRARY_PATH"))
-        assertFalse(text, text.contains("PROOT_TMP_DIR"))
-        assertFalse(text, text.contains("odd name"))
+        val p = prepare()
+        assertFalse(p.plan.environment.containsKey("LD_PRELOAD"))
+        assertFalse(p.plan.environment.containsKey("LD_LIBRARY_PATH"))
+        assertFalse(p.plan.environment.containsKey("PROOT_TMP_DIR"))
+        assertFalse(p.guest(), p.guest().contains("LD_PRELOAD"))
+        assertFalse(p.guest(), p.guest().contains("PROOT_TMP_DIR"))
+        assertFalse(p.guest(), p.guest().contains("odd name"))
     }
 
-    @Test fun thePidFileIsWrittenInsideTheGuest() {
-        val script = freshScript()
-        plan(script)
-        val text = script.readText()
-        assertTrue(text, text.contains("echo \$\$ > /tmp/dsh-root-engine.pid"))
-    }
-
-    @Test fun anApostropheInAPathCannotBreakOutOfTheScript() {
-        val script = freshScript()
-        val tricky = direct.copy(environment = mapOf("HOME" to "/root/it's"))
-        RootLaunch.prepare(File(rootfs), tricky, su, script)
-        assertTrue(script.readText(), script.readText().contains("'/root/it'\\''s'"))
+    @Test fun anApostropheInAValueCannotBreakOutOfTheGuestScript() {
+        val rootfs = freshRootfs().absolutePath
+        val p = prepare(mapOf("HOME" to "$rootfs/root/it's"))
+        assertTrue(p.guest(), p.guest().contains("export HOME='/root/it'\\''s'"))
     }
 }

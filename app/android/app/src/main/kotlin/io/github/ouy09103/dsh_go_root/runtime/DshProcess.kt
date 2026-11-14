@@ -243,8 +243,9 @@ class DshProcess(
             // /tmp and /var instead of the rootfs.
             val plan = DirectLaunch.prepare(rootfs, manifest.abi, argv, env.toMap())
             RootEngine.mark(rootfs)
-            val scriptFile = File(RootEngine.marker(rootfs).parentFile, "dsh-root-engine.sh")
-            val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"), scriptFile)
+            // The scripts live beside the rootfs, not inside it: su reads them before any mount.
+            val rootDir = RootEngine.marker(rootfs).parentFile
+            val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"), rootDir)
             builder.command(rootPlan.argv).directory(rootPlan.cwd)
             // su and unshare both inherit stdin; a pipe that never closes would stall them.
             builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
