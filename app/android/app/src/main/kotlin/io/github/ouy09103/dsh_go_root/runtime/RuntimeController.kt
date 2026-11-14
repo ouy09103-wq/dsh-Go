@@ -176,11 +176,13 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         failedRuntime = prefs.getString(K_TAWC_FAILED, null),
         runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
+    /**
+     * Deliberately no "failed runtime" memory, unlike Direct and tawcroot: a root launch that
+     * failed does not fall back, so the switch stays on and the failure card explains it.
+     */
     private fun rootEngine() = DirectLaunch.Preference(
         saved = prefs.getBoolean(K_ROOT_ENGINE, false),
         available = rootEngineUnavailable() == null,
-        failedRuntime = prefs.getString(K_ROOT_FAILED, null),
-        runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
     private fun tawcEngineUnavailable(): String? =
         TawcrootLaunch.unavailable(app.applicationInfo.nativeLibraryDir, android.os.Build.VERSION.SDK_INT)
@@ -226,7 +228,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Synchronized fun setRootEngine(enabled: Boolean) {
         check(process == null && phase !in setOf(Phase.STARTING, Phase.RUNNING, Phase.STOPPING, Phase.INSTALLING) && !resetting) { "stop the engine before changing its launch method" }
         check(!enabled || rootEngineUnavailable() == null) { "no su on this device: grant root to this app first" }
-        val edit = prefs.edit().putBoolean(K_ROOT_ENGINE, enabled).remove(K_ROOT_FAILED)
+        val edit = prefs.edit().putBoolean(K_ROOT_ENGINE, enabled)
         if (enabled) {
             edit.putBoolean(K_DIRECT_ENGINE, false)
             edit.putBoolean(K_TAWC_ENGINE, false)
@@ -592,7 +594,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 val root = rootEngine()
                 p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay,
                     tawcEngine = tawc.saved == true, tawcFailed = tawc.failed,
-                    rootEngine = root.saved == true, rootFailed = root.failed) { actualDirect ->
+                    rootEngine = root.saved == true) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
                     if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
                 }
@@ -1079,16 +1081,6 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 restartNow("with compatible launch")
                 return
             }
-            if (source.root && readyAt == null && !expected && stopGen < runGen) {
-                // The root launch never got DSH up: PRoot from now on with this runtime, no
-                // failure card, no strike. Turning root on again gives it another try.
-                prefs.edit().putString(K_ROOT_FAILED, manifest.runtimeVersion).apply()
-                log("[dsh-app] root launch failed (exit $code${source.startupError?.let { ": $it" } ?: ""}); starting again with compatible launch", "system")
-                error = null
-                setPhase(Phase.STARTING)
-                restartNow("with compatible launch")
-                return
-            }
             val tail = synchronized(runTail) { runTail.toList() }
             var f = CrashClassifier.classify(code, readyAt, SystemClock.elapsedRealtime(), System.currentTimeMillis(), tail, runSafe, source.direct)
             val startupError = source.startupError
@@ -1210,7 +1202,6 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         /** Runtime version tawcroot failed to start DSH with. */
         private const val K_TAWC_FAILED = "tawcEngineFailedRuntime"
         private const val K_ROOT_ENGINE = "rootEngine"
-        private const val K_ROOT_FAILED = "rootEngineFailedRuntime"
         private const val MAIN_FAILURE_LOG = "failure-normal.log"
         private const val LATEST_FAILURE_LOG = "failure-latest.log"
 

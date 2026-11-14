@@ -19,7 +19,6 @@ class DirectEngineSettings extends ConsumerStatefulWidget {
 /// Everything a root launch can report: its own failure, and the su/domain checks that stop it
 /// before a process exists. Direct's hint must not wear any of them.
 const _rootFallbacks = {
-  'rootFailed',
   'suMissing',
   'suNotExecutable',
   'rootSuFailed',
@@ -142,9 +141,7 @@ class _DirectEngineSettingsState extends ConsumerState<DirectEngineSettings> {
           ? 'No su on this device. Grant root to this app in your root manager first.'
           : '这台设备上没有可用的 su。先在 root 管理器里给本 App 授权。';
     }
-    if (fallback != null && _rootFallbacks.contains(fallback)) {
-      return _rootFailure(en, fallback);
-    }
+    if (fallback != null && _rootFallbacks.contains(fallback)) return _rootFailure(en, fallback);
     if (!stopped) return l10n.phoneDirectStopFirst;
     if (safe) return l10n.phoneDirectSafeHint;
     return en
@@ -175,12 +172,9 @@ class _DirectEngineSettingsState extends ConsumerState<DirectEngineSettings> {
     'suMissing' => en
         ? 'No su on this device. Grant root to this app in your root manager first.'
         : '这台设备上没有可用的 su。先在 root 管理器里给本 App 授权。',
-    'rootSuFailed' => en
+    _ => en
         ? 'su did not answer. Check the root manager, then turn this on again.'
         : 'su 没有应答。先确认 root 管理器正常，再打开这个开关。',
-    _ => en
-        ? 'The root launch failed before with this runtime. Turn it on to try again.'
-        : '上次 root 启动失败了（这个运行时）。重新打开再试一次。',
   };
 
   Future<void> _changeRoot(bool value) async {

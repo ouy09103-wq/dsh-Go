@@ -345,7 +345,7 @@ void main() {
     expect(bridge.tawcChanges, isEmpty);
   });
 
-  testWidgets('a root launch failure explains the root switch, not the direct one', (tester) async {
+  testWidgets('a root failure explains the root switch, not the direct one', (tester) async {
     await show(
       tester,
       _Runtime(
@@ -356,15 +356,16 @@ void main() {
           rootEngineAvailable: true,
           launchSelectedMode: 'proot',
           launchSpawned: true,
-          directEngineFallbackReason: 'rootFailed',
+          directEngineFallbackReason: 'rootWrongDomain',
         ),
       ),
       _Bridge(),
     );
-    // Direct keeps its own hint: the fallback belongs to the root switch.
+    // Direct keeps its own hint: the reason belongs to the root switch.
     expect(tile(tester).subtitle, lookupL10n(AppLocale.zhCN).phoneDirectHint);
     expect(rootTile(tester).value, isFalse);
     expect(rootTile(tester).onChanged, isNotNull);
+    expect(rootTile(tester).subtitle, contains('SELinux'));
   });
 
   for (final locale in AppLocale.supported) {

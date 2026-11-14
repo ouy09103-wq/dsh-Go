@@ -94,7 +94,7 @@ class DshProcess(
      * [binds] are extra proot `-b host:guest` mounts, inserted before the guest command.
      * [safe] boots the rescue profile instead of `web` (see [SafeMode.profileArg]).
      */
-    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, searchOverlay: Boolean = false, authOverlay: Boolean = false, speechOverlay: Boolean = false, tawcEngine: Boolean = false, tawcFailed: Boolean = false, rootEngine: Boolean = false, rootFailed: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
+    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, searchOverlay: Boolean = false, authOverlay: Boolean = false, speechOverlay: Boolean = false, tawcEngine: Boolean = false, tawcFailed: Boolean = false, rootEngine: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
         check(process == null) { "already started" }
         // tawcroot wins over Direct when both are on; like Direct it needs PRoot's fake hard links gone.
         val tawcWanted = tawcEngine && !safe
@@ -105,8 +105,8 @@ class DshProcess(
         // turning into a silent proot start: the reason is reported, not swallowed.
         val rootWanted = rootEngine && !safe && !tawcReady
         val rootSu = if (rootWanted) RootExec.suPath() else null
-        val rootIdentity = if (rootWanted && !rootFailed && rootSu != null) RootIdentity.probe() else null
-        val rootReady = rootWanted && !rootFailed && rootIdentity?.granted == true
+        val rootIdentity = if (rootWanted && rootSu != null) RootIdentity.probe() else null
+        val rootReady = rootWanted && rootIdentity?.granted == true
         // A uid 0 engine is invisible to this app's own /proc sweep: ask su about its pid file
         // whether or not this launch wants root, or a leftover one would outlive the switch.
         val previousRoot = RootEngine.touched(rootfs)
@@ -116,6 +116,12 @@ class DshProcess(
         // A root run leaves the guest home and tmp root-owned, and this app has to delete the pid
         // file and chdir into that home before any launch, root or not: hand both back first.
         if (previousRoot && RootEngine.reclaim(rootfs)) RootEngine.unmark(rootfs)
+        // Root was asked for and the kernel did not confirm it: say so and stop. Quiety starting
+        // proot instead would hand back a uid 0 that is only a faked one, which is the whole
+        // confusion this launch method exists to end.
+        if (rootWanted && !rootReady) {
+            throw IllegalStateException(rootFailure(rootSu, rootIdentity))
+        }
         var selection = if (tawcReady || rootReady) DirectLaunch.select(rootfs, requested = true, safe = false)
             else DirectLaunch.select(rootfs, directEngine, safe, directFailed)
         // Only PRoot's fake hard links stand in the way: tidy them once no runtime process is left.
@@ -128,10 +134,6 @@ class DshProcess(
         directFallbackReason = selection.fallbackReason ?: when {
             tawcWanted && tawcFailed -> TawcrootLaunch.FAILED
             tawcMissing != null -> tawcMissing
-            rootWanted && rootFailed -> RootLaunch.FAILED
-            rootWanted && rootSu == null -> RootIdentity.SU_MISSING
-            // Grant, domain or su problems all surface here instead of a silent proot start.
-            rootWanted -> rootIdentity?.failure
             (directEngine || tawcEngine || rootEngine) && safe -> "safeRecovery"
             else -> null
         }
@@ -259,7 +261,6 @@ class DshProcess(
         if (directFallbackReason == DirectLaunch.INCOMPATIBLE) listener.onLog("[dsh-app] direct fallback: proot hard-link backing files need compatible launch; user preference and data retained", "system")
         if (directFallbackReason == DirectLaunch.FAILED) listener.onLog("[dsh-app] direct fallback: direct launch failed before with this runtime; turn Direct on again to retry", "system")
         if (directFallbackReason == TawcrootLaunch.FAILED) listener.onLog("[dsh-app] tawcroot fallback: tawcroot failed to start before with this runtime; turn tawcroot on again to retry", "system")
-        if (directFallbackReason == RootLaunch.FAILED) listener.onLog("[dsh-app] root fallback: the root launch failed before with this runtime; turn root on again to retry", "system")
         if (directFallbackReason == RootIdentity.SU_MISSING) listener.onLog("[dsh-app] root fallback: no su on this device; turn root on after the root manager grants it", "system")
         listener.onLog(
             "[dsh-app] launch method: ${if (tawc) "tawcroot" else if (root) "root" else if (direct) "direct-glibc" else "proot"}" +
@@ -310,6 +311,21 @@ class DshProcess(
             }
         }
         if (stopping) stop()
+    }
+
+    /** The one reason root cannot run, as the sentence the failure card shows. */
+    private fun rootFailure(su: String?, identity: RootIdentity.Result?): String {
+        val code = identity?.failure ?: if (su == null) RootIdentity.SU_MISSING else RootIdentity.SU_FAILED
+        val detail = when (code) {
+            RootIdentity.SU_MISSING -> "no su on this device; grant root to this app in the root manager"
+            RootIdentity.SU_NOT_EXECUTABLE -> "su exists but the kernel will not run it (a stale /system/bin/su)"
+            RootIdentity.NOT_GRANTED -> "the root manager did not grant this app"
+            RootIdentity.NOT_ROOT -> "su answered with the app uid, so the child never became root"
+            RootIdentity.DOMAIN_UNKNOWN -> "could not read the SELinux domain, so root is not proven"
+            RootIdentity.WRONG_DOMAIN -> "uid 0 but still in an app SELinux domain"
+            else -> "su did not answer"
+        }
+        return "root launch: $detail ($code)"
     }
 
     /**

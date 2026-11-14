@@ -15,9 +15,6 @@ import java.io.File
  */
 internal object RootLaunch {
 
-    /** su existed but the launch did not survive; retried compatibly, like Direct. */
-    const val FAILED = "rootFailed"
-
     /** proot's linker world must not leak into a real root child: its loader would re-enter it. */
     private val SKIP = setOf("LD_PRELOAD", "LD_LIBRARY_PATH")
     private val NAME = Regex("[A-Za-z_][A-Za-z0-9_]*")
