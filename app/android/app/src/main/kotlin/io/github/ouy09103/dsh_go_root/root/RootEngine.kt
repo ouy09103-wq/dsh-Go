@@ -26,7 +26,26 @@ internal object RootEngine {
     private const val RECLAIM_TIMEOUT_MS = 60_000L
     private const val TICKS = 40
 
+    /** Outside the rootfs on purpose: the app writes it, and the guest may be root-owned. */
+    private const val MARKER = ".root-owned"
+
     fun pidFile(rootfs: File): File = File(rootfs, PID_FILE)
+
+    fun marker(rootfs: File): File = File(rootfs.absoluteFile.parentFile, MARKER)
+
+    /** True when a previous root launch may have left the guest tree root-owned. */
+    fun touched(rootfs: File): Boolean = marker(rootfs).exists() || pidFile(rootfs).exists()
+
+    /** Records that the guest tree is about to be written by uid 0. Written before the spawn: a
+     *  failed launch only means the next start reclaims an already app-owned tree. */
+    fun mark(rootfs: File) {
+        runCatching { marker(rootfs).writeText("") }
+    }
+
+    /** Forgets the marker once the tree is the app's again. */
+    fun unmark(rootfs: File) {
+        runCatching { marker(rootfs).delete() }
+    }
 
     fun pid(rootfs: File): Int? = runCatching {
         pidFile(rootfs).takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull()

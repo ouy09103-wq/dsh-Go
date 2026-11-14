@@ -109,16 +109,13 @@ class DshProcess(
         val rootReady = rootWanted && !rootFailed && rootIdentity?.granted == true
         // A uid 0 engine is invisible to this app's own /proc sweep: ask su about its pid file
         // whether or not this launch wants root, or a leftover one would outlive the switch.
-        val previousRoot = RootEngine.pidFile(rootfs).exists()
-        if (previousRoot && RootEngine.reap(rootfs) != null) {
+        val previousRoot = RootEngine.touched(rootfs)
+        if (RootEngine.pidFile(rootfs).exists() && RootEngine.reap(rootfs) != null) {
             listener.onLog("[dsh-app] stopped the previous root engine", "system")
         }
         // A root run leaves the guest home and tmp root-owned, and this app has to delete the pid
-        // file and chdir into that home before any launch, root or not: hand both back first. A
-        // root launch writes them as root again, which the next start reclaims the same way.
-        if ((previousRoot || rootReady) && !RootEngine.reclaim(rootfs)) {
-            listener.onLog("[dsh-app] the guest home is still root-owned; the launch may fail to write it", "system")
-        }
+        // file and chdir into that home before any launch, root or not: hand both back first.
+        if (previousRoot && RootEngine.reclaim(rootfs)) RootEngine.unmark(rootfs)
         var selection = if (tawcReady || rootReady) DirectLaunch.select(rootfs, requested = true, safe = false)
             else DirectLaunch.select(rootfs, directEngine, safe, directFailed)
         // Only PRoot's fake hard links stand in the way: tidy them once no runtime process is left.
@@ -242,8 +239,12 @@ class DshProcess(
             // The same prepared plan, owned by uid 0: the script re-exports the environment
             // because a root manager may hand its shell a bare one.
             val plan = DirectLaunch.prepare(rootfs, manifest.abi, argv, env.toMap())
+            RootEngine.mark(rootfs)
             val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"))
             builder.command(rootPlan.argv).directory(rootPlan.cwd)
+            // An su that inherits a pipe for stdin waits for input that never comes; the engine
+            // reads nothing from it, so name the device explicitly.
+            builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
             env.clear()
             env.putAll(rootPlan.environment)
         }
@@ -406,9 +407,8 @@ class DshProcess(
                     // the next compatible launch runs as the app uid: give the guest home back,
                     // off this thread so a large home cannot delay the stop report.
                     thread(name = "dsh-root-reclaim", isDaemon = true) {
-                        if (!RootEngine.reclaim(rootfs)) {
-                            listener.onLog("[dsh-app] could not hand the guest home back to the app uid", "system")
-                        }
+                        if (RootEngine.reclaim(rootfs)) RootEngine.unmark(rootfs)
+                        else listener.onLog("[dsh-app] could not hand the guest home back to the app uid", "system")
                     }
                 } else {
                     val node = if (p.isAlive) guestRecord() else null
