@@ -176,6 +176,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         failedRuntime = prefs.getString(K_TAWC_FAILED, null),
         runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
+
     /**
      * Deliberately no "failed runtime" memory, unlike Direct and tawcroot: a root launch that
      * failed does not fall back, so the switch stays on and the failure card explains it.
@@ -183,6 +184,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     private fun rootEngine() = DirectLaunch.Preference(
         saved = prefs.getBoolean(K_ROOT_ENGINE, false),
         available = rootEngineUnavailable() == null,
+        failedRuntime = null,
+        runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
     private fun tawcEngineUnavailable(): String? =
         TawcrootLaunch.unavailable(app.applicationInfo.nativeLibraryDir, android.os.Build.VERSION.SDK_INT)
