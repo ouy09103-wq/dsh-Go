@@ -98,7 +98,7 @@ internal object RootHelperClient {
             val stderr = err.toString()
             val marker = text.lastIndexOf(RootHelperMain.RESULT)
             if (finished && marker >= 0) {
-                val decoded = decode(text.substring(marker + RootHelperMain.RESULT.length()).trim())
+                val decoded = decode(text.substring(marker + RootHelperMain.RESULT.length).trim())
                 if (decoded != null) {
                     return Outcome(
                         output = text.substring(0, marker).removeSuffix("\n"),
