@@ -170,6 +170,9 @@ class RuntimeStatus {
     this.tawcEngineEnabled = false,
     this.tawcEngineAvailable = false,
     this.tawcEngineActive = false,
+    this.rootEngineEnabled = false,
+    this.rootEngineAvailable = false,
+    this.rootEngineActive = false,
     this.currentExecutionMode,
     this.launchSelectedMode,
     this.launchSpawned = false,
@@ -237,6 +240,13 @@ class RuntimeStatus {
   final bool tawcEngineAvailable;
   final bool tawcEngineActive;
 
+  /// The opt-in root launch (native `RootLaunch`): the same runtime, but Node really is uid 0.
+  /// Granting root to the app does nothing until this is on, and it is exclusive with the
+  /// other two methods.
+  final bool rootEngineEnabled;
+  final bool rootEngineAvailable;
+  final bool rootEngineActive;
+
   /// Native process observation, never inferred from the saved direct preference.
   final String? currentExecutionMode;
 
@@ -257,6 +267,9 @@ class RuntimeStatus {
     'tawcEngineEnabled': tawcEngineEnabled,
     'tawcEngineAvailable': tawcEngineAvailable,
     'tawcEngineActive': tawcEngineActive,
+    'rootEngineEnabled': rootEngineEnabled,
+    'rootEngineAvailable': rootEngineAvailable,
+    'rootEngineActive': rootEngineActive,
     'currentExecutionMode': currentExecutionMode,
     'launchSelectedMode': launchSelectedMode,
     'launchSpawned': launchSpawned,
@@ -313,6 +326,9 @@ class RuntimeStatus {
     tawcEngineEnabled: map['tawcEngineEnabled'] == true,
     tawcEngineAvailable: map['tawcEngineAvailable'] == true,
     tawcEngineActive: map['tawcEngineActive'] == true,
+    rootEngineEnabled: map['rootEngineEnabled'] == true,
+    rootEngineAvailable: map['rootEngineAvailable'] == true,
+    rootEngineActive: map['rootEngineActive'] == true,
     currentExecutionMode: map['currentExecutionMode'] as String?,
     launchSelectedMode: map['launchSelectedMode'] as String?,
     launchSpawned: map['launchSpawned'] == true,
@@ -633,6 +649,7 @@ class RuntimeBridge {
   /// Takes effect on the next start; native code rejects changes while active.
   Future<void> setDirectEngine(bool enabled) => _methods.invokeMethod<void>('setDirectEngine', {'enabled': enabled});
   Future<void> setTawcEngine(bool enabled) => _methods.invokeMethod<void>('setTawcEngine', {'enabled': enabled});
+  Future<void> setRootEngine(bool enabled) => _methods.invokeMethod<void>('setRootEngine', {'enabled': enabled});
 
   /// Output around the last failure, tokens masked.
   Future<List<String>> failureLog() async => (await _methods.invokeListMethod<String>('failureLog')) ?? const [];

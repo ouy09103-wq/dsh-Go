@@ -112,6 +112,7 @@ void _environment(StringBuffer b, DiagnosticsSnapshot s) {
       '${st.launchFailureReason == null ? '' : ' · 最近失败 ${st.launchFailureReason}'}'
       '${st.directEngineFallbackReason == null ? '' : ' · 回退 ${st.directEngineFallbackReason}'}',
     )
+    ..writeln('- 引擎身份：${_engineIdentity(st.currentExecutionMode)}')
     ..writeln('- 引擎地址：${st.baseUrl ?? '—'}（token 不回传）');
   if (st.error case final error? when error.isNotEmpty) b.writeln('- 最近错误：$error');
   if (st.networkBlocked) b.writeln('- 系统限制联网：${_time(st.networkBlockedAt ?? s.at)} 起');
@@ -129,6 +130,17 @@ void _environment(StringBuffer b, DiagnosticsSnapshot s) {
     )
     ..writeln();
 }
+
+/// The engine's real identity, judged by its launch method rather than by `id`: a proot guest
+/// answers `id` with its faked uid 0, so repeating `id` here would read as a root claim. Never
+/// write the row without a launch mode: an unobserved engine is not a root engine.
+String _engineIdentity(String? mode) => switch (mode) {
+  'root' => 'uid 0（su 启动，真实 root）',
+  'direct' => 'App 用户（direct 启动，非 root）',
+  'tawcroot' => 'App 用户（tawcroot 启动，非 root）',
+  'proot' => 'App 用户（proot 模拟 uid 0，不是 root）',
+  _ => '未观测',
+};
 
 void _connection(StringBuffer b, DiagnosticsSnapshot s) {
   b.writeln('## 连接');

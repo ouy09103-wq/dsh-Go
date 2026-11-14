@@ -173,6 +173,15 @@ class _RootPageState extends ConsumerState<RootPage> {
         SettingsSection(
           title: 'root 模式',
           children: [
+            // 报告 D3：这个开关只影响手机操控，不会让 Linux 环境变成 root。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: Text(
+                '这个授权只给手机操控用，不会让 Linux 环境（引擎）获得 root。'
+                '要让引擎真的以 uid 0 跑，去「开发者选项」打开 root 启动。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
             Consumer(
               builder: (context, ref, _) {
                 final status = ref.watch(phoneProvider.select((s) => s.status));

@@ -270,10 +270,12 @@ class RuntimeLaunchFacts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final en = l10n.localeName == 'en';
     String method(String mode) => switch (mode) {
       'direct' => l10n.phoneLaunchDirect,
       'proot' => l10n.phoneLaunchCompatible,
       'tawcroot' => l10n.phoneLaunchTawcroot,
+      'root' => en ? 'Root (uid 0)' : 'root（uid 0）',
       _ => mode,
     };
     // One child of the card: keep SheetGroup's 2dp between its rows.

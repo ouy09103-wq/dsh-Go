@@ -2,6 +2,7 @@ package io.github.ouy09103.dsh_go_root.phone.shell
 
 import android.content.Context
 import io.github.ouy09103.dsh_go_root.root.RootExec
+import io.github.ouy09103.dsh_go_root.root.RootIdentity
 import io.github.ouy09103.dsh_go_root.root.RootSpawn
 import java.io.IOException
 
@@ -61,34 +62,9 @@ internal class ShellRootBackend(private val context: Context, private val onChan
 
     /**
      * Runs su once, before any command, and reads the identity from the kernel rather than from an exit
-     * code: uid 0 with an untrusted_app domain has no power over the files it claims to own. The
-     * trailing `true` keeps a failing `cat` from masking the uid we already read.
+     * code: uid 0 with an untrusted_app domain has no power over the files it claims to own.
      */
-    private fun preflight(): String? {
-        val result = RootExec.run("id -u 2>&1; cat /proc/self/attr/current 2>/dev/null; true", PREFLIGHT_TIMEOUT_MS)
-        if (result.exitCode == START_FAILED) {
-            val text = result.stderr.trim()
-            // Three different launch failures, kept apart: no su at all, a su that never answers,
-            // and a su the kernel refuses to execute (the stale /system/bin/su case).
-            return when {
-                text.contains(NO_SU) -> "suMissing"
-                text == TIMEOUT -> "rootSuFailed"
-                else -> "suNotExecutable"
-            }
-        }
-        val lines = result.stdout.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
-        val uid = lines.firstOrNull()?.toIntOrNull()
-        if (uid == null) {
-            val text = (result.stdout + " " + result.stderr).lowercase()
-            return if (DENIED.any { text.contains(it) }) "rootNotGranted" else "rootSuFailed"
-        }
-        // A su that answers with the app uid never reached the root domain; never call that root.
-        if (uid != 0) return "rootNotRoot"
-        val domain = lines.getOrNull(1).orEmpty()
-        if (domain.isBlank()) return "rootDomainUnknown"
-        if (domain.contains(UNTRUSTED)) return "rootWrongDomain"
-        return null
-    }
+    private fun preflight(): String? = RootIdentity.probe(PREFLIGHT_TIMEOUT_MS).failure
 
     /** app_process needs a moment to boot, so the banner is read outside the 5s RPC budget. */
     private fun banner(process: Process): Boolean {
@@ -120,12 +96,7 @@ internal class ShellRootBackend(private val context: Context, private val onChan
     private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private companion object {
-        const val PREFLIGHT_TIMEOUT_MS = 20_000L
+        const val PREFLIGHT_TIMEOUT_MS = RootIdentity.DEFAULT_TIMEOUT_MS
         const val BANNER_MS = 20_000L
-        const val START_FAILED = -1
-        const val TIMEOUT = "timeout"
-        const val NO_SU = "no su on this device"
-        const val UNTRUSTED = "untrusted_app"
-        val DENIED = listOf("permission denied", "not granted", "not allowed", "denied")
     }
 }

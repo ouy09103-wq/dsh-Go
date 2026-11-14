@@ -1,5 +1,5 @@
-# Temporary: runs only the Android Shell suites touched by the root-channel work,
-# so the Kotlin unit tests and the Dart page tests actually execute on this branch.
+# Temporary: runs the Kotlin unit tests and the Dart suites touched by the root work
+# (Android Shell channel, engine launch method, diagnostics wording) on this branch.
 name: Phone shell tests
 
 on:
@@ -9,7 +9,12 @@ on:
       - 'app/android/**'
       - 'app/lib/phone/**'
       - 'app/lib/ui/phone/**'
+      - 'app/lib/runtime/**'
+      - 'app/lib/ui/settings/**'
+      - 'app/lib/diagnostics/**'
       - 'app/test/phone/**'
+      - 'app/test/settings/**'
+      - 'app/test/diagnostics/**'
       - '.github/workflows/zz-phone-tests.yml'
   workflow_dispatch:
 
@@ -52,7 +57,7 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
       - working-directory: app/android
-        run: gradle --stacktrace :app:testArm64DebugUnitTest --tests '*phone.shell.*' --tests '*PhoneAndroidShellTest*'
+        run: gradle --stacktrace :app:testArm64DebugUnitTest --tests '*phone.shell.*' --tests '*PhoneAndroidShellTest*' --tests '*RootIdentityTest*' --tests '*RootLaunchTest*'
 
   dart:
     name: Dart phone tests
@@ -102,5 +107,9 @@ jobs:
       - run: flutter pub get --enforce-lockfile
       - name: Analyze
         run: flutter analyze --no-pub
-      - name: Phone tests
-        run: flutter test --no-pub --reporter github test/phone/android_shell
+      - name: Phone, settings and diagnostics tests
+        run: >-
+          flutter test --no-pub --reporter github
+          test/phone/android_shell
+          test/settings/direct_engine_settings_test.dart
+          test/diagnostics

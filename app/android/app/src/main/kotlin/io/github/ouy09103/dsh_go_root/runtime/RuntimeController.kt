@@ -14,6 +14,8 @@ import io.github.ouy09103.dsh_go_root.phone.PhoneControl
 import org.json.JSONArray
 import org.json.JSONObject
 import io.github.ouy09103.dsh_go_root.phone.skills.PhoneSkillRoute
+import io.github.ouy09103.dsh_go_root.root.RootExec
+import io.github.ouy09103.dsh_go_root.root.RootIdentity
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -152,6 +154,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "tawcEngineEnabled" to tawcEngine().enabled,
         "tawcEngineAvailable" to (tawcEngineUnavailable() == null),
         "tawcEngineActive" to (process?.executionMode == "tawcroot"),
+        "rootEngineEnabled" to rootEngine().enabled,
+        "rootEngineAvailable" to (rootEngineUnavailable() == null),
+        "rootEngineActive" to (process?.executionMode == "root"),
         "currentExecutionMode" to process?.executionMode,
         "launchSelectedMode" to lastLaunch?.selectedMode,
         "launchSpawned" to (lastLaunch?.spawned == true),
@@ -171,8 +176,18 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         failedRuntime = prefs.getString(K_TAWC_FAILED, null),
         runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
+    private fun rootEngine() = DirectLaunch.Preference(
+        saved = prefs.getBoolean(K_ROOT_ENGINE, false),
+        available = rootEngineUnavailable() == null,
+        failedRuntime = prefs.getString(K_ROOT_FAILED, null),
+        runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
+    )
     private fun tawcEngineUnavailable(): String? =
         TawcrootLaunch.unavailable(app.applicationInfo.nativeLibraryDir, android.os.Build.VERSION.SDK_INT)
+
+    /** No su means no root launch: the switch explains that instead of offering a doomed start. */
+    private fun rootEngineUnavailable(): String? =
+        if (RootExec.suPath() == null) RootIdentity.SU_MISSING else null
 
     private fun directEngineAvailable(): Boolean = runCatching {
         manifest.raw.optJSONObject("directEngine")?.optInt("schema") == 2
@@ -200,6 +215,22 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         check(!enabled || tawcEngineUnavailable() == null) { "this build does not include tawcroot" }
         val edit = prefs.edit().putBoolean(K_TAWC_ENGINE, enabled).remove(K_TAWC_FAILED)
         if (enabled) edit.putBoolean(K_DIRECT_ENGINE, false)
+        edit.apply()
+        emitStatus()
+    }
+
+    /**
+     * The opt-in root launch, off by default; same rules as [setDirectEngine] and mutually
+     * exclusive with both other methods, because only one process can own the runtime.
+     */
+    @Synchronized fun setRootEngine(enabled: Boolean) {
+        check(process == null && phase !in setOf(Phase.STARTING, Phase.RUNNING, Phase.STOPPING, Phase.INSTALLING) && !resetting) { "stop the engine before changing its launch method" }
+        check(!enabled || rootEngineUnavailable() == null) { "no su on this device: grant root to this app first" }
+        val edit = prefs.edit().putBoolean(K_ROOT_ENGINE, enabled).remove(K_ROOT_FAILED)
+        if (enabled) {
+            edit.putBoolean(K_DIRECT_ENGINE, false)
+            edit.putBoolean(K_TAWC_ENGINE, false)
+        }
         edit.apply()
         emitStatus()
     }
@@ -558,8 +589,10 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 timeline.spawned()
                 val direct = directEngine()
                 val tawc = tawcEngine()
+                val root = rootEngine()
                 p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay,
-                    tawcEngine = tawc.saved == true, tawcFailed = tawc.failed) { actualDirect ->
+                    tawcEngine = tawc.saved == true, tawcFailed = tawc.failed,
+                    rootEngine = root.saved == true, rootFailed = root.failed) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
                     if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
                 }
@@ -1046,6 +1079,16 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 restartNow("with compatible launch")
                 return
             }
+            if (source.root && readyAt == null && !expected && stopGen < runGen) {
+                // The root launch never got DSH up: PRoot from now on with this runtime, no
+                // failure card, no strike. Turning root on again gives it another try.
+                prefs.edit().putString(K_ROOT_FAILED, manifest.runtimeVersion).apply()
+                log("[dsh-app] root launch failed (exit $code${source.startupError?.let { ": $it" } ?: ""}); starting again with compatible launch", "system")
+                error = null
+                setPhase(Phase.STARTING)
+                restartNow("with compatible launch")
+                return
+            }
             val tail = synchronized(runTail) { runTail.toList() }
             var f = CrashClassifier.classify(code, readyAt, SystemClock.elapsedRealtime(), System.currentTimeMillis(), tail, runSafe, source.direct)
             val startupError = source.startupError
@@ -1166,6 +1209,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         private const val K_TAWC_ENGINE = "tawcEngine"
         /** Runtime version tawcroot failed to start DSH with. */
         private const val K_TAWC_FAILED = "tawcEngineFailedRuntime"
+        private const val K_ROOT_ENGINE = "rootEngine"
+        private const val K_ROOT_FAILED = "rootEngineFailedRuntime"
         private const val MAIN_FAILURE_LOG = "failure-normal.log"
         private const val LATEST_FAILURE_LOG = "failure-latest.log"
 
