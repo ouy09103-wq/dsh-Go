@@ -80,13 +80,13 @@ internal object RootEngine {
         if (!alive(pid)) return true
         // Alive but unconfirmed: never kill a stranger, and never claim it is gone.
         if (!owned(rootfs, pid)) return false
-        val script = buildString {
-            append("kill -TERM ").append(pid).append(" 2>/dev/null; ")
-            append("i=0; while [ $i -lt ").append(TICKS).append(" ]; do ")
-            append("if [ ! -d /proc/").append(pid).append(" ]; then exit 0; fi; ")
-            append("sleep 0.1; i=$((i+1)); done; ")
-            append("kill -KILL ").append(pid).append(" 2>/dev/null; exit 0")
-        }
+        // [dollar] keeps the shell's own `$n` out of Kotlin's string templates.
+        val dollar = '$'
+        val script = "kill -TERM $pid 2>/dev/null; " +
+            "n=0; while [ ${dollar}n -lt $TICKS ]; do " +
+            "if [ ! -d /proc/$pid ]; then exit 0; fi; " +
+            "sleep 0.1; n=${dollar}((n+1)); done; " +
+            "kill -KILL $pid 2>/dev/null; exit 0"
         RootExec.run(script, TERMINATE_TIMEOUT_MS)
         return !alive(pid)
     }

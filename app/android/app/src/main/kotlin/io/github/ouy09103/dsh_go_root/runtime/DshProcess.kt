@@ -109,11 +109,15 @@ class DshProcess(
         val rootReady = rootWanted && !rootFailed && rootIdentity?.granted == true
         // A uid 0 engine is invisible to this app's own /proc sweep: ask su about its pid file
         // whether or not this launch wants root, or a leftover one would outlive the switch.
-        if (RootEngine.pidFile(rootfs).exists()) {
-            if (RootEngine.reap(rootfs) != null) {
-                listener.onLog("[dsh-app] stopped the previous root engine", "system")
-                RootEngine.reclaim(rootfs)
-            }
+        val previousRoot = RootEngine.pidFile(rootfs).exists()
+        if (previousRoot && RootEngine.reap(rootfs) != null) {
+            listener.onLog("[dsh-app] stopped the previous root engine", "system")
+        }
+        // A root run leaves the guest home and tmp root-owned, and this app has to delete the pid
+        // file and chdir into that home before any launch, root or not: hand both back first. A
+        // root launch writes them as root again, which the next start reclaims the same way.
+        if ((previousRoot || rootReady) && !RootEngine.reclaim(rootfs)) {
+            listener.onLog("[dsh-app] the guest home is still root-owned; the launch may fail to write it", "system")
         }
         var selection = if (tawcReady || rootReady) DirectLaunch.select(rootfs, requested = true, safe = false)
             else DirectLaunch.select(rootfs, directEngine, safe, directFailed)
