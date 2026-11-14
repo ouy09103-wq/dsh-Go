@@ -133,14 +133,14 @@ extension _SlashHostOperations on _ScriptCoordinator {
     _observeSlashWaitError(completed.future);
 
     bool settled() => completed.isCompleted || call.ended || owner.terminal;
-    TavernScriptException normalize(Object error) => error is TavernScriptException
-        ? error
-        : _slashHostError(
-            invocation,
-            operation,
-            TavernScriptErrorCode.hookFailure,
-            'The host operation failed (${error.runtimeType}).',
-          );
+    TavernScriptException normalize(Object error) =>
+        _scriptReportedFailure(error) ??
+        _slashHostError(
+          invocation,
+          operation,
+          TavernScriptErrorCode.hookFailure,
+          'The host operation failed (${error.runtimeType}).',
+        );
 
     void reject(Object error, StackTrace stack, {bool fromHost = false}) {
       final original = normalize(error);

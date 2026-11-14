@@ -98,6 +98,58 @@ class _ScriptCoordinator implements TavernScriptBridge {
     if (error is TavernScriptException) {
       return error;
     }
+    if (error is TavernAuthoringException) {
+      final receipt = error.receipt;
+      if (error.code == 'resource_write_failed' && receipt != null) {
+        final unknown = receipt.committed == null;
+        final committed = receipt.committed == true;
+        final message = unknown
+            ? 'The resource write outcome is unconfirmed.'
+            : 'The resource write did not finish cleanly.';
+        return _scriptError(
+          TavernScriptErrorCode.storage,
+          'storage',
+          message,
+          committed: committed,
+          issues: [
+            TavernScriptIssue(
+              code: unknown ? 'authoring_adoption_unconfirmed' : error.code,
+              message: message,
+              committed: committed,
+              stage: 'storage',
+              details: {
+                'domainId': receipt.domainId,
+                'operationId': receipt.operationId,
+                'physicalResourceId': receipt.physicalResourceId,
+                'state': unknown ? 'unconfirmed' : receipt.state.name,
+                'committed': receipt.committed,
+                'historyPending': receipt.historyPending,
+              },
+            ),
+          ],
+        );
+      }
+      if (error.code == 'pending_operation') {
+        return _scriptError(
+          TavernScriptErrorCode.storage,
+          'storage',
+          error.message,
+          issues: [
+            TavernScriptIssue(
+              code: error.code,
+              message: error.message,
+              committed: false,
+              stage: 'storage',
+              details: {
+                'physicalResourceId': ?error.physicalResourceId,
+                'blockedOperationId': ?error.blockedOperationId,
+                'blockedDomainId': ?error.blockedDomainId,
+              },
+            ),
+          ],
+        );
+      }
+    }
     if (engine._closing || engine._closed || _closed) {
       return _scriptError(TavernScriptErrorCode.closedContext, 'bridge', 'The script engine is closed.');
     }
@@ -124,6 +176,15 @@ class _ScriptCoordinator implements TavernScriptBridge {
     }
     return _scriptError(TavernScriptErrorCode.storage, 'bridge', 'Bridge storage failed (${error.runtimeType}).');
   }
+
+  // Host failures keep their existing classification unless they already carry
+  // script facts or a managed resource receipt/pending identity.
+  TavernScriptException? _scriptReportedFailure(Object error) => error is TavernScriptException
+      ? error
+      : error is TavernAuthoringException &&
+            (error.code == 'resource_write_failed' && error.receipt != null || error.code == 'pending_operation')
+      ? _scriptFailure(error)
+      : null;
 
   @override
   TavernScriptCapabilities get capabilities => TavernScriptCapabilities(
@@ -542,12 +603,16 @@ class _ScriptCoordinator implements TavernScriptBridge {
     });
   }
 
-  Future<T> _dataWrite<T>(_ScriptChatCapture capture, FutureOr<T> Function() action) {
+  Future<T> _dataWrite<T>(_ScriptChatCapture capture, T Function(_ToolPreparationPermit? permit) action) {
     _context(capture.context.value.id);
     final turn = engine._turns[capture.chatId];
-    if (turn != null && !turn.scriptWritesAllowed && !turn.modelDrained.isCompleted) {
-      return _structureWrite(capture, action);
+    if (turn != null &&
+        !turn.scriptWritesAllowed &&
+        !turn.modelDrained.isCompleted &&
+        (!turn.toolAdmitted || turn.toolPhase == StoredToolPhase.native || turn.toolPhase == StoredToolPhase.owned)) {
+      return _structureWrite(capture, () => action(null));
     }
+    final permit = _captureToolPreparationPermit(engine, capture.chatId);
     final previous = engine._mutations[capture.chatId] ?? Future<void>.value();
     final released = Completer<void>();
     engine._mutations[capture.chatId] = released.future;
@@ -555,7 +620,8 @@ class _ScriptCoordinator implements TavernScriptBridge {
       try {
         await previous;
         _context(capture.context.value.id);
-        return await action();
+        _checkToolPreparationPermit(engine, permit);
+        return action(permit);
       } finally {
         if (identical(engine._mutations[capture.chatId], released.future)) {
           unawaited(engine._mutations.remove(capture.chatId));
@@ -784,10 +850,10 @@ class _ScriptCoordinator implements TavernScriptBridge {
       } while (context.refreshAgain && !context.closed);
     } catch (error, stack) {
       final TavernScriptException failure;
-      if (error is TavernScriptException && error.committed && error.issues.isNotEmpty) {
-        failure = error;
+      final classified = _scriptFailure(error);
+      if (classified.committed && classified.issues.isNotEmpty) {
+        failure = classified;
       } else {
-        final classified = _scriptFailure(error);
         final request = _dispatch(context, kind: TavernScriptDispatchKind.cache);
         final issue = TavernScriptIssue(
           code: classified.code.name,
@@ -797,14 +863,15 @@ class _ScriptCoordinator implements TavernScriptBridge {
           eventId: request.eventId,
           stage: 'cache',
         );
-        _observe(request, 'failed', true, issues: [issue]);
+        final issues = [...classified.issues, issue];
+        _observe(request, 'failed', true, issues: issues);
         failure = _scriptError(
           classified.code,
           'cache',
           issue.message,
           contextId: context.value.id,
           committed: true,
-          issues: [issue],
+          issues: issues,
         );
       }
       completed.completeError(failure, stack);
@@ -991,10 +1058,11 @@ class _ScriptCoordinator implements TavernScriptBridge {
         }
       }
     } catch (error) {
-      if (error is TavernScriptException) {
-        if (error.committed) knownCommitted = true;
-        rememberIssues(error.issues);
-        onObservedIssues?.call(request, error.issues, error.committed);
+      final reported = _scriptReportedFailure(error);
+      if (reported != null) {
+        if (reported.committed) knownCommitted = true;
+        rememberIssues(reported.issues);
+        onObservedIssues?.call(request, reported.issues, reported.committed);
       }
       issues = token.isCancelled || context.closed || hostVersion != _hostVersion
           ? failure(token.reason, 'Host delivery ended before acknowledgement.', cancelled: token.isCancelled)
@@ -1194,6 +1262,7 @@ class _ScriptCoordinator implements TavernScriptBridge {
             'failed',
             true,
             issues: [
+              ...?_scriptReportedFailure(error)?.issues,
               TavernScriptIssue(
                 code: 'hookFailure',
                 message: 'Canvas refresh failed (${error.runtimeType}).',
@@ -1442,6 +1511,7 @@ class _ScriptCoordinator implements TavernScriptBridge {
           }
         } catch (error) {
           final cancelled = turn.cancellation.isCancelled;
+          turn.hookIssues.addAll(_scriptReportedFailure(error)?.issues ?? const []);
           turn.hookIssues.add(
             TavernScriptIssue(
               code: cancelled ? 'cancelled' : 'hookFailure',
@@ -1464,11 +1534,17 @@ class _ScriptCoordinator implements TavernScriptBridge {
       if (!turn.cancellation.isCancelled) {
         await drainWrites(turn.chat.id, turn.cancellation);
       }
-      final current = engine._store.node(turn.chat.id, reply.nodeId);
-      turn.lastCommitted = current.message;
-      turn.state = engine._stateAt(turn.chat.id, reply.nodeId);
-      turn.variables = _runtimeCopy(_map(turn.state['variables']));
+      final refreshStarted = turn.profile?.now;
+      try {
+        final current = engine._store.node(turn.chat.id, reply.nodeId);
+        turn.lastCommitted = current.message;
+        turn.state = engine._stateFromNode(turn.chat.id, current);
+        turn.variables = _runtimeCopy(_map(turn.state['variables']));
+      } finally {
+        turn.profile?.record('after_message_refresh', refreshStarted!);
+      }
     } catch (error) {
+      turn.hookIssues.addAll(_scriptReportedFailure(error)?.issues ?? const []);
       turn.hookIssues.add(
         TavernScriptIssue(
           code: turn.cancellation.isCancelled ? 'cancelled' : 'hookFailure',
@@ -1580,6 +1656,7 @@ TavernScriptException _scriptError(
   String message, {
   String? contextId,
   String? nodeId,
+  String? generationId,
   String? fieldPath,
   bool committed = false,
   List<TavernScriptIssue> issues = const [],
@@ -1590,6 +1667,7 @@ TavernScriptException _scriptError(
   message: message,
   contextId: contextId,
   nodeId: nodeId,
+  generationId: generationId,
   fieldPath: fieldPath,
   committed: committed,
   issues: issues,

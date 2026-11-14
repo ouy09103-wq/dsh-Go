@@ -8,6 +8,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.os.Handler
+import android.os.Looper
+import io.github.ouy09103.dsh_go_root.phone.DiagnosticsTool
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -33,6 +39,8 @@ class RuntimePlugin :
     private var activity: ActivityPluginBinding? = null
     private var pendingStorageResult: MethodChannel.Result? = null
     private var managedSkillOwner: ManagedSkillOwner? = null
+    @Volatile private var diagnosticsAttached = false
+    private val diagnosticsRefresh: () -> Boolean = { refreshDiagnostics() }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
@@ -40,9 +48,13 @@ class RuntimePlugin :
         managedSkillOwner = controller.attachManagedSkillOwner()
         methods = MethodChannel(binding.binaryMessenger, "dsh/runtime").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger, "dsh/runtime/events").also { it.setStreamHandler(this) }
+        diagnosticsAttached = true
+        controller.attachDiagnosticsRefresh(diagnosticsRefresh)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        diagnosticsAttached = false
+        controller.detachDiagnosticsRefresh(diagnosticsRefresh)
         managedSkillOwner?.let { owner ->
             controller.detachManagedSkillOwner(owner)
         }
@@ -51,6 +63,28 @@ class RuntimePlugin :
         events.setStreamHandler(null)
         sink?.let { controller.removeSink(it) }
         sink = null
+    }
+
+    /** Called only by a bridge worker; Flutter remains free to collect and publish on main. */
+    private fun refreshDiagnostics(): Boolean {
+        if (!diagnosticsAttached || Looper.myLooper() == Looper.getMainLooper()) return false
+        val done = CountDownLatch(1)
+        val success = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).post {
+            if (!diagnosticsAttached) done.countDown()
+            else try {
+                methods.invokeMethod("refreshDiagnostics", null, object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        success.set(diagnosticsAttached && result == true)
+                        done.countDown()
+                    }
+                    override fun error(code: String, message: String?, details: Any?) { done.countDown() }
+                    override fun notImplemented() { done.countDown() }
+                })
+            } catch (_: RuntimeException) { done.countDown() }
+        }
+        if (!done.await(15, TimeUnit.SECONDS)) throw DiagnosticsTool.Failure("diagnostics_timeout")
+        return success.get()
     }
 
     // ActivityAware
@@ -75,7 +109,8 @@ class RuntimePlugin :
             "publishDiagnostics" -> {
                 val markdown = call.argument<String>("markdown")
                 val manual = call.argument<Any?>("manual") == true
-                result.success(if (markdown == null || markdown.length > 256 * 1024) null else controller.publishDiagnostics(markdown, manual = manual))
+                result.success(if (markdown == null || markdown.length > 256 * 1024) null else controller.publishDiagnostics(markdown, manual = manual,
+                    collectedAt = call.argument<Any?>("collectedAt"), sections = call.argument<Any?>("sections")))
             }
             "installManagedSkill" -> {
                 val owner = managedSkillOwner

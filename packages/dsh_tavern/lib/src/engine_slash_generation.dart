@@ -451,6 +451,8 @@ extension _SlashGenerationOperations on _ScriptCoordinator {
         model: config.model,
         deepseek: config.deepseek,
         thinking: config.thinking,
+        headers: config.headers,
+        auxiliary: config.auxiliary,
       ),
       engine._clock(),
       slashSpec: spec,

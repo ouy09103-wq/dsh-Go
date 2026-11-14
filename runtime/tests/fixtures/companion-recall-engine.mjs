@@ -57,7 +57,7 @@ export function textResponse(text = 'Synthetic fixture reply', { model = 'c750-f
 
 export async function createFixture({ prefix, home: existingHome, keepHome = false,
   transport, configureLlm, resolveAgent, permission = 'workspace-write', withRecall = true,
-  now = Date.now, deepseekOptions = {}, deepseekDependencies = {} } = {}) {
+  now = Date.now, deepseekOptions = {}, deepseekDependencies = {}, rootExecutor = 'native' } = {}) {
   // One Host owns DSH_HOME in a process. Tests of independent Hosts use child
   // processes, rather than pretending a mutable process-global home is scoped.
   if (environmentOwner) throw new Error('Independent recall Hosts require independent fixture processes');
@@ -100,12 +100,17 @@ export async function createFixture({ prefix, home: existingHome, keepHome = fal
       entry('sessions', 'dsh-session'), entry('projections', 'dsh-session-projection'),
       entry('agents', 'dsh-agent'), entry('presets', 'dsh-agent-preset-registry', { default: FULL_PRESET }),
       entry('prompt', 'dsh-system-prompt', { includeHarnessIdentity: true, includeRuntimeContext: true }),
-      entry('llm', 'dsh-llm'), entry('tools', 'dsh-tools'), entry('native', 'dsh-tool-executor-native'),
+      entry('llm', 'dsh-llm'), entry('tools', 'dsh-tools'),
+      entry('native', rootExecutor === 'ptc' ? 'dsh-tool-executor-ptc' : 'dsh-tool-executor-native'),
       entry('loop', 'dsh-agent-loop', { agents: [] }),
     ]));
     ctx = await engine.boot.boot('dsh', main, [], (host) => {
       host.provide('profileContext', { dir: home, installAnchor: join(engine.base, 'dsh-session/package.json') });
       host.provide('permissionPresets', { current: () => permissionState.value });
+      if (rootExecutor === 'ptc') host.provide('ptcRuntime', {
+        language: 'typescript',
+        async evaluate() { throw new Error('This fixture must never execute a program'); },
+      });
     });
     const pctx = ctx;
     const route = { provider: 'c750-direct-deepseek', model: 'c750-fixture-model', reasoningEffort: 'off', maxTokens: 128 };

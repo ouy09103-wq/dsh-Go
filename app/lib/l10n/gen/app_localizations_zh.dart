@@ -5779,6 +5779,67 @@ class L10nZh extends L10n {
   String get companionAdaptNetwork => '网络不通';
 
   @override
+  String get automaticDiagnosticsRecover => '恢复本地记录';
+
+  @override
+  String get automaticDiagnosticsRecoverHint => '仅在本机恢复分析记录，跳过已留存故障，不重新发送旧请求。';
+
+  @override
+  String get automaticDiagnosticsTitle => '自动故障分析';
+
+  @override
+  String get automaticDiagnosticsHint => '默认关闭 · 仅本机、前台且引擎可用时发送；同版本同类故障 24 小时内合并。关闭后停止新请求，已发送信息无法撤回。';
+
+  @override
+  String get automaticDiagnosticsConsentTitle => '开启自动故障分析？';
+
+  @override
+  String get automaticDiagnosticsConsent =>
+      '发生故障时，App 会将脱敏的版本、Android 系统信息、运行时状态、错误类别、语音阶段及自身进程退出原因，发送给当前本机引擎配置的模型服务商，可能产生模型费用。不含聊天正文、录音、凭据或原始日志。报告保存在独立的只读分析对话，不自动切换当前对话，不自动执行修复或向 GitHub 外发。关闭或切换主机后不再发起新分析，并尝试停止已有分析；已发送的信息无法撤回。';
+
+  @override
+  String get automaticDiagnosticsEnable => '同意并开启';
+
+  @override
+  String get automaticDiagnosticsOff => '已关闭';
+
+  @override
+  String get automaticDiagnosticsWaiting => '等待本机连接、前台与引擎可用';
+
+  @override
+  String get automaticDiagnosticsReady => '已开启 · 等待新故障';
+
+  @override
+  String get automaticDiagnosticsCollecting => '正在采集结构化故障信息';
+
+  @override
+  String get automaticDiagnosticsAnalyzing => '正在独立对话分析（最多 2 分钟）';
+
+  @override
+  String get automaticDiagnosticsComplete => '分析完成';
+
+  @override
+  String get automaticDiagnosticsCancelled => '分析已停止或中断；不会自动重试';
+
+  @override
+  String get automaticDiagnosticsFailed => '分析失败；本次故障不会自动重试';
+
+  @override
+  String get automaticDiagnosticsStoreFailed => '无法保存诊断设置或状态；自动分析已停止';
+
+  @override
+  String get automaticDiagnosticsCancelFailed => '停止请求失败；请在报告对话中检查并手动停止';
+
+  @override
+  String get automaticDiagnosticsViewReport => '查看最新分析对话';
+
+  @override
+  String get automaticDiagnosticsReportHint => '仅点击时打开，不打断当前对话；报告可能仍在生成或已中断。';
+
+  @override
+  String get automaticDiagnosticsReportTitle => '自动故障分析报告';
+
+  @override
   String get systemImeTitle => '系统输入法诊断';
 
   @override
@@ -8894,6 +8955,9 @@ class L10nZh extends L10n {
   String get launchFitCenter => '居中';
 
   @override
+  String get launchFrame => '调整位置';
+
+  @override
   String get launchBackground => '背景色';
 
   @override
@@ -11545,9 +11609,6 @@ class L10nZh extends L10n {
   String get phoneSelfCheckCancel => '请求取消';
 
   @override
-  String get phoneSelfCheckRetry => '仅重试清理';
-
-  @override
   String get phoneSelfCheckRefresh => '刷新状态';
 
   @override
@@ -11573,7 +11634,6 @@ class L10nZh extends L10n {
       'cleaning': '正在清理；取消不代表已撤销派发的输入',
       'done': '检查已结束，结果见技术详情',
       'cancelled': '已取消，已观察到的操作仍保留',
-      'cleanup_pending': '清理尚未确认，资源仍保留',
       'other': '状态不可用',
     });
     return '$_temp0';
@@ -11777,10 +11837,7 @@ class L10nZh extends L10n {
   String get phoneBackgroundParallelBusy => '后台通道正在准备或维护，暂不能接纳新任务。';
 
   @override
-  String get phoneBackgroundParallelRecovery => '请先处理未完成的后台资源恢复，再开始新任务。';
-
-  @override
-  String get phoneBackgroundParallelPeer => '当前连接的服务不支持所需的后台能力。';
+  String get phoneGateRetest => '重新检查此通道';
 
   @override
   String get phoneBackgroundParallelSerial => '此连接支持一个后台槽位，设置偏好仍会保留。';
@@ -11896,24 +11953,6 @@ class L10nZh extends L10n {
       'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。';
 
   @override
-  String get phoneGateCleanupTitle => '探针清理尚未确认';
-
-  @override
-  String get phoneGateCleanupUnknown => '新后台资源已被阻止。原通道仍可用时，只能重试原清理，不会重跑探针。';
-
-  @override
-  String get phoneGateCleanupRunning => '正在等待原探针及清理完成；清理确认前保留原通道。';
-
-  @override
-  String get phoneGateCleanupRetry => '仅重试清理';
-
-  @override
-  String get phoneGateCleanupDone => '清理已确认。请再次明确选择通道，重新检查。';
-
-  @override
-  String get phoneGateRetest => '重新检查此通道';
-
-  @override
   String phoneKeepTitle(String mode) {
     String _temp0 = intl.Intl.selectLogic(mode, {
       'shizuku': '保持 Shizuku 通道',
@@ -11954,22 +11993,6 @@ class L10nZh extends L10n {
 
   @override
   String get phoneKeepFailed => '没连上；下次打开 App 或开始操控时再试';
-
-  @override
-  String get phoneResourceRecoveryTitle => '后台资源待核验';
-
-  @override
-  String get phoneResourceRecoveryRunning => '正在核对原资源记录，完成前不能开始新的手机任务。';
-
-  @override
-  String get phoneResourceRecoveryStorage => '无法读取或保存资源记录。可重试保存或读取；已确认的释放不会重复执行，也不会重放旧操作。';
-
-  @override
-  String get phoneResourceRecoveryPending =>
-      '旧后台资源尚未核验，新的手机任务暂被阻止。请选择原授权通道后重试；仍无法核验时，可重启设备后再次检查。旧操作结果可能已经发生。确认任务中断提示不会清除这些资源。';
-
-  @override
-  String get phoneResourceRecoveryRetry => '重试资源核验';
 
   @override
   String get phoneSkillSectionTitle => '成功任务与技能';
@@ -16024,7 +16047,10 @@ class L10nZh extends L10n {
   String get searchKwPerformance => '省电,流畅,卡顿,发热,轻量,完整';
 
   @override
-  String get searchKwVoice => '语音识别,麦克风,听写,说话,语音';
+  String get searchKwVoice => '语音识别,麦克风,听写,说话,语音,朗读,语音通话,打电话,TTS,声音';
+
+  @override
+  String get searchKwVoiceReading => '朗读,朗读的声音,TTS,音色,海星,暗潮,声音';
 
   @override
   String get searchKwNotifications => '提醒,推送,横幅,消息,铃声';
@@ -17431,6 +17457,267 @@ class L10nZh extends L10n {
   String shellQuickPanelHint(String path) {
     return '在「$path」里调整';
   }
+
+  @override
+  String get speechReadAloud => '朗读';
+
+  @override
+  String get speechReadAloudStop => '停止朗读';
+
+  @override
+  String get speechReadSection => '朗读';
+
+  @override
+  String get speechReadFooter => '回复下方的朗读键、伙伴小屋和语音通话都用这个声音。';
+
+  @override
+  String get speechVoiceTitle => '朗读的声音';
+
+  @override
+  String get speechVoiceHello => '你好，这是朗读的声音。';
+
+  @override
+  String get speechVoiceDeepseek => 'DeepSeek';
+
+  @override
+  String get speechVoiceDeepseekHint => '登录的 DeepSeek 账号付费；没登录，或账号不能用于语音时，用设置里的 API Key。不用另外配置';
+
+  @override
+  String get speechVoiceDeepseekFooter => '按朗读的字数计费，价格见 DeepSeek 开放平台。读出前会去掉代码块、表格和链接地址。';
+
+  @override
+  String get speechVoiceStella => '海星（女声）';
+
+  @override
+  String get speechVoiceTide => '暗潮（男声）';
+
+  @override
+  String get speechVoiceStellaShort => '海星';
+
+  @override
+  String get speechVoiceTideShort => '暗潮';
+
+  @override
+  String get speechVoiceFollow => '跟朗读一样';
+
+  @override
+  String get speechVoiceFollowHint => '用设置 › 语音里朗读的声音';
+
+  @override
+  String get speechNotSetUp => '朗读的声音还没设置好，去设置 › 语音看看';
+
+  @override
+  String get speechNoCredential => '要先登录 DeepSeek 账号，或在设置里填 API Key';
+
+  @override
+  String get speechSignIn => 'DeepSeek 账号用不了语音（可能登录过期，或语音只认 API Key）。重新登录，或在设置里填上 API Key';
+
+  @override
+  String get speechUnauthorized => 'DeepSeek API Key 无效，请在设置里检查';
+
+  @override
+  String get speechBalance => 'DeepSeek 余额不足';
+
+  @override
+  String get speechRateLimited => '请求太频繁，稍后再试';
+
+  @override
+  String get speechNothingToRead => '这条回复没有可以朗读的文字';
+
+  @override
+  String get speechNotHeard => '没听清，再说一次';
+
+  @override
+  String get speechTooLong => '录音太长了，分几段说吧';
+
+  @override
+  String get speechBusy => '语音服务正忙，稍后再试';
+
+  @override
+  String get speechNetwork => '连不上语音服务，请检查网络';
+
+  @override
+  String get speechReadFailed => '朗读失败';
+
+  @override
+  String get speechListenFailed => '识别失败';
+
+  @override
+  String get speechCloudNotice => '语音会发给 DeepSeek 识别。想在手机上识别，可以换成语音模型。';
+
+  @override
+  String get speechCloudNotSetUp => '还没设置云端识别服务';
+
+  @override
+  String get speechCallTile => '语音通话';
+
+  @override
+  String get speechCallSection => '语音通话';
+
+  @override
+  String get speechCallFooter => '通话时说完一句停一下，就会发出去；回答边写边读。';
+
+  @override
+  String get speechCallBargeIn => '插话打断';
+
+  @override
+  String get speechCallBargeInHint => 'AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你';
+
+  @override
+  String get speechCallSpoken => '口语回答';
+
+  @override
+  String get speechCallSpokenHint => '通话的第一条消息会请 AI 简短、口语化地回答';
+
+  @override
+  String get speechCallSpeaker => '默认免提';
+
+  @override
+  String get speechCallSpeakerHint => '接上耳机时总用耳机';
+
+  @override
+  String get speechCallHint => '（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '（你说到「$heard」时我打断了你，后面的我没听到。）';
+  }
+
+  @override
+  String get speechCallCutEarly => '（你刚开口我就打断了你，这条回答我没听到。）';
+
+  @override
+  String get speechCallCue => '思考提示音';
+
+  @override
+  String get speechCallCueHint => '回答一时没出声时，轻响一声表示还在想';
+
+  @override
+  String get speechLiveSection => '实时字幕';
+
+  @override
+  String get speechLiveName => '流式识别模型';
+
+  @override
+  String speechLiveAbsentNote(String mb) {
+    return '下载后，通话时一边说一边出字，插话也停得更快。约 $mb，在手机上运行';
+  }
+
+  @override
+  String speechLiveReadyNote(String mb) {
+    return '已占用 $mb，通话时自动使用';
+  }
+
+  @override
+  String get speechLiveFooter => '字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。';
+
+  @override
+  String get speechLiveDeleteTitle => '删除流式识别模型？';
+
+  @override
+  String get speechLiveDeleteBody => '删除后通话不再显示实时字幕，随时可以重新下载。';
+
+  @override
+  String get speechCallStarting => '正在接通';
+
+  @override
+  String get speechCallListening => '在听';
+
+  @override
+  String get speechCallHearing => '你在说';
+
+  @override
+  String get speechCallThinking => '想一想';
+
+  @override
+  String get speechCallSpeaking => '正在说，轻点光球可以跳过';
+
+  @override
+  String get speechCallMuted => '已静音';
+
+  @override
+  String get speechCallEnded => '通话已结束';
+
+  @override
+  String get speechCallEndPermission => '没有麦克风权限';
+
+  @override
+  String get speechCallEndMicrophone => '麦克风被占用或打不开';
+
+  @override
+  String get speechCallEndNoRecognizer => '通话需要能识别录音的方式：登录 DeepSeek 账号、填 API Key，或下载语音模型';
+
+  @override
+  String get speechCallEndBackground => '切到后台时通话会结束';
+
+  @override
+  String get speechCallEndFailed => '录音出错，通话已结束';
+
+  @override
+  String get speechCallSendFailed => '没发出去，再说一次';
+
+  @override
+  String get speechCallSkipHint => '跳过这段回答';
+
+  @override
+  String get speechCallMute => '静音';
+
+  @override
+  String get speechCallUnmute => '取消静音';
+
+  @override
+  String get speechCallHangUp => '挂断';
+
+  @override
+  String get speechCallSpeakerOn => '免提';
+
+  @override
+  String get speechCallEarpiece => '听筒';
+
+  @override
+  String get speechBackdropTitle => '通话背景';
+
+  @override
+  String get speechBackdropSea => '深海';
+
+  @override
+  String get speechBackdropImage => '我的图片';
+
+  @override
+  String get speechBackdropImagePick => '选一张图';
+
+  @override
+  String get speechBackdropCompanion => '伙伴';
+
+  @override
+  String get speechBackdropHint => '图片会虚化、压暗，字幕看得清。选伙伴时，她会跟着声音说话。';
+
+  @override
+  String get speechBackdropHintChange => '再点一次「我的图片」可以换一张。选伙伴时，她会跟着声音说话。';
+
+  @override
+  String get speechBackdropNoCompanion => '先在伙伴小屋里请她住进来，才能把她放进通话里。';
+
+  @override
+  String get speechBackdropReplace => '换一张图';
+
+  @override
+  String get speechBackdropPickFailed => '这张图用不了，换一张试试';
+
+  @override
+  String get speechCallVisual => '光效';
+
+  @override
+  String get speechCallVisualRing => '光环';
+
+  @override
+  String get speechCallVisualMono => '细线';
+
+  @override
+  String get speechCallVisualGlass => '光球';
+
+  @override
+  String get speechInsecure => '这个云端服务的地址不是 https，Key 不能这样发出去';
 
   @override
   String starPromptTitle(int hours) {
@@ -21228,6 +21515,21 @@ class L10nZh extends L10n {
   String get tavernCardScriptsHintAction => '打开';
 
   @override
+  String get tavernRender => '显示方式';
+
+  @override
+  String get tavernRenderSubtitle => '只管这个角色的单人对话：卡里的状态栏、美化要选网页或画布才显示，脚本只在画布里运行';
+
+  @override
+  String get tavernRenderText => '文字';
+
+  @override
+  String get tavernRenderIslands => '消息网页';
+
+  @override
+  String get tavernRenderCanvas => '整页画布';
+
+  @override
   String get tavernCanvasSubtitle =>
       '整段对话放进一张网页，按 SillyTavern 的结构排，卡写给 ST 的样式能跨消息生效。卡里的脚本会运行，不想让它跑就打开「网页里不运行卡的脚本」。视觉小说不用它。';
 
@@ -21352,7 +21654,7 @@ class L10nZh extends L10n {
   String get tavernGroupHelperModel => '用辅助模型';
 
   @override
-  String get tavernGroupHelperModelNote => '用便宜快的模型说（DeepSeek 是 flash、不思考），适合配角。';
+  String get tavernGroupHelperModelNote => '用辅助模型说（自动时 DeepSeek 用 flash 且不思考，其他渠道用主模型），适合配角。';
 
   @override
   String get tavernGroupMoveUp => '往前挪';
@@ -21403,6 +21705,685 @@ class L10nZh extends L10n {
 
   @override
   String get tavernGroupErrorHostInUse => '这个角色是一个群聊的群主，先删掉那个群聊';
+
+  @override
+  String get tavernGroupErrorInvalidTitle => '群聊的名字不能只有空白';
+
+  @override
+  String tavernToolRollUnsettled(String dice) {
+    return '🎲 $dice：结果还没确认';
+  }
+
+  @override
+  String tavernToolRollNotDone(String dice) {
+    return '🎲 $dice：没有掷';
+  }
+
+  @override
+  String tavernToolRollPass(int target) {
+    return '目标 $target，成功';
+  }
+
+  @override
+  String tavernToolRollFail(int target) {
+    return '目标 $target，没过';
+  }
+
+  @override
+  String tavernToolMemory(String text) {
+    return '想记住：「$text」';
+  }
+
+  @override
+  String get tavernToolMemoryAccept => '记住';
+
+  @override
+  String get tavernToolMemoryReject => '不用';
+
+  @override
+  String get tavernToolMemoryStaged => '等这一回合写完再定';
+
+  @override
+  String tavernToolMemoryIneligible(String reason) {
+    return '现在不能确认：$reason';
+  }
+
+  @override
+  String get tavernToolMemoryAccepted => '已记住';
+
+  @override
+  String get tavernToolMemoryAuto => '已按自动设置记住';
+
+  @override
+  String get tavernToolMemoryRejected => '没有记';
+
+  @override
+  String get tavernToolMemoryInactive => '这一回合没有正常写完，没有记';
+
+  @override
+  String get tavernToolMemoryWaiting => '上次的决定还没确认上';
+
+  @override
+  String tavernToolMemoryNotApplied(String reason) {
+    return '没记上：$reason';
+  }
+
+  @override
+  String tavernToolMemoryFailed(String detail) {
+    return '没确认上：$detail';
+  }
+
+  @override
+  String get tavernToolReasonRevision => '它已经变了，刷新后再定';
+
+  @override
+  String get tavernToolReasonResolved => '已经定过了';
+
+  @override
+  String get tavernToolReasonContext => '对话已经变了';
+
+  @override
+  String get tavernToolReasonDeleted => '那条回复被删了';
+
+  @override
+  String get tavernToolReasonChanged => '那条回复改过了';
+
+  @override
+  String get tavernToolReasonBranch => '不在现在这条线上';
+
+  @override
+  String get tavernToolReasonInactive => '已经失效';
+
+  @override
+  String get tavernToolReasonUnknown => '原因不明';
+
+  @override
+  String get tavernToolPolicy => '工具';
+
+  @override
+  String get tavernToolPolicyRoll => '让角色掷骰';
+
+  @override
+  String get tavernToolPolicyRollSubtitle => '回复里要掷骰时，由酒馆来掷，点数记下来';
+
+  @override
+  String get tavernToolPolicyRemember => '让角色记事';
+
+  @override
+  String get tavernToolPolicyRememberSubtitle => '角色觉得值得记住的事，按下面的方式记进记忆';
+
+  @override
+  String get tavernToolPolicyMode => '记事方式';
+
+  @override
+  String get tavernToolPolicyModeAsk => '先问我';
+
+  @override
+  String get tavernToolPolicyModeAuto => '自动';
+
+  @override
+  String get tavernToolPolicyDiagnostics => '设置里有一部分读不懂，对应的工具先关着';
+
+  @override
+  String get tavernToolPolicyNote => '只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们';
+
+  @override
+  String tavernToolPolicyFailed(String detail) {
+    return '没改成：$detail';
+  }
+
+  @override
+  String get tavernChatTools => '这局的工具';
+
+  @override
+  String get tavernChatToolFollow => '跟设置';
+
+  @override
+  String get tavernChatToolOn => '开';
+
+  @override
+  String get tavernChatToolOff => '关';
+
+  @override
+  String tavernChatToolNow(String roll, String remember) {
+    return '这局实际：掷骰$roll，记事$remember';
+  }
+
+  @override
+  String get tavernChatToolHeld => '酒馆设置里关着的，这里打开也不算';
+
+  @override
+  String tavernInspectRequests(int count) {
+    return '$count 次请求';
+  }
+
+  @override
+  String tavernInspectUsageTotals(String prompt, String hit, String completion) {
+    return '输入 $prompt（缓存 $hit）· 输出 $completion';
+  }
+
+  @override
+  String get tavernReqUsagePrompt => '输入';
+
+  @override
+  String get tavernReqUsageCache => '缓存';
+
+  @override
+  String get tavernReqUsageCompletion => '输出';
+
+  @override
+  String tavernReqUsageLine(String field, String parts) {
+    return '$field：$parts';
+  }
+
+  @override
+  String get tavernReqUsageJoin => '，';
+
+  @override
+  String tavernReqUsageKnown(String known) {
+    return '已明确 $known';
+  }
+
+  @override
+  String tavernReqUsageUnknown(int count) {
+    return '$count 个请求未知';
+  }
+
+  @override
+  String tavernReqUsageMissing(int count) {
+    return '$count 个请求没报告';
+  }
+
+  @override
+  String tavernReqUsageInvalid(int count) {
+    return '$count 个请求报告的数不对';
+  }
+
+  @override
+  String get tavernToolFailBudget => '这一回合用工具的次数用完了，停在这里；之前已经掷的骰子照样算数';
+
+  @override
+  String get tavernToolFailBatch => '模型一次要用的工具太多，这一批没有执行';
+
+  @override
+  String get tavernToolFailProtocol => '模型给的工具调用格式不对，没有执行';
+
+  @override
+  String get tavernToolFailSnapshot => '这个模型的回复没法接着用工具，停在这里';
+
+  @override
+  String get tavernToolFailReceipt => '工具的结果没能存好，稍后看看这一回合';
+
+  @override
+  String get tavernToolFailAnchor => '对话在这一回合中途变了，没有接着写';
+
+  @override
+  String get tavernToolFail => '用工具时出错了';
+
+  @override
+  String tavernToolFailDetail(String detail) {
+    return '用工具时出错了：$detail';
+  }
+
+  @override
+  String get tavernDiceUnsettled => '结果还没确认，可以再查一次';
+
+  @override
+  String get tavernDicePending => '上次那次掷骰还没确认';
+
+  @override
+  String get tavernDiceRecheck => '再查一次';
+
+  @override
+  String get tavernDiceForget => '放弃这次';
+
+  @override
+  String get tavernDiceBusy => '现在正忙，等这一回合写完再掷';
+
+  @override
+  String get tavernDiceOff => '酒馆设置里关了掷骰';
+
+  @override
+  String tavernDiceFailed(String detail) {
+    return '没掷成：$detail';
+  }
+
+  @override
+  String tavernDiceNotSaved(String detail) {
+    return '没确认上：$detail';
+  }
+
+  @override
+  String get tavernChannel => '渠道';
+
+  @override
+  String get tavernChannelDeepSeek => 'DeepSeek 官方';
+
+  @override
+  String get tavernChannelDeepSeekNote => '用 App 里填的 DeepSeek Key';
+
+  @override
+  String get tavernChannelAdd => '添加渠道';
+
+  @override
+  String get tavernChannelEdit => '编辑渠道';
+
+  @override
+  String get tavernChannelsNote =>
+      '兼容 OpenAI 接口的服务都能加：中转站、OpenRouter、自己电脑上跑的模型。Key 只存在这台手机的安全存储里。费用估算只认 DeepSeek 官方的价格，其他渠道只显示 token 数。';
+
+  @override
+  String get tavernChannelName => '名称';
+
+  @override
+  String get tavernChannelNameHint => '不填就用网址';
+
+  @override
+  String get tavernChannelBaseUrlInvalid => '要以 http:// 或 https:// 开头';
+
+  @override
+  String get tavernChannelKeyOptional => '本地服务不需要 Key 可以不填';
+
+  @override
+  String get tavernChannelKeyKept => '已存了 Key，不填就保持原样';
+
+  @override
+  String get tavernChannelFetchModels => '获取列表';
+
+  @override
+  String get tavernChannelFetching => '获取中…';
+
+  @override
+  String tavernChannelFetchFailed(String detail) {
+    return '没拿到模型列表（$detail），直接填模型名也行';
+  }
+
+  @override
+  String get tavernChannelNoModels => '这个服务没列出模型，直接填模型名就行';
+
+  @override
+  String get tavernChannelModelHint => '服务商给的模型名';
+
+  @override
+  String get tavernChannelModelMissing => '填一个模型名';
+
+  @override
+  String get tavernChannelPickModel => '选模型';
+
+  @override
+  String get tavernChannelSearchModels => '搜索模型';
+
+  @override
+  String get tavernChannelDeepSeekApi => '按 DeepSeek 接口发送';
+
+  @override
+  String get tavernChannelDeepSeekApiNote => '用 DeepSeek 的续写方式和思考开关。只在 DeepSeek 官方或原样转发它的中转上打开。';
+
+  @override
+  String get tavernChannelDelete => '删除渠道';
+
+  @override
+  String tavernChannelDeleteTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get tavernChannelDeleteMessage => '它的 Key 也会一起删掉。正在用它的话，换回 DeepSeek 官方。';
+
+  @override
+  String get tavernChannelCopyFromApp => '从 App 的渠道复制';
+
+  @override
+  String get tavernModelName => '模型名';
+
+  @override
+  String get tavernNumberCustom => '自定义';
+
+  @override
+  String get tavernNumberType => '输入数值';
+
+  @override
+  String tavernNumberRange(String min, String max) {
+    return '填 $min 到 $max 之间的数';
+  }
+
+  @override
+  String tavernNumberRangeWhole(String min, String max) {
+    return '填 $min 到 $max 之间的整数';
+  }
+
+  @override
+  String get tavernTopP => 'Top P';
+
+  @override
+  String get tavernPresencePenalty => '存在惩罚';
+
+  @override
+  String get tavernFrequencyPenalty => '频率惩罚';
+
+  @override
+  String get tavernPresetSampling => '采样';
+
+  @override
+  String get tavernChannelHeaders => '请求头（可选）';
+
+  @override
+  String get tavernChannelHeadersNote => '每行一个，写成「名称: 值」。和 Key 一样存在这台手机的安全存储里。';
+
+  @override
+  String get tavernChannelHeadersInvalid => '每行写成「名称: 值」';
+
+  @override
+  String get tavernAuxiliary => '辅助模型';
+
+  @override
+  String get tavernAuxiliaryNote => '导演、群聊选人、秘密这些后台请求用它';
+
+  @override
+  String get tavernAuxiliaryAuto => '自动';
+
+  @override
+  String get tavernAuxiliaryAutoNote => '跟着主渠道：DeepSeek 用 Flash，其他渠道用同一个模型';
+
+  @override
+  String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
+  String get tavernChannelKeyClear => '清除';
+
+  @override
+  String get tavernChannelKeyCleared => 'Key 会在保存时清除';
+
+  @override
+  String get tavernDrafts => '草稿';
+
+  @override
+  String get tavernDraftsSubtitle => '改动先放在草稿里，挑好再应用到真的卡上';
+
+  @override
+  String get tavernDraftsForCard => '用 AI 改这张卡';
+
+  @override
+  String get tavernDraftsForCardSubtitle => '在草稿里改，挑好再应用';
+
+  @override
+  String get tavernDraftsEmpty => '还没有草稿';
+
+  @override
+  String get tavernDraftsEmptyOwn => '新建一份草稿，告诉 AI 想怎么改这张卡。';
+
+  @override
+  String get tavernDraftsEmptyAll => '从角色页开一份草稿，或者从文件起稿：文件先当草稿，不会直接导入。';
+
+  @override
+  String get tavernDraftNew => '新草稿';
+
+  @override
+  String get tavernDraftFromFile => '从文件起稿';
+
+  @override
+  String tavernDraftSeedUnsupported(String name) {
+    return '$name 不是角色卡或世界书，没法起稿';
+  }
+
+  @override
+  String get tavernDraft => '草稿';
+
+  @override
+  String get tavernDraftSubtitle => '草稿里的改动还没用到真的卡上';
+
+  @override
+  String get tavernDraftGone => '这份草稿已经不在了';
+
+  @override
+  String get tavernDraftKindCharacter => '角色卡';
+
+  @override
+  String get tavernDraftKindPreset => '预设';
+
+  @override
+  String tavernDraftNewSource(String name) {
+    return '$name（还没存）';
+  }
+
+  @override
+  String get tavernDraftGreetings => '备选开场白';
+
+  @override
+  String tavernDraftEntry(int n) {
+    return '第 $n 条';
+  }
+
+  @override
+  String get tavernDraftNoChanges => '还没有改动';
+
+  @override
+  String get tavernDraftNoChangesHint => '在下面告诉 AI 想怎么改';
+
+  @override
+  String get tavernDraftBefore => '原来';
+
+  @override
+  String get tavernDraftAfter => '改成';
+
+  @override
+  String get tavernDraftAbsent => '（没有）';
+
+  @override
+  String get tavernDraftRemoved => '删掉';
+
+  @override
+  String get tavernDraftAppliedChange => '已应用';
+
+  @override
+  String tavernDraftDependsOn(int n) {
+    return '要和它前面的 $n 处改动一起用';
+  }
+
+  @override
+  String get tavernDraftRemoveChange => '从草稿里去掉这处';
+
+  @override
+  String tavernDraftApply(int n) {
+    return '应用 $n 处';
+  }
+
+  @override
+  String get tavernDraftSaveNew => '另存为新的';
+
+  @override
+  String get tavernDraftSavedNew => '已另存为新的';
+
+  @override
+  String get tavernDraftChecked => '检查过，没发现问题';
+
+  @override
+  String get tavernDraftCannotApply => '正则和预设的草稿暂时只能预览，不能应用';
+
+  @override
+  String tavernDraftApplied(String name) {
+    return '已应用到「$name」';
+  }
+
+  @override
+  String get tavernDraftNoChange => '和现在的一样，没有要改的';
+
+  @override
+  String tavernDraftNotApplied(String reason) {
+    return '没有应用：$reason';
+  }
+
+  @override
+  String get tavernDraftUnconfirmed => '写入结果还没确认。先别重复点，过一会儿看历史版本里有没有。';
+
+  @override
+  String tavernDraftApplyUnknown(String reason) {
+    return '没收到结果（$reason），再点一次会接着同一次操作';
+  }
+
+  @override
+  String tavernDraftBehind(String name) {
+    return '「$name」在起草之后改过了（也可能是刚应用过）。按现在的版本继续，再看一遍改动。';
+  }
+
+  @override
+  String get tavernDraftCatchUp => '按现在的版本继续';
+
+  @override
+  String get tavernDraftChangedMeanwhile => '草稿刚被改过，已刷新';
+
+  @override
+  String get tavernDraftPending => '上一次写入还没确认，暂时不能再应用';
+
+  @override
+  String get tavernDraftDelete => '删除草稿';
+
+  @override
+  String get tavernDraftDeleteTitle => '删除这份草稿？';
+
+  @override
+  String get tavernDraftDeleteBody => '只删草稿，已经应用到卡上的不受影响。';
+
+  @override
+  String get tavernDraftAskHint => '想怎么改？比如：开场白冷淡一点';
+
+  @override
+  String get tavernDraftAiSend => '让 AI 改';
+
+  @override
+  String get tavernDraftAiStop => '停下';
+
+  @override
+  String get tavernDraftAiTitle => 'AI';
+
+  @override
+  String get tavernDraftAiRunning => '正在改…';
+
+  @override
+  String get tavernDraftAiDone => '改好了，改动在上面，挑好再应用';
+
+  @override
+  String get tavernDraftAiStopped => '已停下';
+
+  @override
+  String get tavernDraftAiConflict => '草稿在这期间被改过，AI 停下了';
+
+  @override
+  String get tavernDraftAiBudget => '四次请求用完了，先停在这里';
+
+  @override
+  String get tavernDraftAiFailed => '出错了';
+
+  @override
+  String get tavernDraftAiInterrupted => '中断了（App 关过）';
+
+  @override
+  String get tavernDraftEarlier => '之前问过的';
+
+  @override
+  String tavernDraftRunReceipts(int changes, int requests) {
+    return '改了 $changes 次 · $requests 次请求';
+  }
+
+  @override
+  String get tavernDraftHistory => '历史版本';
+
+  @override
+  String get tavernDraftHistoryEmpty => '还没有记下的版本';
+
+  @override
+  String get tavernDraftHistoryNote => '回到某一版会另存成新的一版，之后的版本都还在；图片和对话不受影响。';
+
+  @override
+  String tavernDraftVersion(int n) {
+    return '第 $n 版';
+  }
+
+  @override
+  String get tavernDraftVersionCurrent => '现在';
+
+  @override
+  String get tavernDraftRestore => '回到这一版';
+
+  @override
+  String tavernDraftRestoreTitle(int n) {
+    return '回到第 $n 版？';
+  }
+
+  @override
+  String get tavernDraftRestoreBody => '会另存成新的一版。';
+
+  @override
+  String tavernDraftRestored(int n) {
+    return '已回到第 $n 版';
+  }
+
+  @override
+  String get tavernDraftRestoreMoved => '这期间又改过了，刷新后再试';
+
+  @override
+  String get tavernDraftPrompt => '用草稿看提示词';
+
+  @override
+  String get tavernDraftPromptSubtitle => '把勾选的改动放进去，看下一轮会发什么；什么都不发送';
+
+  @override
+  String get tavernDraftPromptFrom => '接着哪段对话';
+
+  @override
+  String get tavernDraftPromptFirst => '新对话的第一句';
+
+  @override
+  String get tavernDraftPromptText => '下一句（可不填）';
+
+  @override
+  String get tavernDraftPromptTextHint => '你会说的话';
+
+  @override
+  String get tavernDraftPromptShow => '看提示词';
+
+  @override
+  String get tavernDraftPromptComplete => '提示词';
+
+  @override
+  String get tavernDraftPromptUnsupported => '这张卡有些内容在预览里没法照实拼出来';
+
+  @override
+  String get tavernDraftPromptNote => '卡里的脚本在预览里不运行。';
+
+  @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return '已报告：输入 $prompt · 输出 $completion（有请求没报告用量）';
+  }
+
+  @override
+  String get tavernDraftTrial => '试玩';
+
+  @override
+  String get tavernDraftTrialSubtitle => '用草稿在一段临时对话里聊几句，真实对话不受影响';
+
+  @override
+  String get tavernDraftTrialNote => '会真的请求模型，按实际用量计费；最多四句。';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return '第 $n 句';
+  }
+
+  @override
+  String get tavernDraftTrialMore => '再加一句';
+
+  @override
+  String get tavernDraftTrialPlay => '开始试玩';
+
+  @override
+  String get tavernDraftTrialRunning => '正在试…';
+
+  @override
+  String get tavernDraftTrialDone => '试完了';
+
+  @override
+  String get tavernDraftTrialUnsupported => '这份草稿暂时没法试玩';
 
   @override
   String get updateCheck => '检查更新';
@@ -23129,7 +24110,7 @@ class L10nZh extends L10n {
   String get viewUiDialectNote => '在网页版查看';
 
   @override
-  String get voiceSettingsTitle => '语音输入';
+  String get voiceSettingsTitle => '语音';
 
   @override
   String get voiceModeAuto => '自动';
@@ -23141,7 +24122,7 @@ class L10nZh extends L10n {
   String get voiceModeEngine => '语音模型';
 
   @override
-  String get voiceModeAutoHint => '有语音模型时用它，否则用系统识别';
+  String get voiceModeAutoHint => '有 DeepSeek 账号或 API Key 时用 DeepSeek，否则用语音模型或系统识别';
 
   @override
   String get voiceModeSystemHint => '使用手机设置中的识别服务';
@@ -23345,6 +24326,30 @@ class L10nZh extends L10n {
 
   @override
   String get voiceModelNoticeFailed => '语音模型下载失败，打开 App 重试';
+
+  @override
+  String get voiceModeDeepseek => 'DeepSeek';
+
+  @override
+  String get voiceModeDeepseekHint => '用 DeepSeek 的语音识别，登录的账号或 API Key 付费';
+
+  @override
+  String get voiceModeCloud => '其他云端服务';
+
+  @override
+  String get voiceModeCloudHint => 'OpenAI 兼容的语音转写接口，例如 Whisper、硅基流动';
+
+  @override
+  String get voiceCloudSection => '云端识别服务';
+
+  @override
+  String get voiceCloudFooter => '录音会发给这个服务识别。Key 只存在这台手机上。';
+
+  @override
+  String get voiceCloudBaseHelper => '填到 /v1 为止，App 会请求 …/audio/transcriptions';
+
+  @override
+  String get voiceCloudModelHelper => '例如 whisper-1、FunAudioLLM/SenseVoiceSmall';
 
   @override
   String get voiceScribeReadFailed => '没能读取语音设置，请重试。';

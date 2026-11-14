@@ -47,12 +47,14 @@
   // The frame can be replaced when the page rebuilds its layout; keep the
   // attribute watch on whichever frame is there, and report the new state.
   var watched = null;
+  var frameObserver = new MutationObserver(report);
   function bind() {
     var f = frame();
     if (f === watched) return;
+    frameObserver.disconnect();
     watched = f;
     if (f) {
-      new MutationObserver(report).observe(f, {
+      frameObserver.observe(f, {
         attributes: true,
         attributeFilter: ['data-sidebar-drawer', 'data-sidebar-collapsed'],
       });
@@ -60,7 +62,13 @@
     report();
   }
 
-  var root = document.querySelector('[data-slot="root"]');
-  if (root) new MutationObserver(bind).observe(root, { childList: true });
+  // Page load can finish before React mounts the root slot. Watch from the
+  // document so a late root (or its replacement) also gets a frame listener.
+  new MutationObserver(bind).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(report).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-dsh-app-layout'],
+  });
+  window.__dshAppSidebar = true;
   bind();
 })();

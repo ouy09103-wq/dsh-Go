@@ -185,6 +185,8 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
         model: config.model,
         deepseek: config.deepseek,
         thinking: config.thinking,
+        headers: config.headers,
+        auxiliary: config.auxiliary,
       ),
       engine._clock(),
     );
@@ -255,7 +257,7 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
         record.cancellation.isCancelled ||
         error is TavernModelException && error.kind == TavernFailure.cancelled ||
         error is TavernScriptException && error.code == TavernScriptErrorCode.cancelled;
-    final original = error is TavernScriptException ? error : null;
+    final original = _scriptReportedFailure(error);
     final model = error is TavernModelException
         ? error.kind
         : error is PromptBudgetExceeded
@@ -389,6 +391,8 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
       model: config.model,
       deepseek: config.deepseek,
       thinking: config.thinking,
+      headers: config.headers,
+      auxiliary: config.auxiliary,
     );
     try {
       record.cancellation.check();

@@ -48,6 +48,9 @@ internal class EngineUpgrade(
 
     fun isPending(): Boolean = present(pending)
 
+    /** Old payload from a committed upgrade; never resumes or discards an unfinished one. */
+    fun cleanupCommitted() = remove(done)
+
     fun activate(version: String, spec: EngineUpgradeSpec) {
         spec.validate()
         validateVersion(version)
@@ -77,7 +80,7 @@ internal class EngineUpgrade(
 
     fun recover() {
         // Committed transactions are retired atomically before their cleanup.
-        remove(done)
+        cleanupCommitted()
         if (!present(pending)) {
             remove(preparing)
             return
@@ -124,7 +127,7 @@ internal class EngineUpgrade(
         afterStep("marker")
         move(pending, done)
         afterStep("committed")
-        remove(done)
+        cleanupCommitted()
     }
 
     private fun ensureParent(file: File) {

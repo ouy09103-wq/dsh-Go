@@ -218,6 +218,7 @@ test('capabilities advertise implemented families independently of service avail
   assert.deepEqual(response.body, {v: 1, bridge: version, capabilities: [
     'inventory', 'occupancy', 'native-ui', 'native-stream', 'native-media', 'native-files',
     'plugin-config', 'session-deletion', 'companion', 'companion-prompt-context', 'companion-recall', 'companion-signals',
+    'speech',
   ]});
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');

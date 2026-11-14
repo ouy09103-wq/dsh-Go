@@ -135,6 +135,7 @@ enum TavernGroupError {
   invalidLimit,
   invalidOrder,
   hostInUse,
+  invalidTitle,
 }
 
 class TavernGroupException implements Exception {

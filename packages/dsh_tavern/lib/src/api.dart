@@ -8,6 +8,13 @@
 
 import 'dart:typed_data';
 
+import 'authoring.dart';
+import 'authoring_preview.dart';
+import 'authoring_render.dart';
+import 'authoring_run.dart';
+import 'authoring_script_preview.dart';
+import 'authoring_seed.dart';
+import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'import_report.dart';
@@ -18,6 +25,7 @@ import 'preset_library.dart';
 import 'regex_library.dart';
 import 'scripts.dart';
 import 'state.dart';
+import 'tools.dart';
 import 'worldinfo/world_info.dart' show WorldInfoSource;
 
 part 'group.dart';
@@ -238,7 +246,8 @@ class TavernTreeNode {
   final String? speakerCharacterId;
 }
 
-/// What one model call cost, as the API reported it.
+/// Legacy normalized token counters. They do not establish whether each raw
+/// provider field was present; exact multi-request evidence lives in tool usage.
 class TavernUsage {
   const TavernUsage({this.promptTokens = 0, this.cacheHitTokens = 0, this.completionTokens = 0, this.model});
 
@@ -246,6 +255,45 @@ class TavernUsage {
   final int cacheHitTokens;
   final int completionTokens;
   final String? model;
+}
+
+/// Saved provider-reported counters grouped by model and the call's UTC hour.
+/// A null model is its own group; [replyCount] counts replies with a report,
+/// including reports whose counters are zero.
+class TavernPathUsage {
+  const TavernPathUsage({
+    required this.model,
+    required this.utcWeekday,
+    required this.utcHour,
+    required this.promptTokens,
+    required this.cacheHitTokens,
+    required this.completionTokens,
+    required this.replyCount,
+  });
+
+  final String? model;
+
+  /// Monday = 1 through Sunday = 7. Older reports without a saved call time
+  /// use the reply timestamp; a historical continuation can therefore be approximate.
+  final int utcWeekday;
+
+  /// 0 through 23. Each model has at most 168 weekday/hour groups.
+  final int utcHour;
+  final int promptTokens;
+  final int cacheHitTokens;
+  final int completionTokens;
+  final int replyCount;
+}
+
+/// The small identity view of one stored logical tool turn.
+class TavernToolTurnSummary {
+  const TavernToolTurnSummary({required this.logicalTurnId, required this.replyNodeId});
+
+  final String logicalTurnId;
+
+  /// Null until the turn adopts a reply, or after that physical reply is
+  /// deleted. This association does not assert that the turn added new text.
+  final String? replyNodeId;
 }
 
 /// A turn as it streams. A turn always ends with exactly one [TavernTurnDone]
@@ -257,11 +305,18 @@ sealed class TavernEvent {
 /// First event when reconnecting to an active turn. This is the complete
 /// in-memory body at subscription time, including uncheckpointed text.
 class TavernTurnSnapshot extends TavernEvent {
-  const TavernTurnSnapshot({required this.chatId, required this.generationType, required this.startedAt, this.message});
+  const TavernTurnSnapshot({
+    required this.chatId,
+    required this.generationType,
+    required this.startedAt,
+    this.message,
+    this.logicalTurnId,
+  });
 
   final String chatId;
   final String generationType;
   final DateTime startedAt;
+  final String? logicalTurnId;
 
   /// Null while preparing the request, before a reply node exists. Later
   /// TavernTurnStarted supplies it. Impersonation has a temporary user node.
@@ -270,11 +325,22 @@ class TavernTurnSnapshot extends TavernEvent {
 
 /// The node the reply is written into exists (a new one, or a new sibling).
 class TavernTurnStarted extends TavernEvent {
-  const TavernTurnStarted(this.message);
+  const TavernTurnStarted(this.message, {this.logicalTurnId});
 
   /// Empty for a new reply; continuation retains its existing body. Carries
   /// the node id and its place among siblings.
   final TavernMessage message;
+  final String? logicalTurnId;
+}
+
+/// Refresh notification after actual tool audit adoption. It carries only
+/// durable identities; observing it never executes or repeats an action.
+class TavernToolActivity extends TavernEvent {
+  const TavernToolActivity(this.logicalTurnId, {this.requestId, this.executionId, this.proposalId});
+  final String logicalTurnId;
+  final String? requestId;
+  final String? executionId;
+  final String? proposalId;
 }
 
 class TavernTextDelta extends TavernEvent {
@@ -290,7 +356,7 @@ class TavernReasoningDelta extends TavernEvent {
 }
 
 class TavernTurnDone extends TavernEvent {
-  TavernTurnDone(this.message, {this.finishReason, List<TavernScriptIssue> hookIssues = const []})
+  TavernTurnDone(this.message, {this.finishReason, this.logicalTurnId, List<TavernScriptIssue> hookIssues = const []})
     : hookIssues = List.unmodifiable(hookIssues);
 
   /// As stored: write-back regex applied, usage filled in.
@@ -299,6 +365,7 @@ class TavernTurnDone extends TavernEvent {
   /// The provider's finish_reason, including length or content_filter. Null
   /// means the transport did not report one; unknown future values are kept.
   final String? finishReason;
+  final String? logicalTurnId;
   final List<TavernScriptIssue> hookIssues;
 }
 
@@ -313,12 +380,23 @@ enum TavernFailure {
   invalidCard,
   insufficientBalance,
   invalidParameters,
+  toolFailure,
 }
 
 class TavernTurnFailed extends TavernEvent {
-  TavernTurnFailed(this.kind, {this.detail, this.partial, List<TavernScriptIssue> hookIssues = const []})
-    : hookIssues = List.unmodifiable(hookIssues);
+  TavernTurnFailed(
+    this.kind, {
+    this.detail,
+    this.partial,
+    this.logicalTurnId,
+    this.toolFailureCode,
+    List<TavernScriptIssue> hookIssues = const [],
+  }) : hookIssues = List.unmodifiable(hookIssues);
   final TavernFailure kind;
+  final String? logicalTurnId;
+
+  /// Stable project terminal code for toolFailure; never a provider finish reason.
+  final String? toolFailureCode;
 
   /// For 「详情」: a status code, the first part of an error body.
   final String? detail;
@@ -365,6 +443,8 @@ class TavernModelConfig {
     this.model = 'deepseek-flash',
     this.deepseek = true,
     this.thinking = false,
+    this.headers = const {},
+    this.auxiliary,
   });
 
   final Future<String?> Function() apiKey;
@@ -376,6 +456,16 @@ class TavernModelConfig {
   /// endpoint.
   final bool deepseek;
   final bool thinking;
+
+  /// Additional HTTP headers, never included in inspection data or logs.
+  /// A non-empty [apiKey] overrides Authorization with Bearer authentication.
+  /// Otherwise OpenAI-compatible channels keep any supplied Authorization.
+  final Map<String, String> headers;
+
+  /// Configuration for director, secret and other helper requests. Null keeps
+  /// the current channel, using DeepSeek flash or the configured generic model
+  /// with thinking disabled. An explicit configuration is used as supplied.
+  final TavernModelConfig? auxiliary;
 }
 
 /// The tavern. One per app; [open] it on the app's support directory.
@@ -383,6 +473,133 @@ abstract interface class Tavern {
   /// Persisted script data and awaited App lifecycle bridge. Capabilities
   /// distinguish the implemented surface from later script/generation layers.
   TavernScriptBridge get scripts;
+
+  // Authoring drafts ----------------------------------------------------------
+
+  /// Captures existing sources in their actual writer queues. Characters and
+  /// standalone books include a durable authority revision. Other targets
+  /// support drafts and static checks, but not adoption.
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets);
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId);
+
+  /// Summary discovery does not validate every saved change; read or preview
+  /// a draft to validate its complete persisted structure.
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts();
+
+  /// Replaces the change list, keeping its saved base, and advances the draft
+  /// revision. Input values are captured before the first asynchronous wait.
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+
+  /// Explicitly captures a new base and adopts only the resubmitted changes.
+  /// An empty list resets the draft for a subsequent editing step.
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision});
+
+  /// Selects explicit change IDs, checks dependency closure, and runs static
+  /// intake checks. It does not execute macros or write an import report.
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  });
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  });
+
+  /// Adopts one physical resource after checking its saved base, the supplied
+  /// durable revision and the fresh source inside its actual writer queue.
+  /// The draft stays unchanged. Further changes to an adopted target require
+  /// an explicit rebase; untouched targets can still use their saved bases.
+  /// Reusing an operation ID with the same parameters returns its receipt,
+  /// including after the draft was deleted, without repeating the write.
+  Future<TavernAuthoringReceipt> applyAuthoringChanges(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  });
+
+  Future<TavernAuthoringOperation?> readAuthoringOperation(String operationId, {required String domainId});
+
+  /// Lists confirmed adoptions only. Prepared and unconfirmed operations are
+  /// available through readAuthoringOperation and are not committed versions.
+  Future<List<TavernAuthoringRevisionSummary>> listAuthoringRevisions(String physicalResourceId);
+
+  /// Uses a historical JSON after-image as a new adoption with a new version.
+  /// The target must still exist; a character must retain the same library
+  /// identity and available media. This does not restore deleted media or
+  /// overwrite library.json, original imports or attachments.
+  Future<TavernAuthoringReceipt> restoreAuthoringRevision(
+    String physicalResourceId, {
+    required TavernAuthorityRevision revision,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  });
+
+  /// Starts a separate authoring conversation whose tools only edit drafts.
+  /// Reusing the same run identity never sends another model request.
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  });
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId);
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({String? draftId, int limit = 30, String? beforeRunId});
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId);
+  Future<void> cancelAuthoringRun(String runId);
+
+  /// Saves an imported container as a draft, retaining its raw source and media.
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input);
+
+  /// Creates one new resource without changing the source draft. Preserve the
+  /// returned operation domain on retries, especially after a root restore.
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  });
+
+  /// Prepares the complete selected prompt in an isolated captured context.
+  /// Unsupported dependencies return no assembly and never fall back to live execution.
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(
+    TavernAuthoringPromptRequest request, {
+    TavernAuthoringPromptHost? host,
+  });
+
+  /// Renders selected saved content through an App-owned independent static
+  /// renderer. No prompt preparation, live scripts or model request is run.
+  /// Completion/cancellation waits for the session's actual work and close.
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  });
+
+  /// Runs one to four real normal sends in a private temporary sample chat.
+  /// This uses captured files with their original IDs and saved diagnostics,
+  /// then the real fresh-open loaders. Helpers/retries are additional actual
+  /// requests. Repeating requestId is a new invocation and can spend again.
+  /// Cancellation waits for real requests, key suppliers, close and cleanup.
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request);
+
   // Library ------------------------------------------------------------------
 
   /// The saved capability snapshot, or null for a missing/legacy asset.
@@ -517,6 +734,8 @@ abstract interface class Tavern {
 
   /// A shared tree with a stable host definition and sequential actor calls.
   /// Mutable inputs are captured at invocation. See [sendGroup] for admission.
+  /// Null title uses the host name. A blank resolved title is invalidTitle;
+  /// valid titles retain their original leading and trailing characters.
   Future<String> createGroupChat(
     List<String> characterIds, {
     String? hostCharacterId,
@@ -544,6 +763,8 @@ abstract interface class Tavern {
   });
   Future<TavernGroupChat> removeGroupMember(String chatId, String characterId);
   Future<TavernGroupChat> reorderGroupMembers(String chatId, List<String> characterIds);
+
+  /// Null title keeps the old title; an explicit blank title is invalidTitle.
   Future<TavernGroupChat> updateGroupChat(
     String chatId, {
     String? title,
@@ -583,6 +804,14 @@ abstract interface class Tavern {
   /// [limit] before [beforeNodeId] when paging back.
   Future<List<TavernMessage>> path(String chatId, {int limit = 60, String? beforeNodeId});
 
+  /// Totals saved reported usage for character replies from the selected leaf
+  /// to the root, grouped by model and the report's UTC weekday/hour.
+  /// Includes ST-hidden replies; excludes active replies, streaming checkpoints,
+  /// replies without reports and other branches. Reads no message bodies.
+  /// These are the latest saved node reports, not lifetime billing totals or
+  /// an overlay of uncommitted live requests. An unknown chat is an error.
+  Future<List<TavernPathUsage>> pathUsage(String chatId);
+
   /// Every visible stored node in insertion order, including inactive
   /// descendants and ST-hidden messages. Soft-deleted nodes are excluded.
   /// Previews use the saved body/checkpoint, not uncheckpointed live buffers;
@@ -607,6 +836,41 @@ abstract interface class Tavern {
   /// Most recent persistent state/agent execution records, newest first.
   /// An explicit node filter excludes records whose node was permanently deleted.
   Future<List<TavernAgentRun>> readAgentRuns(String chatId, {String? nodeId, int limit = 50});
+
+  /// Latest admitted tool turns in insertion order, newest first. Reads only
+  /// identities and reply ownership, without loading inspection or tool bodies.
+  /// An unknown chat or negative [limit] is an error; zero returns an empty list.
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20});
+
+  /// Reads persisted facts without resuming a model request or tool execution.
+  Future<TavernToolTurnSnapshot?> readToolTurn(String logicalTurnId);
+  Future<TavernToolReceipt?> readToolReceipt(String executionId);
+
+  /// Reuse actionId with the same complete parameters when retrying. A new
+  /// action on a busy chat fails without implicitly stopping its active turn.
+  Future<TavernToolReceipt> rollDice(
+    String chatId, {
+    required String actionId,
+    required String dice,
+    String? label,
+    int? target,
+    String? expectedNodeId,
+  });
+
+  /// A decision id identifies one immutable accept/reject attempt. Replays
+  /// return its original record beside current source and target observations.
+  Future<TavernMemoryDecisionReceipt> resolveMemoryProposal(
+    String proposalId, {
+    required String decisionId,
+    required int expectedVersion,
+    required TavernMemoryDecision decision,
+    required TavernToolContextAnchor expectedContextAnchor,
+  });
+  Future<TavernToolPolicySnapshot> readToolPolicy({String? chatId});
+
+  /// Edits only the tool-policy leaves. Adoption affects later admissions and
+  /// does not cancel the current turn; chat null leaf values restore inheritance.
+  Future<TavernToolPolicyWriteResult> setToolPolicy(Map<String, Object?> patch, {String? chatId});
 
   /// Fires whenever the current path changes (a turn, a swipe, an edit) so the
   /// screen re-reads [path].

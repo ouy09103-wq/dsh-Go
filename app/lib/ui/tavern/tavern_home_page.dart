@@ -27,6 +27,7 @@ import '../theme/theme.dart';
 import 'tavern_character_edit_page.dart';
 import 'tavern_character_page.dart';
 import 'tavern_chat_page.dart';
+import 'tavern_drafts_page.dart';
 import 'tavern_group_new_page.dart';
 import 'tavern_lorebooks_page.dart';
 import 'tavern_personas.dart';
@@ -474,6 +475,12 @@ class _TavernHomePageState extends ConsumerState<TavernHomePage> {
               final n => l10n.tavernQuickReplyCount(n),
             }),
             onTap: () => unawaited(Navigator.of(context).push(TavernQuickRepliesPage.route())),
+          ),
+          SettingsTile(
+            key: const ValueKey('tavern-library-drafts'),
+            icon: AppIcons.askAi,
+            title: l10n.tavernDrafts,
+            onTap: () => unawaited(Navigator.of(context).push(TavernDraftsPage.route())),
           ),
         ],
       ),

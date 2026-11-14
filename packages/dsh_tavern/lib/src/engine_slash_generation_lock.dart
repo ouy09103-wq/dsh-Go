@@ -176,14 +176,13 @@ extension _SlashGenerationLocks on _ScriptCoordinator {
   }
 
   TavernScriptException _normalizeSlashLeaseError(_SlashLeaseRequest request, Object error) =>
-      error is TavernScriptException
-      ? error
-      : _slashHostError(
-          request.lease.invocation,
-          request.operation == 'acquire' ? 'acquireGenerationLock' : 'releaseGenerationLock',
-          TavernScriptErrorCode.hookFailure,
-          'The generation lock host failed (${error.runtimeType}).',
-        );
+      _scriptReportedFailure(error) ??
+      _slashHostError(
+        request.lease.invocation,
+        request.operation == 'acquire' ? 'acquireGenerationLock' : 'releaseGenerationLock',
+        TavernScriptErrorCode.hookFailure,
+        'The generation lock host failed (${error.runtimeType}).',
+      );
 
   List<TavernScriptIssue> _slashLeaseFailureIssues(
     _SlashLeaseRequest request,

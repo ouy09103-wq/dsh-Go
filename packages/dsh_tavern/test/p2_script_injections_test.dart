@@ -186,7 +186,7 @@ void main() {
         },
         baseUrl: h.config.baseUrl,
         model: h.config.model,
-        deepseek: false,
+        deepseek: true,
       ),
     );
     final generation = await h.bridge.generateRaw(context.id, _raw('no-key'));

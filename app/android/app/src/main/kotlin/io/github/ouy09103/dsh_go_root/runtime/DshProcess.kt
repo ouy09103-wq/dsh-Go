@@ -238,14 +238,15 @@ class DshProcess(
             env.putAll(plan.environment)
         }
         if (root) {
-            // The same prepared plan, owned by uid 0: the script re-exports the environment
-            // because a root manager may hand its shell a bare one.
+            // The same plan, owned by uid 0 and confined by chroot: absolute paths inside the
+            // guest must not resolve against the device, or a uid 0 engine tidies Android's own
+            // /tmp and /var instead of the rootfs.
             val plan = DirectLaunch.prepare(rootfs, manifest.abi, argv, env.toMap())
             RootEngine.mark(rootfs)
-            val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"))
+            val scriptFile = File(RootEngine.marker(rootfs).parentFile, "dsh-root-engine.sh")
+            val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"), scriptFile)
             builder.command(rootPlan.argv).directory(rootPlan.cwd)
-            // An su that inherits a pipe for stdin waits for input that never comes; the engine
-            // reads nothing from it, so name the device explicitly.
+            // su and unshare both inherit stdin; a pipe that never closes would stall them.
             builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
             env.clear()
             env.putAll(rootPlan.environment)
@@ -282,6 +283,11 @@ class DshProcess(
         waiter = thread(name = "dsh-wait", isDaemon = true) {
             val code = try { p.waitFor() } catch (_: InterruptedException) { -1 }
             startupSignal.countDown()
+            // A root launch that never got DSH up has its own reasons (no namespace, no mount);
+            // a plain "exit 1" would hide the one piece of advice the user needs.
+            if (root && !readyReported && code != 0) {
+                synchronized(this) { if (process === p && !stopping) startupError = rootExitFailure(code) }
+            }
             // The fatal message is usually the last output: let the pumps drain it before reporting.
             try {
                 out.join(2000)
@@ -314,6 +320,13 @@ class DshProcess(
     }
 
     /** The one reason root cannot run, as the sentence the failure card shows. */
+    /** A launch that started and died instead of never starting: still a root failure, not a fallback. */
+    private fun rootExitFailure(code: Int): String = when (code) {
+        RootLaunch.EXIT_NO_NAMESPACE -> "root launch: this device cannot give a private mount namespace, so the engine cannot be confined (${RootLaunch.NO_NAMESPACE})"
+        RootLaunch.EXIT_MOUNT_FAILED -> "root launch: could not mount /dev, /proc and /sys into the rootfs"
+        else -> "root launch: the engine exited with code $code"
+    }
+
     private fun rootFailure(su: String?, identity: RootIdentity.Result?): String {
         val code = identity?.failure ?: if (su == null) RootIdentity.SU_MISSING else RootIdentity.SU_FAILED
         val detail = when (code) {

@@ -30,6 +30,7 @@ import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'tavern_arrive.dart';
 import 'tavern_audio_section.dart';
+import 'tavern_chat_tool_section.dart';
 import 'tavern_bookmarks_page.dart';
 import 'tavern_branches_page.dart';
 import 'tavern_character_page.dart';
@@ -37,6 +38,7 @@ import 'tavern_chat_files.dart';
 import 'tavern_inspector_page.dart';
 import 'tavern_lorebooks_page.dart';
 import 'tavern_message_edit_page.dart';
+import 'tavern_model_rows.dart';
 import 'tavern_personas.dart';
 import 'tavern_presets_page.dart';
 import 'tavern_runs_page.dart';
@@ -88,7 +90,10 @@ class TavernStagePanel extends ConsumerStatefulWidget {
 class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
   /// 本局 first: what is used most.
   TavernStageTab _tab = TavernStageTab.session;
-  late Future<TavernTurnInspection?> _record = _read();
+
+  /// Read when 本回合 is first shown: a whole turn's prompt is large, and
+  /// opening the panel should not wait on it.
+  Future<TavernTurnInspection?>? _record;
 
   Future<TavernTurnInspection?> _read() => ref.read(tavernProvider).inspectTurn(widget.chatId);
 
@@ -99,7 +104,7 @@ class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
   void didUpdateWidget(TavernStagePanel old) {
     super.didUpdateWidget(old);
     if (old.turn != widget.turn || old.chatId != widget.chatId) {
-      _record = _read();
+      _record = null;
       _usage = tavernSessionUsage(ref.read(tavernProvider), widget.chatId);
     }
   }
@@ -149,7 +154,7 @@ class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
             onSuggest: widget.onSuggest,
           ),
           TavernStageTab.turn => FutureBuilder<TavernTurnInspection?>(
-            future: _record,
+            future: _record ??= _read(),
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
                 return const Padding(
@@ -196,7 +201,6 @@ class _Session extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final settings = ref.watch(tavernSettingsProvider);
-    final model = ref.read(tavernSettingsProvider.notifier);
     final own = ref.watch(tavernChatLayoutProvider(chatId));
     final layout = ref.read(tavernChatLayoutProvider(chatId).notifier);
     final scene = ref.watch(tavernChatBackgroundProvider(chatId));
@@ -225,22 +229,13 @@ class _Session extends ConsumerWidget {
           title: l10n.tavernSessionUsing,
           margin: const EdgeInsets.only(bottom: 12),
           children: [
-            SettingsSegmentTile<String>(
-              key: const ValueKey('tavern-session-model'),
-              title: l10n.tavernSettingsModel,
+            ...tavernModelRows(
+              context,
+              ref,
+              keyPrefix: 'tavern-session',
               tinted: false,
-              segments: [
-                PillSegment(tavernModels[0], l10n.tavernModelFlash),
-                PillSegment(tavernModels[1], l10n.tavernModelPro),
-              ],
-              selected: settings.model,
-              onChanged: (value) => unawaited(model.setModel(value)),
-            ),
-            SettingsSwitchTile(
-              key: const ValueKey('tavern-session-thinking'),
-              title: l10n.tavernThinking,
-              value: settings.thinking,
-              onChanged: (on) => unawaited(model.setThinking(on)),
+              thinkingSubtitle: false,
+              open: open,
             ),
             SettingsTile(
               key: const ValueKey('tavern-chat-persona'),
@@ -324,6 +319,7 @@ class _Session extends ConsumerWidget {
           ],
         ),
         TavernAudioSection(chatId: chatId),
+        TavernChatToolSection(chatId: chatId),
         SettingsSection(
           title: l10n.tavernSessionMore,
           margin: EdgeInsets.zero,

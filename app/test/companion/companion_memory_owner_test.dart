@@ -406,6 +406,22 @@ void main() {
     await room.close(tester);
   });
 
+  testWidgets('a write whose reply is lost rereads what the host kept', (tester) async {
+    final room = _Room();
+    room.a.nextWrite = () async {
+      room.a.text = 'A changed';
+      room.a.revision++;
+      throw const DshClosedException('reply lost after the write landed');
+    };
+    await room.open(tester);
+    final reads = room.a.listReads;
+    await edit(tester, 'A memory', 'A changed');
+    expect(room.a.writes, hasLength(1));
+    expect(room.a.listReads, greaterThan(reads));
+    expect(find.text('A changed'), findsOneWidget);
+    await room.close(tester);
+  });
+
   testWidgets('a pending list can finish after the page is disposed', (tester) async {
     final room = _Room();
     final old = Completer<DshHttpResponse>();

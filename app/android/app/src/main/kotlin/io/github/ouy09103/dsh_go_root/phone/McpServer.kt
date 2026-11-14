@@ -44,6 +44,7 @@ class McpServer(
     private val tools: List<Map<String, Any?>>,
     private val call: (name: String, args: Map<String, Any?>, caller: PhoneCaller?) -> ToolOutput,
     private val serverVersion: String = "1",
+    private val diagnostics: ((Map<String, Any?>, PhoneCaller?) -> ToolOutput)? = null,
 ) {
     sealed interface Dispatch {
         /** Nothing to send (notification, response, blank line). */
@@ -109,6 +110,9 @@ class McpServer(
             "tools/call" -> {
                 val name = params["name"] as? String
                     ?: return Dispatch.Reply(error(id, INVALID_PARAMS, "tools/call needs a tool name"))
+                if (name == DiagnosticsTool.NAME && params.containsKey("arguments") && params["arguments"] !is Map<*, *>) {
+                    return Dispatch.Reply(error(id, INVALID_PARAMS, "Invalid diagnostics arguments"))
+                }
                 @Suppress("UNCHECKED_CAST")
                 val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
                 val rawMeta = params["_meta"]
@@ -139,7 +143,8 @@ class McpServer(
     internal fun runCall(id: Any?, name: String, args: Map<String, Any?>, caller: PhoneCaller?, handler: ((String, Map<String, Any?>, PhoneCaller?) -> ToolOutput)? = null,
                          nativeReplyCommit: PhoneReplyCommit? = null): String {
         val out = try {
-            (handler ?: call)(name, args, caller)
+            if (name == DiagnosticsTool.NAME && diagnostics != null) diagnostics.invoke(args, caller)
+            else (handler ?: call)(name, args, caller)
         } catch (e: Throwable) {
             // l10n:keep agent tool error
             ToolOutput("手机操控出错：${e.javaClass.simpleName}${e.message?.let { "：$it" } ?: ""}", isError = true)

@@ -311,6 +311,10 @@ interface TaskControls {
     val taskId: Long
     val lifecycle: Long
 
+    /** Keeps an already displayed status through consecutive executions of this owner.
+     * Never admits a new status; callers without native selection retain their execution guard. */
+    fun isCurrentDisplay(): Boolean = false
+
     fun isPaused(): Boolean
 
     /** 暂停 (true) / 继续 (false). While paused, MAIN actions are refused by the driver as well. */

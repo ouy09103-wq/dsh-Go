@@ -147,10 +147,17 @@ final class ChatJsonlCodec {
   Map<String, Object?> metadataForNode(ChatStore store, String chatId, {String? nodeId}) {
     final chat = store.chat(chatId);
     final id = nodeId ?? chat.currentLeafId;
-    if (id == null) {
+    return metadataForCapturedNode(store, chat, id == null ? null : store.node(chatId, id));
+  }
+
+  /// Projects a fully read [chat] and a fully read [node] from that same chat.
+  /// The caller has already resolved the store boundary; null means an empty
+  /// captured path. Does not mutate either snapshot or reread its full row.
+  Map<String, Object?> metadataForCapturedNode(ChatStore store, StoredChat chat, StoredNode? node) {
+    if (node == null) {
       return {..._clone(chat.metadata), 'variables': _clone(chat.variables)};
     }
-    final state = _effectiveState(store, chatId, store.node(chatId, id));
+    final state = _effectiveState(store, chat.id, node);
     return metadataForState(chat, state);
   }
 
@@ -158,12 +165,9 @@ final class ChatJsonlCodec {
   /// again. Single-node deletion uses this before reparenting even children
   /// hidden by a pending subtree deletion. Does not mutate [chat] or [state].
   Map<String, Object?> metadataForState(StoredChat chat, Map<String, Object?> state) {
-    var metadata = _clone(chat.metadata);
     final source = state[_sourceKey];
     final header = _sourceFor(chat.metadata, source);
-    if (header != null) {
-      metadata = _map(header['chat_metadata']);
-    }
+    final metadata = header == null ? _clone(chat.metadata) : _map(header['chat_metadata']);
     metadata.remove('variables');
     if (state['variables'] is Map<String, Object?>) {
       metadata['variables'] = _map(state['variables']);
@@ -259,8 +263,12 @@ final class ChatJsonlCodec {
     return _clone(tree._exportMessage(node, const {}));
   }
 
-  List<StChatDocument> exportChat(ChatStore store, String chatId, {String? fileName}) =>
-      _ExportTree(store, chatId, fileName, _createIntegrity).documents();
+  List<StChatDocument> exportChat(
+    ChatStore store,
+    String chatId, {
+    String? fileName,
+    Map<String, TavernUsage?> usageOverrides = const {},
+  }) => _ExportTree(store, chatId, fileName, _createIntegrity, usageOverrides: usageOverrides).documents();
 }
 
 const _namespace = 'chatJsonl';
@@ -285,7 +293,13 @@ final class _ExportJob {
 }
 
 final class _ExportTree {
-  _ExportTree(this.store, this.chatId, this.requestedName, this.createIntegrity) {
+  _ExportTree(
+    this.store,
+    this.chatId,
+    this.requestedName,
+    this.createIntegrity, {
+    Map<String, TavernUsage?> usageOverrides = const {},
+  }) : usageOverrides = Map.unmodifiable(usageOverrides) {
     chat = store.chat(chatId);
     nodes = store.allNodes(chatId);
     for (final node in nodes) {
@@ -298,6 +312,7 @@ final class _ExportTree {
   final String chatId;
   final String? requestedName;
   final String Function() createIntegrity;
+  final Map<String, TavernUsage?> usageOverrides;
   late final StoredChat chat;
   late final List<StoredNode> nodes;
   late final List<Map<String, Object?>> sourceFiles;
@@ -479,7 +494,8 @@ final class _ExportTree {
   Map<String, Object?> _exportHeader(_ExportJob job, String mainName, bool isMain, Set<String> integrities) {
     final result = _sourceHeader(job.header);
     var metadata = _map(result['chat_metadata']);
-    if (isMain && _canonical(_contextMetadata(metadata)) == _canonical(_contextMetadata(chat.metadata))) {
+    if (isMain &&
+        (job.path.isEmpty || _canonical(_contextMetadata(metadata)) == _canonical(_contextMetadata(chat.metadata)))) {
       metadata = _map(_sourceHeader({'chat_metadata': chat.metadata})['chat_metadata']);
     }
     if (job.path.isNotEmpty) {
@@ -614,7 +630,9 @@ final class _ExportTree {
       'role': node.message.role.name,
       'speakerCharacterId': ?node.message.speakerCharacterId,
       'hidden': node.message.hidden,
-      'usage': _usageJson(node.message.usage),
+      'usage': _usageJson(
+        usageOverrides.containsKey(node.message.nodeId) ? usageOverrides[node.message.nodeId] : node.message.usage,
+      ),
       'at': node.message.at.toUtc().toIso8601String(),
       'hasMessageVariables': state.containsKey('messageVariables'),
       'sourceHeader': _runtimeSourceHeader(_headerFor(node)),
@@ -1590,7 +1608,7 @@ Map<String, Object?> _metadataContextDelta(
 }
 
 Map<String, Object?> _effectiveState(ChatStore store, String chatId, StoredNode node) {
-  final override = _map(node.extra['dshgo'])['tavernState'];
+  final override = _view(node.extra['dshgo'])['tavernState'];
   return override is Map<String, Object?> ? _clone(override) : store.nodeState(chatId, node.message.nodeId);
 }
 

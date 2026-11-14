@@ -481,9 +481,11 @@ void main() {
       expect(request.body['temperature'], 0.4);
       expect(request.body['max_tokens'], 73);
       expect(request.body['stream'], isFalse);
-      expect(request.body.containsKey('tools'), isFalse);
-      expect(request.body.containsKey('tool_choice'), isFalse);
     }
+    expect(h.requests.first.body.containsKey('tools'), isFalse);
+    expect(h.requests.first.body.containsKey('tool_choice'), isFalse);
+    expect(_maps(h.requests[1].body['tools']).map((tool) => _map(tool['function'])['name']), ['roll']);
+    expect(h.requests[1].body.containsKey('tool_choice'), isFalse);
     await h.engine.updateGroupMember(chat, b, muted: true);
     h.json('B regenerated');
     final regenerated = await h.engine.regenerate(chat, replies[1].nodeId).toList();
@@ -622,6 +624,246 @@ void main() {
     expect(laterRuns.where((run) => run.kind == 'story.rules'), hasLength(1));
     expect(laterRuns.where((run) => run.kind == 'director.tick'), hasLength(1));
     expect(h.requests, hasLength(5));
+  });
+
+  test('group preview binds a real host proposal locally before native continue adopts it independently', () async {
+    final h = await _Harness.open();
+    await h.engine.setPreset(ChatPreset({..._preset().raw, 'continue_prefill': false}));
+    const fact = 'The host sealed the group alibi.';
+    final host = await h.card(
+      'Host',
+      description: 'HOST_NOT_AN_ACTOR',
+      extensions: {
+        'dshgo': {
+          'v': 1,
+          'state': {
+            'schema': {
+              'type': 'object',
+              'additionalProperties': false,
+              'required': ['entity', 'private'],
+              'properties': {
+                'entity': {'type': 'string'},
+                'private': {
+                  'type': 'object',
+                  'additionalProperties': false,
+                  'required': ['fact'],
+                  'x-dsh-hidden': true,
+                  'x-dsh-by': ['rules', 'user'],
+                  'properties': {
+                    'fact': {
+                      'type': ['string', 'null'],
+                    },
+                  },
+                },
+              },
+            },
+            'init': {
+              'entity': 'group-entity',
+              'private': {'fact': null},
+            },
+            'rules': <Object?>[],
+            'summary': 'HOST_STATE_SCOPE',
+          },
+          'director': {
+            'secretSlots': {
+              'v': 1,
+              'slots': [
+                {
+                  'id': 'alibi',
+                  'path': '/private/fact',
+                  'entityPath': '/entity',
+                  'unbound': {'exists': true, 'value': null},
+                  'bindWhen': true,
+                  'release': {
+                    'id': 'group-alibi',
+                    'audience': 'currentCharacter',
+                    'when': true,
+                    'template': 'GROUP_RELEASE[{{fact}}]',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+    final actor = await h.card(
+      'Actor',
+      description: 'ACTOR_BODY',
+      extensions: {
+        'dshgo': {'v': 1, 'state': _counterState(initial: 99, summary: 'ACTOR_SCHEMA_MUST_NOT_RUN')},
+      },
+    );
+    final other = await h.card('Other');
+    final chat = await h.engine.createGroupChat(
+      [actor, other],
+      hostCharacterId: host,
+      activation: TavernGroupActivation.listOrder,
+      addGreetings: false,
+    );
+    // Explicit actor selection permits a muted member. Capture the real
+    // proposal after this edit so its group-member fingerprint stays valid.
+    await h.engine.updateGroupMember(chat, actor, muted: true);
+    await h.engine.setSettings({
+      'director': {'enabled': true, 'secretsEnabled': true, 'every': 1},
+    }, chatId: chat);
+    h.json('ACTOR_SOURCE');
+    h.json('', tools: [_directCall()], reason: 'tool_calls');
+    final secret = h.json(
+      '',
+      reason: 'tool_calls',
+      tools: [
+        {
+          'id': 'group-secret-proposal',
+          'type': 'function',
+          'function': {
+            'name': 'propose_secrets',
+            'arguments': jsonEncode({
+              'notes': 'An actual group helper proposal',
+              'facts': [
+                {'slotId': 'alibi', 'value': fact},
+              ],
+            }),
+          },
+        },
+      ],
+    );
+    final first = await h.engine.sendGroup(chat, '', speakerCharacterId: actor).toList();
+    expect(first.whereType<TavernGroupFinished>().single.reason, TavernGroupEndReason.completed);
+    final source = _done(first).single;
+    expect((source.speakerCharacterId, source.text), (actor, 'ACTOR_SOURCE'));
+    final secretRequest = await secret.seen.future.timeout(const Duration(seconds: 10));
+    await h.engine
+        .watchDirector(chat)
+        .firstWhere((view) => view.pendingJobs == 0 && !view.running)
+        .timeout(const Duration(seconds: 10));
+    final proposal = (await h.engine.readAgentRuns(
+      chat,
+      limit: 1000,
+    )).singleWhere((run) => run.kind == 'director.secret_proposal');
+    expect(proposal.result['success'], isTrue);
+    expect(proposal.result['sourceNodeId'], source.nodeId);
+    expect(proposal.result['characterId'], host);
+    expect(_map(proposal.result['capability'])['characterId'], host);
+    expect(_maps(_map(proposal.result['output'])['facts']).single['value'], fact);
+    final input = _map(jsonDecode(_maps(secretRequest.body['messages']).last['content']! as String));
+    expect(_map(input['card'])['name'], 'Host');
+    expect(_maps(input['recent']).single['speakerCharacterId'], actor);
+    await h.engine.setSettings({
+      'director': {'enabled': true, 'secretsEnabled': true, 'every': 1000},
+    }, chatId: chat);
+    final draft = await h.engine.createAuthoringDraft([
+      TavernAuthoringTarget(kind: TavernAuthoringTargetKind.character, id: host),
+    ]);
+    _Json databaseState() {
+      final db = sqlite3.open('${h.root.path}/tavern.sqlite3');
+      try {
+        final result = <String, Object?>{};
+        for (final table in db.select("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) {
+          final name = table['name']! as String;
+          final quoted = name.replaceAll('"', '""');
+          result[name] = [for (final row in db.select('SELECT * FROM "$quoted"')) Map<String, Object?>.from(row)];
+        }
+        return result;
+      } finally {
+        db.close();
+      }
+    }
+
+    final before = databaseState();
+    final calls = (h.requests.length, h.keyReads);
+    Future<TavernAuthoringPromptPreview> preview(String kind) => h.engine
+        .previewAuthoringPrompt(
+          TavernAuthoringPromptRequest(
+            requestId: 'group-local-bind-$kind',
+            draftId: draft.id,
+            draftRevision: draft.draftRevision,
+            changeIds: const [],
+            seed: 7,
+            at: DateTime.utc(2026, 11, 12, 4),
+            context: TavernAuthoringChatContext(
+              chatId: chat,
+              actorId: actor,
+              generationType: kind,
+              nodeId: kind == 'normal' ? null : source.nodeId,
+            ),
+          ),
+        )
+        .result;
+    final normal = await preview('normal');
+    final continuing = await preview('continue');
+    for (final result in [normal, continuing]) {
+      expect(result.status, TavernAuthoringPreviewStatus.complete, reason: '${result.issues}');
+      final trace = result.secretTrace;
+      expect(trace['scope'], 'preview');
+      expect(trace['origin'], {'kind': 'chat', 'chatId': chat, 'nodeId': source.nodeId});
+      expect(trace['adoptedLocally'], isTrue);
+      expect(trace['attempted'], isFalse);
+      expect(_maps(trace['changes']).map((change) => change['path']), ['/private/fact']);
+      final release = _maps(trace['offered']).single;
+      expect(release['characterId'], host);
+      expect(trace['included'], [release['sourceId']]);
+      expect(_text(result.assembly!.body), contains('GROUP_RELEASE[$fact]'));
+      expect(_text(result.assembly!.body), contains('ACTOR_BODY'));
+      expect(_text(result.assembly!.body), isNot(contains('ACTOR_SCHEMA_MUST_NOT_RUN')));
+      expect(jsonEncode(trace), isNot(contains('bindReceiptId')));
+    }
+    // Regenerating this root uses null as parent, so the original anchor
+    // gate rejects it; this does not claim to reach the physical-child gate.
+    final regenerated = await preview('regenerate');
+    expect(regenerated.status, TavernAuthoringPreviewStatus.complete);
+    expect(regenerated.secretTrace['adoptedLocally'], isFalse);
+    expect(regenerated.secretTrace['offered'], isEmpty);
+    expect(regenerated.issues.map((issue) => issue.type), contains('secret_source_not_current_physical_leaf'));
+    expect(databaseState(), before);
+    expect((h.requests.length, h.keyReads), calls);
+    expect(
+      (await h.engine.readAgentRuns(chat, limit: 1000)).where((run) => run.kind == 'director.secret_bind'),
+      isEmpty,
+    );
+    expect(_map((await h.engine.readState(chat)).values)['private'], {'fact': null});
+
+    final native = h.json(' continued');
+    native.beforeResponse = () async {
+      // The real native B/audit must already be committed at provider entry.
+      final bind = (await h.engine.readAgentRuns(
+        chat,
+        limit: 1000,
+      )).singleWhere((run) => run.kind == 'director.secret_bind');
+      expect(bind.result['committed'], isTrue);
+      expect(bind.result['proposalRunId'], proposal.id);
+      expect(bind.result['sourceFingerprint'], proposal.result['sourceFingerprint']);
+      expect(bind.nodeId, source.nodeId);
+      final binding = _maps(bind.result['bindings']).single;
+      expect(binding['characterId'], host);
+      expect(binding['boundNodeId'], source.nodeId);
+      expect(_map((await h.engine.readState(chat)).values)['private'], {'fact': fact});
+      final db = sqlite3.open('${h.root.path}/tavern.sqlite3');
+      try {
+        final row = db.select('SELECT text, speaker_character_id, extra FROM nodes WHERE id = ?', [
+          source.nodeId,
+        ]).single;
+        expect((row['text'], row['speaker_character_id']), ('ACTOR_SOURCE', actor));
+        final own = _map(_map(jsonDecode(row['extra']! as String))['dshgo']);
+        expect(_map(own['group'])['actorCharacterId'], actor);
+        expect(_map(own['secretBinding'])['runId'], bind.id);
+      } finally {
+        db.close();
+      }
+    };
+    final finished = await h.engine.continueReply(chat, source.nodeId).toList();
+    expect(finished.whereType<TavernTurnFailed>(), isEmpty);
+    final reply = finished.whereType<TavernTurnDone>().single.message;
+    expect((reply.nodeId, reply.speakerCharacterId, reply.text), (source.nodeId, actor, 'ACTOR_SOURCE continued'));
+    expect((await native.seen.future).body, continuing.assembly!.body);
+    expect(
+      (await h.engine.readAgentRuns(chat, limit: 1000)).where((run) => run.kind == 'director.secret_bind'),
+      hasLength(1),
+    );
+    expect(
+      (await h.engine.groupChat(chat))!.members.singleWhere((member) => member.characterId == actor).muted,
+      isTrue,
+    );
   });
 
   test('a zero-output actor failure keeps the user and prior actor without retrying or starting another', () async {

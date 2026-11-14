@@ -284,27 +284,8 @@ class _ScriptInjectionRegistry {
 
   String _assemblerId() => 'dshScriptInjection${++_serial}';
 
-  _ScriptInjectionCandidate _transient(_ScriptInjectionRegistration registration) {
-    final injection = registration.injection;
-    return _ScriptInjectionCandidate(
-      source: 'transient',
-      rawId: injection.id,
-      sourceRef: {
-        'kind': 'transient',
-        'chatId': registration.chatId,
-        'rawId': injection.id,
-        'ownerContextId': registration.ownerContextId,
-        'ownerInstanceId': registration.ownerInstanceId,
-        'registrationVersion': registration.version,
-      },
-      raw: _injectionJson(injection),
-      assemblerId: _assemblerId(),
-      sourceOrder: 1,
-      injection: injection,
-      registration: registration,
-      filterStatus: injection.filter == null ? 'none' : 'callback',
-    );
-  }
+  _ScriptInjectionCandidate _transient(_ScriptInjectionRegistration registration) =>
+      _transientScriptInjection(registration, assemblerId: _assemblerId());
 
   List<_ScriptInjectionCandidate> _persistent(
     String chatId,
@@ -312,23 +293,7 @@ class _ScriptInjectionRegistry {
     ChatJsonlMetadataSource? source,
     required bool observe,
   }) {
-    if (!metadata.containsKey('script_injects')) return const [];
-    final raw = metadata['script_injects'];
-    if (raw is! Map<String, Object?>) {
-      throw _scriptError(
-        TavernScriptErrorCode.shapeMismatch,
-        'scriptInjections',
-        'metadata.script_injects must be an object.',
-        fieldPath: 'script_injects',
-        issues: [
-          _sourceIssue('shapeMismatch', 'metadata.script_injects must be an object.', {
-            'kind': 'persistent',
-            'chatId': chatId,
-            'field': 'script_injects',
-          }),
-        ],
-      );
-    }
+    final raw = _persistentScriptInjections(chatId, metadata);
     return [
       for (final entry in raw.entries)
         _persistentEntry(chatId, entry.key, _captureScriptJson(entry.value), source: source, observe: observe),
@@ -342,72 +307,17 @@ class _ScriptInjectionRegistry {
     ChatJsonlMetadataSource? source,
     required bool observe,
   }) {
-    final sourceRef = <String, Object?>{'kind': 'persistent', 'chatId': chatId, 'rawId': rawId};
-    final issues = <TavernScriptIssue>[];
-    TavernScriptInjection? injection;
-    var filterStatus = 'none';
-    try {
-      if (rawId.isEmpty || raw is! Map<String, Object?> || raw['value'] is! String) {
-        throw const FormatException('Expected a nonempty id and an object with a string value.');
-      }
-      final depth = raw['depth'] ?? 4;
-      final position = raw['position'] ?? 0;
-      final role = raw['role'] ?? 0;
-      final scan = raw['scan'] ?? false;
-      final filter = raw['filter'];
-      if (depth is! num ||
-          !depth.isFinite ||
-          depth != depth.truncateToDouble() ||
-          depth < 0 ||
-          depth > 10000 ||
-          scan is! bool ||
-          (filter != null && filter is! String)) {
-        throw const FormatException('Persistent injection depth, scan or filter has an incompatible shape.');
-      }
-      final projectedPosition = switch (position) {
-        -1 => TavernScriptInjectionPosition.scanOnly,
-        0 => TavernScriptInjectionPosition.afterMain,
-        1 => TavernScriptInjectionPosition.inChat,
-        2 => TavernScriptInjectionPosition.beforeMain,
-        _ => throw const FormatException('Unsupported persistent injection position.'),
-      };
-      final projectedRole = switch (role) {
-        0 || 'system' => TavernScriptPromptRole.system,
-        1 || 'user' => TavernScriptPromptRole.user,
-        2 || 'assistant' => TavernScriptPromptRole.assistant,
-        _ => throw const FormatException('Unsupported persistent injection role.'),
-      };
-      injection = TavernScriptInjection(
-        id: rawId,
-        content: raw['value']! as String,
-        role: projectedRole,
-        position: projectedPosition,
-        depth: depth.toInt(),
-        scan: scan,
-      );
-      if (filter is String && filter.isNotEmpty) {
-        filterStatus = 'unsupportedPersistent';
-        issues.add(
-          _sourceIssue(
-            'unsupportedCapability',
-            'Serialized persistent filters require the STscript execution capability.',
-            sourceRef,
-          ),
-        );
-      }
-    } on FormatException catch (error) {
-      issues.add(_sourceIssue('shapeMismatch', error.message, sourceRef));
-    }
+    final parsed = _parsePersistentScriptInjection(chatId, rawId, raw);
     return _ScriptInjectionCandidate(
       source: 'persistent',
       rawId: rawId,
-      sourceRef: sourceRef,
+      sourceRef: parsed.sourceRef,
       raw: raw,
       assemblerId: _assemblerId(),
       sourceOrder: 0,
-      injection: injection,
-      issues: List.unmodifiable(issues),
-      filterStatus: filterStatus,
+      injection: parsed.injection,
+      issues: parsed.issues,
+      filterStatus: parsed.filterStatus,
       persistentSource: source,
       persistentVersion: observe ? owner.persistentInjectionVersion(chatId, source!, rawId, raw) : null,
     );
@@ -532,8 +442,9 @@ class _ScriptInjectionRegistry {
           ]),
         );
       } catch (error) {
-        final issues = error is TavernScriptException ? error.issues : const <TavernScriptIssue>[];
-        final committed = error is TavernScriptException && error.committed;
+        final reported = owner._scriptReportedFailure(error);
+        final issues = reported?.issues ?? const <TavernScriptIssue>[];
+        final committed = reported?.committed == true;
         // Only the outcome which won Future.any reaches this boundary. A
         // subsequent owner/host check cannot erase its already received facts.
         onObservedIssues?.call(request, issues, committed);
@@ -650,41 +561,8 @@ class _ScriptInjectionRegistry {
     }
   }
 
-  _ScriptPreparedInjections prepareInjections(_ScriptInjectionUseSet uses, _MacroEnvironment environment) {
-    final scanTexts = <String>[];
-    final prompts = <PromptInjection>[];
-    for (final candidate in uses.used) {
-      final injection = candidate.injection!;
-      final scan = injection.scan == true;
-      final prompt = injection.position != TavernScriptInjectionPosition.scanOnly;
-      // This still participates in acceptance, but neither closed text outlet
-      // may cause evaluation of an otherwise unused content macro.
-      if (!scan && !prompt) continue;
-      final text = environment.expand(injection.content, const {});
-      if (scan) scanTexts.add(text);
-      if (prompt) {
-        prompts.add(
-          PromptInjection(
-            fragment: PromptFragment(
-              text,
-              PromptSource('scriptInjection', candidate.assemblerId, details: candidate.sourceRef),
-              expandMacros: false,
-            ),
-            role: injection.role.name,
-            depth: injection.depth,
-            sortKey: candidate.rawId,
-            sourceOrder: candidate.sourceOrder,
-            placement: switch (injection.position) {
-              TavernScriptInjectionPosition.beforeMain => PromptPlacement.beforeMain,
-              TavernScriptInjectionPosition.afterMain => PromptPlacement.afterMain,
-              _ => PromptPlacement.inChat,
-            },
-          ),
-        );
-      }
-    }
-    return _ScriptPreparedInjections(scanTexts: scanTexts, prompts: prompts);
-  }
+  _ScriptPreparedInjections prepareInjections(_ScriptInjectionUseSet uses, _MacroEnvironment environment) =>
+      _prepareScriptInjections(uses, environment);
 
   /// All validation precedes all claims and there is deliberately no await.
   List<TavernJsonObject> claim(_ScriptInjectionUseSet uses, {required String generationId}) {
@@ -692,43 +570,14 @@ class _ScriptInjectionRegistry {
       final captured = candidate.registration;
       if (captured != null) {
         final current = _byChat[captured.chatId]?[candidate.rawId];
-        if (current == null ||
-            !identical(current, captured) ||
-            current.version != captured.version ||
-            current.ownerContextId != captured.ownerContextId ||
-            current.ownerInstanceId != captured.ownerInstanceId ||
-            current.claimed) {
-          throw _filterFailure(
-            TavernScriptErrorCode.revisionConflict,
-            'A participating injection registration changed before acceptance.',
-            candidate,
-            generationId,
-            stage: 'injectionClaim',
-          );
-        }
+        _checkScriptRegistrationClaim(candidate, current, generationId);
       } else if (candidate.source == 'persistent') {
         final chatId = candidate.sourceRef['chatId']! as String;
         final current = owner.currentPersistentInjectionVersion(chatId, candidate.persistentSource!, candidate.rawId);
-        if (current == null || current != candidate.persistentVersion) {
-          throw _filterFailure(
-            TavernScriptErrorCode.revisionConflict,
-            'A participating persistent injection changed before acceptance.',
-            candidate,
-            generationId,
-            stage: 'injectionClaim',
-          );
-        }
+        _checkScriptPersistentClaim(candidate, current, generationId);
       }
     }
-    final claimed = <TavernJsonObject>[];
-    for (final candidate in uses.used) {
-      final registration = candidate.registration;
-      if (registration != null && registration.once) {
-        registration.claimed = true;
-        claimed.add(_captureScriptObject({...candidate.sourceRef, 'sourceRef': candidate.sourceRef}));
-      }
-    }
-    return List.unmodifiable(claimed);
+    return _claimScriptInjectionOnce(uses);
   }
 
   TavernScriptException _filterFailure(
@@ -739,29 +588,246 @@ class _ScriptInjectionRegistry {
     List<TavernScriptIssue> issues = const [],
     String stage = 'injectionFilter',
     bool committed = false,
-  }) {
-    final knownCommitted = committed || issues.any((issue) => issue.committed);
-    return TavernScriptException(
-      code: code,
-      operation: stage,
-      message: message,
-      generationId: generationId,
-      contextId: candidate.registration?.ownerContextId ?? candidate.injection?.filter?.contextId,
-      committed: knownCommitted,
+  }) => _scriptInjectionFailure(
+    code,
+    message,
+    candidate,
+    generationId,
+    issues: issues,
+    stage: stage,
+    committed: committed,
+  );
+}
+
+Map<String, Object?> _persistentScriptInjections(String chatId, Map<String, Object?> metadata) {
+  if (!metadata.containsKey('script_injects')) {
+    return const {};
+  }
+  final raw = metadata['script_injects'];
+  if (raw is! Map<String, Object?>) {
+    throw _scriptError(
+      TavernScriptErrorCode.shapeMismatch,
+      'scriptInjections',
+      'metadata.script_injects must be an object.',
+      fieldPath: 'script_injects',
       issues: [
-        ...issues,
-        TavernScriptIssue(
-          code: code.name,
-          message: message,
-          committed: knownCommitted,
-          generationId: generationId,
-          stage: stage,
-          cancelled: code == TavernScriptErrorCode.cancelled,
-          details: {'sourceRef': candidate.sourceRef},
-        ),
+        _sourceIssue('shapeMismatch', 'metadata.script_injects must be an object.', {
+          'kind': 'persistent',
+          'chatId': chatId,
+          'field': 'script_injects',
+        }),
       ],
     );
   }
+  return raw;
+}
+
+({
+  Map<String, Object?> sourceRef,
+  TavernScriptInjection? injection,
+  String filterStatus,
+  List<TavernScriptIssue> issues,
+})
+_parsePersistentScriptInjection(String chatId, String rawId, Object? raw) {
+  final sourceRef = <String, Object?>{'kind': 'persistent', 'chatId': chatId, 'rawId': rawId};
+  final issues = <TavernScriptIssue>[];
+  TavernScriptInjection? injection;
+  var filterStatus = 'none';
+  try {
+    if (rawId.isEmpty || raw is! Map<String, Object?> || raw['value'] is! String) {
+      throw const FormatException('Expected a nonempty id and an object with a string value.');
+    }
+    final depth = raw['depth'] ?? 4;
+    final position = raw['position'] ?? 0;
+    final role = raw['role'] ?? 0;
+    final scan = raw['scan'] ?? false;
+    final filter = raw['filter'];
+    if (depth is! num ||
+        !depth.isFinite ||
+        depth != depth.truncateToDouble() ||
+        depth < 0 ||
+        depth > 10000 ||
+        scan is! bool ||
+        (filter != null && filter is! String)) {
+      throw const FormatException('Persistent injection depth, scan or filter has an incompatible shape.');
+    }
+    final projectedPosition = switch (position) {
+      -1 => TavernScriptInjectionPosition.scanOnly,
+      0 => TavernScriptInjectionPosition.afterMain,
+      1 => TavernScriptInjectionPosition.inChat,
+      2 => TavernScriptInjectionPosition.beforeMain,
+      _ => throw const FormatException('Unsupported persistent injection position.'),
+    };
+    final projectedRole = switch (role) {
+      0 || 'system' => TavernScriptPromptRole.system,
+      1 || 'user' => TavernScriptPromptRole.user,
+      2 || 'assistant' => TavernScriptPromptRole.assistant,
+      _ => throw const FormatException('Unsupported persistent injection role.'),
+    };
+    injection = TavernScriptInjection(
+      id: rawId,
+      content: raw['value']! as String,
+      role: projectedRole,
+      position: projectedPosition,
+      depth: depth.toInt(),
+      scan: scan,
+    );
+    if (filter is String && filter.isNotEmpty) {
+      filterStatus = 'unsupportedPersistent';
+      issues.add(
+        _sourceIssue(
+          'unsupportedCapability',
+          'Serialized persistent filters require the STscript execution capability.',
+          sourceRef,
+        ),
+      );
+    }
+  } on FormatException catch (error) {
+    issues.add(_sourceIssue('shapeMismatch', error.message, sourceRef));
+  }
+  return (sourceRef: sourceRef, injection: injection, filterStatus: filterStatus, issues: List.unmodifiable(issues));
+}
+
+_ScriptInjectionCandidate _transientScriptInjection(
+  _ScriptInjectionRegistration registration, {
+  required String assemblerId,
+}) {
+  final injection = registration.injection;
+  return _ScriptInjectionCandidate(
+    source: 'transient',
+    rawId: injection.id,
+    sourceRef: {
+      'kind': 'transient',
+      'chatId': registration.chatId,
+      'rawId': injection.id,
+      'ownerContextId': registration.ownerContextId,
+      'ownerInstanceId': registration.ownerInstanceId,
+      'registrationVersion': registration.version,
+    },
+    raw: _injectionJson(injection),
+    assemblerId: assemblerId,
+    sourceOrder: 1,
+    injection: injection,
+    registration: registration,
+    filterStatus: injection.filter == null ? 'none' : 'callback',
+  );
+}
+
+_ScriptPreparedInjections _prepareScriptInjections(_ScriptInjectionUseSet uses, _MacroEnvironment environment) {
+  final scanTexts = <String>[];
+  final prompts = <PromptInjection>[];
+  for (final candidate in uses.used) {
+    final injection = candidate.injection!;
+    final scan = injection.scan == true;
+    final prompt = injection.position != TavernScriptInjectionPosition.scanOnly;
+    // Closed outlets still participate in claim but never evaluate text.
+    if (!scan && !prompt) {
+      continue;
+    }
+    final text = environment.expand(injection.content, const {});
+    if (scan) {
+      scanTexts.add(text);
+    }
+    if (prompt) {
+      prompts.add(
+        PromptInjection(
+          fragment: PromptFragment(
+            text,
+            PromptSource('scriptInjection', candidate.assemblerId, details: candidate.sourceRef),
+            expandMacros: false,
+          ),
+          role: injection.role.name,
+          depth: injection.depth,
+          sortKey: candidate.rawId,
+          sourceOrder: candidate.sourceOrder,
+          placement: switch (injection.position) {
+            TavernScriptInjectionPosition.beforeMain => PromptPlacement.beforeMain,
+            TavernScriptInjectionPosition.afterMain => PromptPlacement.afterMain,
+            _ => PromptPlacement.inChat,
+          },
+        ),
+      );
+    }
+  }
+  return _ScriptPreparedInjections(scanTexts: scanTexts, prompts: prompts);
+}
+
+void _checkScriptRegistrationClaim(
+  _ScriptInjectionCandidate candidate,
+  _ScriptInjectionRegistration? current,
+  String generationId,
+) {
+  final captured = candidate.registration!;
+  if (current == null ||
+      !identical(current, captured) ||
+      current.version != captured.version ||
+      current.ownerContextId != captured.ownerContextId ||
+      current.ownerInstanceId != captured.ownerInstanceId ||
+      current.claimed) {
+    throw _scriptInjectionFailure(
+      TavernScriptErrorCode.revisionConflict,
+      'A participating injection registration changed before acceptance.',
+      candidate,
+      generationId,
+      stage: 'injectionClaim',
+    );
+  }
+}
+
+void _checkScriptPersistentClaim(_ScriptInjectionCandidate candidate, String? current, String generationId) {
+  if (current == null || current != candidate.persistentVersion) {
+    throw _scriptInjectionFailure(
+      TavernScriptErrorCode.revisionConflict,
+      'A participating persistent injection changed before acceptance.',
+      candidate,
+      generationId,
+      stage: 'injectionClaim',
+    );
+  }
+}
+
+List<TavernJsonObject> _claimScriptInjectionOnce(_ScriptInjectionUseSet uses) {
+  final claimed = <TavernJsonObject>[];
+  for (final candidate in uses.used) {
+    final registration = candidate.registration;
+    if (registration != null && registration.once) {
+      registration.claimed = true;
+      claimed.add(_captureScriptObject({...candidate.sourceRef, 'sourceRef': candidate.sourceRef}));
+    }
+  }
+  return List.unmodifiable(claimed);
+}
+
+TavernScriptException _scriptInjectionFailure(
+  TavernScriptErrorCode code,
+  String message,
+  _ScriptInjectionCandidate candidate,
+  String generationId, {
+  List<TavernScriptIssue> issues = const [],
+  String stage = 'injectionFilter',
+  bool committed = false,
+}) {
+  final knownCommitted = committed || issues.any((issue) => issue.committed);
+  return TavernScriptException(
+    code: code,
+    operation: stage,
+    message: message,
+    generationId: generationId,
+    contextId: candidate.registration?.ownerContextId ?? candidate.injection?.filter?.contextId,
+    committed: knownCommitted,
+    issues: [
+      ...issues,
+      TavernScriptIssue(
+        code: code.name,
+        message: message,
+        committed: knownCommitted,
+        generationId: generationId,
+        stage: stage,
+        cancelled: code == TavernScriptErrorCode.cancelled,
+        details: {'sourceRef': candidate.sourceRef},
+      ),
+    ],
+  );
 }
 
 TavernScriptIssue _sourceIssue(String code, String message, Map<String, Object?> sourceRef) => TavernScriptIssue(

@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Exercise shipped shell/CI consumers with small real runtime archives."""
+import errno
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import textwrap
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('layer_fixtures', Path(__file__).with_name('test_runtime_layers.py'))
@@ -69,6 +73,53 @@ class RuntimeConsumers(unittest.TestCase):
             else:
                 self.assertEqual(current['rootfs'], manifest['rootfs'])
                 self.assertEqual(current['rootfsSha256'], manifest['rootfsSha256'])
+
+    def test_interrupted_manifest_does_not_block_the_other_abi_index(self):
+        text = (ROOT / 'runtime/build-runtime.sh').read_text()
+        code = heredoc(text, 'python3 -I - "$OUT" <<\'PYEOF\'\n', '\nPYEOF')
+
+        def partial_write(value, target, **options):
+            target.write(json.dumps(value, **options)[:100])
+            raise OSError(errno.ENOSPC, 'injected manifest write failure')
+
+        # A default two-ABI build stops while publishing x86_64's manifest;
+        # after freeing space, the next build selects only arm64-v8a.
+        for abi in ('x86_64', 'arm64-v8a'):
+            out = self.root / abi
+            assets = out / 'assets/runtime'
+            assets.mkdir(parents=True)
+            report = out / 'build-report.json'
+            versions = dict(self.fixture.versions, abi=abi)
+            _, command = self.fixture.command('manifest-' + abi, layered=False)
+            for flag, value in {
+                '--abi': abi,
+                '--out': str(assets / ('rootfs-' + abi + '.tar.gz')),
+                '--report': str(report),
+                '--runtime-info': json.dumps(versions),
+            }.items():
+                command[command.index(flag) + 1] = value
+            assembled = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(assembled.returncode, 0, assembled.stderr)
+            args = SimpleNamespace(abi=abi, report=str(report), jnilibs=str(self.fixture.jni),
+                                   versions=json.dumps(versions), out=str(assets / 'manifest.json'))
+            if abi == 'x86_64':
+                # Inject a short write in the real manifest writer, regardless
+                # of which output name it opens; this is not a full-disk test.
+                with mock.patch.object(layers.rt.json, 'dump', side_effect=partial_write):
+                    with self.assertRaises(OSError) as failed:
+                        layers.rt.cmd_manifest(args)
+                self.assertEqual(failed.exception.errno, errno.ENOSPC)
+            else:
+                with mock.patch.object(sys, 'stdout', io.StringIO()):
+                    layers.rt.cmd_manifest(args)
+
+        # The shipped consumer reads both ABI directories, even for a single
+        # ABI rebuild. A truncated final manifest used to make this fail.
+        result = self.run_python(code, self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        index = json.loads((self.root / 'manifest.json').read_text())
+        self.assertEqual(set(index['abis']), {'arm64-v8a'})
+        self.assertEqual(index['abis']['arm64-v8a']['rootfs'], 'rootfs-arm64-v8a.tar.gz')
 
     def test_host_and_direct_unpack_all_archives_from_another_directory(self):
         text = (ROOT / 'runtime/test-host.sh').read_text()

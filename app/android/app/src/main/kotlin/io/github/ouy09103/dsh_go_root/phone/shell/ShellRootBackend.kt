@@ -16,7 +16,17 @@ import java.io.IOException
 internal class ShellRootBackend(private val context: Context, private val onChanged: () -> Unit = {}) {
     @Volatile private var host: Process? = null
 
-    fun status(): Map<String, Any?> = mapOf("su" to RootExec.suPath(), "manager" to RootExec.manager())
+    /**
+     * What su last answered, when this app asked. Never guessed from "not connected": a switch
+     * that was simply left off, or a session the user closed, says nothing about the grant.
+     */
+    @Volatile private var lastFailure: String? = null
+
+    fun status(): Map<String, Any?> = mapOf(
+        "su" to RootExec.suPath(),
+        "manager" to RootExec.manager(),
+        "failure" to lastFailure,
+    )
 
     fun disconnect() {
         val current = host ?: return
@@ -30,7 +40,11 @@ internal class ShellRootBackend(private val context: Context, private val onChan
         disconnect()
         if (!wanted()) return ShellConnection(errorCode = "cancelled")
         // Preflight already proved su exists and answers as uid 0 in a usable domain.
-        preflight()?.let { return ShellConnection(errorCode = it) }
+        preflight()?.let {
+            lastFailure = it
+            return ShellConnection(errorCode = it)
+        }
+        lastFailure = null
         if (!wanted()) return ShellConnection(errorCode = "cancelled")
         val su = RootExec.suPath() ?: return ShellConnection(errorCode = "suMissing")
         val command = hostCommand() ?: return ShellConnection(errorCode = "rootHostFailed")

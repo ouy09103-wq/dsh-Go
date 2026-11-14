@@ -168,7 +168,10 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
       );
       await _read();
     } on Object {
-      if (mounted && current()) showBriefNotice(context, l10n.companionMemorySaveFailed);
+      if (!mounted || !current()) return;
+      showBriefNotice(context, l10n.companionMemorySaveFailed);
+      // The write may have landed before the reply was lost; show what is kept.
+      await _read();
     } finally {
       if (current()) setState(() => _busy = false);
     }

@@ -97,7 +97,6 @@ extension _ScriptRawResources on _ScriptCoordinator {
         ),
       );
       engine._cacheCharacterDetail(characterId, Future.value(stored));
-      engine._directors.characterChanged(characterId);
       engine._notifyLists();
       final stats = engine._store.characterChatStats()[characterId];
       return stored.toCharacter(chatCount: stats?.count ?? 0, lastChatAt: stats?.lastAt);
@@ -258,6 +257,7 @@ extension _ScriptRawResources on _ScriptCoordinator {
       switch (ref) {
         case TavernScriptStandaloneBookRef(:final bookId):
           return await engine._bookOperation(() async {
+            engine._authoringAuthority.checkWritable('lorebook:$bookId');
             final old = await _scriptReadStandaloneNow(bookId);
             if (old == null) {
               throw _scriptError(TavernScriptErrorCode.notFound, 'replaceBook', 'The book does not exist.');
@@ -306,7 +306,6 @@ extension _ScriptRawResources on _ScriptCoordinator {
             ),
           );
           engine._cacheCharacterDetail(characterId, Future.value(stored));
-          engine._directors.characterChanged(characterId);
           engine._notifyLists();
           return TavernScriptBookSnapshot(ref: ref, version: adoptedVersion!, book: book);
       }

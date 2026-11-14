@@ -2,11 +2,27 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
 
 import '../api.dart';
+import '../authoring.dart';
+import '../authoring_run.dart';
 import '../import_report.dart';
+import '../llm/tool_usage.dart';
+import '../tools.dart';
+
+part 'tool_store.dart';
+part 'authoring_store.dart';
+part 'authoring_authority_store.dart';
+part 'authoring_run_store.dart';
+part 'authoring_seed_store.dart';
+
+// Mark only persisted ancestor-path damage while preserving legacy StateError semantics.
+class _StoredAncestorDataError extends StateError {
+  _StoredAncestorDataError(super.message);
+}
 
 /// The chat settings and original ST metadata, separate from the selected path.
 /// JSON values returned by the store are detached copies.
@@ -58,6 +74,43 @@ class StoredNode {
   /// Original ST message fields not represented by [TavernMessage]. Exporters
   /// overlay the current known fields instead of discarding unknown fields.
   final Map<String, Object?> original;
+}
+
+/// The finite history inputs consumed by display macros. All nodes are
+/// detached display projections, without inspection or original body copies.
+class StoredDisplayHistory {
+  const StoredDisplayHistory({required this.length, this.last, this.user, this.character, this.previousUser});
+  final int length;
+  final StoredNode? last;
+  final StoredNode? user;
+  final StoredNode? character;
+  final StoredNode? previousUser;
+}
+
+class _NodeExtraProjection {
+  const _NodeExtraProjection(this.raw, this.reportedUsage, this.displayContext);
+  final String raw;
+  final String? reportedUsage;
+  final String displayContext;
+}
+
+/// The ancestry needed by prompt admission and rollback, without old bodies,
+/// inspections or complete imported message documents.
+class StoredHistoryLink {
+  const StoredHistoryLink({
+    required this.nodeId,
+    required this.role,
+    required this.speaker,
+    required this.hidden,
+    required this.isSystem,
+    this.selectedChildId,
+  });
+  final String nodeId;
+  final String? selectedChildId;
+  final TavernRole role;
+  final String speaker;
+  final bool hidden;
+  final bool isSystem;
 }
 
 /// Identity-only graph used while preparing a structural bridge transaction.
@@ -179,7 +232,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 7;
+  static const schemaVersion = 12;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -192,13 +245,20 @@ class ChatStore {
     5: _schemaV5,
     6: _schemaV6,
     7: _schemaV7,
+    8: _schemaV8,
+    9: _schemaV9,
+    10: _schemaV10,
+    11: _schemaV11,
+    12: _schemaV12,
   };
+  static const _schemaV12 = '$_authoringRunSchema\n$_authoringSeedSchema';
   final Database _db;
   final DateTime Function() _clock;
   final String Function() _createId;
   final _changes = StreamController<String>.broadcast();
   final _presetChanges = StreamController<void>.broadcast();
   final _changedChats = <String>{};
+  final _displayVersions = <String, Object>{};
   var _presetsChanged = false;
   var _transactionDepth = 0;
   ({Object error, StackTrace stackTrace})? _transactionFailure;
@@ -251,10 +311,12 @@ class ChatStore {
   // continuation's completed inspection or usage to a recovered partial body.
   void _recoverPendingNodes() {
     if (_db.select('SELECT 1 FROM nodes WHERE stream_text IS NOT NULL OR deleted_by IS NOT NULL LIMIT 1').isEmpty &&
-        _db.select('SELECT 1 FROM deleted_subtrees LIMIT 1').isEmpty) {
+        _db.select('SELECT 1 FROM deleted_subtrees LIMIT 1').isEmpty &&
+        !hasPendingToolRecords()) {
       return;
     }
     transaction(() {
+      recoverToolRecords();
       // Undo belongs to the previous open session. Every physical descendant
       // was marked, including descendants with an older deletion token.
       _db.execute('DELETE FROM nodes WHERE deleted_by IS NOT NULL');
@@ -388,6 +450,17 @@ class ChatStore {
       _checkTransactionState();
       _db.execute(depth == 0 ? 'COMMIT' : 'RELEASE SAVEPOINT $savepoint');
       completed = true;
+      // Invalidate before callbacks can re-enter a display read or throw after
+      // the successful COMMIT. Streaming bodies change the same read view.
+      if (depth == 0) {
+        if (_presetsChanged) {
+          _displayVersions.clear();
+        } else {
+          for (final chatId in _changedChats) {
+            _displayVersions.remove(chatId);
+          }
+        }
+      }
       onCommitted?.call();
     } catch (error, stackTrace) {
       try {
@@ -786,7 +859,10 @@ class ChatStore {
   List<({String id, Map<String, Object?> entry, bool valid})> directorMemories(String chatId) {
     _chatRow(chatId);
     final result = <({String id, Map<String, Object?> entry, bool valid})>[];
-    for (final row in _db.select('SELECT id, entry_json FROM memories WHERE chat_id = ? ORDER BY rowid', [chatId])) {
+    for (final row in _db.select(
+      "SELECT id, entry_json FROM memories WHERE chat_id = ? AND origin = 'legacy' ORDER BY rowid",
+      [chatId],
+    )) {
       try {
         final entry = _map(row['entry_json']);
         // The adapter/WorldInfoBook must be able to copy the complete native
@@ -1058,10 +1134,11 @@ class ChatStore {
       final parent = parentId == null ? null : _nodeRow(chatId, parentId);
       final depth = parent == null ? 1 : (parent['depth'] as int) + 1;
       final nodeId = id ?? _createId();
+      final encodedExtra = _encodeNodeExtra(extra, chatId, nodeId);
       _db.execute(
         '''INSERT INTO nodes
-           (id, chat_id, parent_id, depth, role, speaker, text, reasoning, at, hidden, usage, reported_usage, extra, original, speaker_character_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+           (id, chat_id, parent_id, depth, role, speaker, text, reasoning, at, hidden, usage, reported_usage, display_context, extra, original, speaker_character_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         [
           nodeId,
           chatId,
@@ -1074,10 +1151,11 @@ class ChatStore {
           (at ?? _clock()).millisecondsSinceEpoch,
           hidden ? 1 : 0,
           _encodeUsage(usage),
-          _reportedUsage(extra, chatId, nodeId),
-          jsonEncode(extra),
+          encodedExtra.reportedUsage,
+          encodedExtra.displayContext,
+          encodedExtra.raw,
           jsonEncode(original),
-          speakerCharacterId,
+          role == TavernRole.character ? speakerCharacterId : null,
         ],
       );
       final parentSnapshot = parentId == null ? null : _nodeStateSnapshot(chatId, parentId);
@@ -1208,12 +1286,204 @@ ORDER BY n.seq
     return [for (final row in _ancestorRows(chatId, lastId, limit: limit)) _message(row)];
   }
 
+  /// One recursive statement returns only grouped counters and path shape.
+  /// Stable identities in UNION terminate a corrupt cycle without walking it
+  /// in Dart or fetching message bodies, inspection, extra or state documents.
+  List<TavernPathUsage> pathUsage(String chatId, {String? excludeNodeId}) {
+    _ensureOpen();
+    final rows = _db.select(
+      '''
+      WITH RECURSIVE path(id, parent_id) AS (
+        SELECT n.id, n.parent_id FROM nodes n JOIN chats c ON c.current_leaf_id = n.id
+          WHERE c.id = ? AND n.chat_id = c.id AND n.deleted_by IS NULL
+        UNION
+        SELECT n.id, n.parent_id FROM path p CROSS JOIN nodes n ON n.id = p.parent_id
+          WHERE n.chat_id = ? AND n.deleted_by IS NULL
+      ), totals AS (
+        SELECT json_extract(n.reported_usage, '\$.model') AS model,
+          (CAST(strftime('%w', coalesce(json_extract(n.reported_usage, '\$.startedAtMs'), n.at) / 1000.0,
+            'unixepoch') AS INTEGER) + 6) % 7 + 1 AS utc_weekday,
+          CAST(strftime('%H', coalesce(json_extract(n.reported_usage, '\$.startedAtMs'), n.at) / 1000.0,
+            'unixepoch') AS INTEGER) AS utc_hour,
+          sum(json_extract(n.reported_usage, '\$.promptTokens')) AS prompt_tokens,
+          sum(json_extract(n.reported_usage, '\$.cacheHitTokens')) AS cache_hit_tokens,
+          sum(json_extract(n.reported_usage, '\$.completionTokens')) AS completion_tokens,
+          count(*) AS reply_count
+        FROM path p JOIN nodes n ON n.id = p.id
+        WHERE n.chat_id = ? AND n.deleted_by IS NULL AND n.role = 'character'
+          AND n.stream_text IS NULL AND n.reported_usage IS NOT NULL AND n.id IS NOT ?
+        GROUP BY model, utc_weekday, utc_hour
+      ), shape AS (
+        SELECT coalesce(sum(parent_id IS NULL), 0) AS roots FROM path
+      )
+      SELECT c.current_leaf_id IS NOT NULL AS has_leaf, shape.roots,
+        char(1) || totals.model AS model, totals.utc_weekday, totals.utc_hour,
+        totals.prompt_tokens, totals.cache_hit_tokens,
+        totals.completion_tokens, totals.reply_count
+      FROM chats c CROSS JOIN shape LEFT JOIN totals ON 1
+      WHERE c.id = ? ORDER BY totals.model, totals.utc_weekday, totals.utc_hour
+    ''',
+      [chatId, chatId, chatId, excludeNodeId, chatId],
+    );
+    if (rows.isEmpty) throw StateError('Chat not found: $chatId');
+    if (rows.first['has_leaf'] == 1 && rows.first['roots'] != 1) {
+      throw _StoredAncestorDataError('The selected message path is disconnected or cyclic.');
+    }
+    final result = <TavernPathUsage>[];
+    for (final row in rows) {
+      if (row['reply_count'] == null) continue;
+      result.add(
+        TavernPathUsage(
+          model: _unguardText(row['model']),
+          utcWeekday: row['utc_weekday'] as int,
+          utcHour: row['utc_hour'] as int,
+          promptTokens: row['prompt_tokens'] as int,
+          cacheHitTokens: row['cache_hit_tokens'] as int,
+          completionTokens: row['completion_tokens'] as int,
+          replyCount: row['reply_count'] as int,
+        ),
+      );
+    }
+    return result;
+  }
+
+  /// Identity of one committed chat read view, including settings and body
+  /// checkpoints which do not advance tree_revision. Cache only store data.
+  Object displayVersion(String chatId) {
+    _ensureOpen();
+    return _displayVersions.putIfAbsent(chatId, Object.new);
+  }
+
+  /// Only fields used by display and its macro/state context. In particular,
+  /// neither the full inspection nor the original imported message is decoded.
+  StoredNode displayNode(String chatId, String nodeId) {
+    _ensureOpen();
+    final rows = _db.select(
+      'SELECT $_displayNodeColumns, $_siblingColumns FROM nodes n '
+      'WHERE n.chat_id = ? AND n.id = ? AND n.deleted_by IS NULL',
+      [chatId, nodeId],
+    );
+    if (rows.isEmpty) throw StateError('Node does not belong to chat: $nodeId');
+    return _displayNode(rows.single);
+  }
+
+  /// Walk only the positions from the current leaf back to the target depth.
+  /// Hidden and actual system messages do not contribute display depth.
+  ({bool onCurrentPath, int? depth}) displayPosition(String chatId, StoredNode target, String? leafId) {
+    final usable =
+        !target.message.hidden && target.message.role != TavernRole.system && target.original['is_system'] != true;
+    if (leafId == null) return (onCurrentPath: false, depth: usable ? 0 : null);
+    if (leafId == target.message.nodeId) return (onCurrentPath: true, depth: usable ? 0 : null);
+    final row = _db
+        .select(
+          '''WITH RECURSIVE positions(id, parent_id, visible) AS (
+      SELECT n.id, n.parent_id, $_displayVisible FROM nodes n
+        WHERE n.chat_id = ? AND n.id = ? AND n.deleted_by IS NULL AND n.depth >= ?
+      UNION
+      SELECT n.id, n.parent_id, $_displayVisible FROM positions p CROSS JOIN nodes n ON n.id = p.parent_id
+        WHERE n.chat_id = ? AND n.deleted_by IS NULL AND n.depth >= ?
+    ) SELECT coalesce(max(id = ?), 0) AS found,
+        coalesce(sum(CASE WHEN id != ? THEN visible ELSE 0 END), 0) AS following FROM positions''',
+          [chatId, leafId, target.depth, chatId, target.depth, target.message.nodeId, target.message.nodeId],
+        )
+        .single;
+    final found = row['found'] == 1;
+    return (
+      onCurrentPath: found,
+      depth: usable
+          ? found
+                ? row['following'] as int
+                : 0
+          : null,
+    );
+  }
+
+  /// Stop after two visible users and one visible non-user. This is enough
+  /// for last/user/character/idle macros; only those nodes and the leaf leave
+  /// SQLite. Counts saturate so stable UNION rows still terminate bad cycles.
+  StoredDisplayHistory displayHistory(String chatId, String? leafId) {
+    if (leafId == null) return const StoredDisplayHistory(length: 0);
+    final rows = _db.select(
+      '''WITH RECURSIVE history(id, parent_id, users, characters, take) AS (
+      SELECT n.id, n.parent_id, ($_displayVisible AND n.role = 'user'),
+        ($_displayVisible AND n.role != 'user'), 1 FROM nodes n
+        WHERE n.chat_id = ? AND n.id = ? AND n.deleted_by IS NULL
+      UNION
+      SELECT n.id, n.parent_id,
+        min(2, h.users + ($_displayVisible AND n.role = 'user')),
+        min(1, h.characters + ($_displayVisible AND n.role != 'user')),
+        ($_displayVisible AND ((n.role = 'user' AND h.users < 2) OR (n.role != 'user' AND h.characters < 1)))
+      FROM history h CROSS JOIN nodes n ON n.id = h.parent_id
+      WHERE n.chat_id = ? AND n.deleted_by IS NULL AND (h.users < 2 OR h.characters < 1)
+    ) SELECT $_displayNodeColumns, $_siblingColumns FROM history h JOIN nodes n ON n.id = h.id
+      WHERE h.take = 1 ORDER BY n.depth DESC''',
+      [chatId, leafId, chatId],
+    );
+    if (rows.isEmpty) throw StateError('Node does not belong to chat: $leafId');
+    final nodes = [for (final row in rows) _displayNode(row)];
+    final visible = nodes
+        .where(
+          (node) =>
+              !node.message.hidden && node.message.role != TavernRole.system && node.original['is_system'] != true,
+        )
+        .toList();
+    final users = visible.where((node) => node.message.role == TavernRole.user);
+    return StoredDisplayHistory(
+      length: nodes.first.depth,
+      last: nodes.first,
+      user: users.firstOrNull,
+      character: visible.where((node) => node.message.role != TavernRole.user).firstOrNull,
+      previousUser: visible.firstOrNull?.message.role == TavernRole.user
+          ? users.skip(1).firstOrNull
+          : users.firstOrNull,
+    );
+  }
+
   /// Reads the entire ancestor path of an explicit leaf, including inactive
   /// branches and stored extra/original fields. There is no 60-message default.
   /// A non-null leaf uses two SELECTs: the chat check and the recursive query.
   List<StoredNode> historyTo(String chatId, String? leafId) {
     _chatRow(chatId);
     return [for (final row in _ancestorRows(chatId, leafId)) _storedNode(row)];
+  }
+
+  List<StoredHistoryLink> historyLinksTo(String chatId, String? leafId) {
+    _chatRow(chatId);
+    return [
+      for (final row in _ancestorRows(
+        chatId,
+        leafId,
+        columns: '''
+      n.id, n.parent_id, n.selected_child_id, n.role, n.hidden,
+      char(1) || n.speaker AS speaker, json_type(n.original, '\$.is_system') = 'true' AS is_system''',
+      ))
+        StoredHistoryLink(
+          nodeId: row['id'] as String,
+          selectedChildId: row['selected_child_id'] as String?,
+          role: TavernRole.values.byName(row['role'] as String),
+          speaker: _unguardText(row['speaker'])!,
+          hidden: row['hidden'] == 1,
+          isSystem: row['role'] == 'system' || row['is_system'] == 1,
+        ),
+    ];
+  }
+
+  /// A bounded prompt-only page. Old inspection/usage and unknown import
+  /// fields are not materialized merely to assemble another request.
+  List<StoredNode> promptHistoryTo(String chatId, String? leafId, {required int limit, bool includeSource = false}) {
+    _ensureOpen();
+    final extra = includeSource
+        ? "json_object('dshgo', json_object('chatJsonl', json_extract(n.extra, '\$.dshgo.chatJsonl')))"
+        : "'{}'";
+    return [
+      for (final row in _ancestorRows(
+        chatId,
+        leafId,
+        limit: limit,
+        columns: '$_promptNodeColumns, $extra AS extra, $_siblingColumns',
+      ))
+        _storedNode(row),
+    ];
   }
 
   /// Reads only root-to-leaf identities, validating the same visible ancestor
@@ -1224,18 +1494,20 @@ ORDER BY n.seq
     return [for (final row in _ancestorRows(chatId, leafId, identitiesOnly: true)) row['id'] as String];
   }
 
-  List<Row> _ancestorRows(String chatId, String? leafId, {int? limit, bool identitiesOnly = false}) {
+  List<Row> _ancestorRows(String chatId, String? leafId, {int? limit, bool identitiesOnly = false, String? columns}) {
     if (limit == 0 || leafId == null) return [];
     // UNION only sees stable identifiers. Including an increasing distance
     // would defeat duplicate removal for a corrupt cycle. Both recursive
     // terms stay inside this chat; never trust a foreign parent pointer.
-    final projection = identitiesOnly ? 'a.id, a.parent_id' : '$_nodeColumns, $_siblingColumns';
+    // Drive each recursive step from its single parent id. Reordering this
+    // join can scan every node in the chat once per ancestor.
+    final projection = columns ?? (identitiesOnly ? 'a.id, a.parent_id' : '$_nodeColumns, $_siblingColumns');
     final source = identitiesOnly ? 'ancestors a' : 'ancestors a JOIN nodes n ON n.id = a.id';
     final rows = _db.select(
       '''WITH RECURSIVE ancestors(id, parent_id) AS (
            SELECT id, parent_id FROM nodes WHERE chat_id = ? AND id = ? AND deleted_by IS NULL
            UNION
-           SELECT n.id, n.parent_id FROM nodes n JOIN ancestors a ON n.id = a.parent_id
+           SELECT n.id, n.parent_id FROM ancestors a CROSS JOIN nodes n ON n.id = a.parent_id
              WHERE n.chat_id = ? AND n.deleted_by IS NULL
            LIMIT ?
          ) SELECT $projection FROM $source''',
@@ -1246,9 +1518,9 @@ ORDER BY n.seq
     final visited = <String>{};
     String? next = leafId;
     while (next != null && (limit == null || reversed.length < limit)) {
-      if (!visited.add(next)) throw StateError('Cycle in the ancestor path: $next');
+      if (!visited.add(next)) throw _StoredAncestorDataError('Cycle in the ancestor path: $next');
       final row = byId[next];
-      if (row == null) throw StateError('Node does not belong to chat or has a broken parent: $next');
+      if (row == null) throw _StoredAncestorDataError('Node does not belong to chat or has a broken parent: $next');
       reversed.add(row);
       next = row['parent_id'] as String?;
     }
@@ -1399,7 +1671,10 @@ ORDER BY n.seq
       // UPDATE OF text drives the FTS trigger. Metadata-only writes must not
       // name text, and must not promote an in-progress body as a side effect.
       if (text != null || promote) put('text', text ?? _unguardText(row['stream_text']));
-      if (speakerCharacterId != null || clearSpeakerCharacterId) {
+      final effectiveRole = role?.name ?? row['role'] as String;
+      if (effectiveRole != TavernRole.character.name) {
+        if (row['speaker_character_id'] != null) put('speaker_character_id', null);
+      } else if (speakerCharacterId != null || clearSpeakerCharacterId) {
         put('speaker_character_id', clearSpeakerCharacterId ? null : speakerCharacterId);
       }
       if (reasoning != null || clearReasoning || promote) {
@@ -1411,8 +1686,10 @@ ORDER BY n.seq
       if (usage != null || clearUsage || promote) put('usage', clearUsage ? null : _encodeUsage(usage));
       if (extra != null || promote) {
         final nextExtra = extra ?? _nodeExtra(row);
-        put('extra', jsonEncode(nextExtra));
-        put('reported_usage', _reportedUsage(nextExtra, chatId, nodeId));
+        final encoded = _encodeNodeExtra(nextExtra, chatId, nodeId);
+        put('extra', encoded.raw);
+        put('reported_usage', encoded.reportedUsage);
+        put('display_context', encoded.displayContext);
       }
       if (original != null) put('original', jsonEncode(original));
       if (promote) {
@@ -1468,14 +1745,14 @@ ORDER BY n.seq
         'SELECT $_nodeColumns, $_siblingColumns FROM nodes n WHERE n.chat_id = ? AND n.parent_id = ? ORDER BY n.seq',
         [chatId, nodeId],
       );
-      final snapshots = <String, ({String state, String? extra})>{};
+      final snapshots = <String, ({String state, _NodeExtraProjection? extra})>{};
       for (final child in children) {
         final childId = child['id'] as String;
         final state = _nodeStateSnapshot(chatId, childId, includeDeleted: true).state;
         // Encode before handing the detached map to the callback. A portable
         // override must never become the base of a descendant's physical delta.
         final physical = jsonEncode(state);
-        String? encodedExtra;
+        _NodeExtraProjection? encodedExtra;
         if (capturePortableState != null) {
           final portable = capturePortableState(_storedNode(child), state);
           // _storedNode projects pending inspection out of its returned copy.
@@ -1483,7 +1760,7 @@ ORDER BY n.seq
           final extra = _map(child['extra']);
           final own = extra['dshgo'];
           extra['dshgo'] = {if (own is Map<String, Object?>) ...own, 'tavernState': portable};
-          encodedExtra = jsonEncode(extra);
+          encodedExtra = _encodeNodeExtra(extra, chatId, childId);
         }
         snapshots[childId] = (state: physical, extra: encodedExtra);
       }
@@ -1503,12 +1780,12 @@ ORDER BY n.seq
           entry.value.state,
           entry.key,
         ]);
-        if (entry.value.extra != null) {
-          _db.execute('UPDATE nodes SET extra = ? WHERE chat_id = ? AND id = ?', [
-            entry.value.extra,
-            chatId,
-            entry.key,
-          ]);
+        final encoded = entry.value.extra;
+        if (encoded != null) {
+          _db.execute(
+            'UPDATE nodes SET extra = ?, reported_usage = ?, display_context = ? WHERE chat_id = ? AND id = ?',
+            [encoded.raw, encoded.reportedUsage, encoded.displayContext, chatId, entry.key],
+          );
         }
       }
       if (selectedId == nodeId) {
@@ -1605,7 +1882,7 @@ ORDER BY n.seq
     final blocked = _db.select(
       '''WITH RECURSIVE ancestors(id, parent_id, deleted_by) AS (
       SELECT id, parent_id, deleted_by FROM nodes WHERE chat_id = ? AND id = ?
-      UNION SELECT n.id, n.parent_id, n.deleted_by FROM nodes n JOIN ancestors a ON n.id = a.parent_id
+      UNION SELECT n.id, n.parent_id, n.deleted_by FROM ancestors a CROSS JOIN nodes n ON n.id = a.parent_id
         WHERE n.chat_id = ?
     ) SELECT 1 FROM ancestors WHERE deleted_by IS NOT NULL LIMIT 1''',
       [chatId, roots.single['parent_id'], chatId],
@@ -1845,12 +2122,12 @@ ORDER BY n.seq
         for (final entry in requestedParents.entries)
           if (byId[entry.key]!['parent_id'] != entry.value) entry.key: entry.value,
       };
-      final snapshots = <String, ({String physical, String? extra})>{};
+      final snapshots = <String, ({String physical, _NodeExtraProjection? extra})>{};
       for (final id in changedParents.keys) {
         final row = _nodeRow(chatId, id, includeDeleted: true);
         final state = _nodeStateSnapshot(chatId, id, includeDeleted: true).state;
         final physical = jsonEncode(state);
-        String? encodedExtra;
+        _NodeExtraProjection? encodedExtra;
         if (capturePortableState != null) {
           final portable = capturePortableState(_storedNode(row), state);
           final extra = _map(row['extra']);
@@ -1859,7 +2136,7 @@ ORDER BY n.seq
             throw StateError('Cannot preserve a malformed internal dshgo container while moving a page.');
           }
           extra['dshgo'] = {if (own is Map<String, Object?>) ...own, 'tavernState': portable};
-          encodedExtra = jsonEncode(extra);
+          encodedExtra = _encodeNodeExtra(extra, chatId, id);
         }
         snapshots[id] = (physical: physical, extra: encodedExtra);
       }
@@ -1885,12 +2162,12 @@ ORDER BY n.seq
           entry.value.physical,
           entry.key,
         ]);
-        if (entry.value.extra != null) {
-          _db.execute('UPDATE nodes SET extra = ? WHERE chat_id = ? AND id = ?', [
-            entry.value.extra,
-            chatId,
-            entry.key,
-          ]);
+        final encoded = entry.value.extra;
+        if (encoded != null) {
+          _db.execute(
+            'UPDATE nodes SET extra = ?, reported_usage = ?, display_context = ? WHERE chat_id = ? AND id = ?',
+            [encoded.raw, encoded.reportedUsage, encoded.displayContext, chatId, entry.key],
+          );
         }
       }
       for (final id in removed) {
@@ -1919,7 +2196,14 @@ ORDER BY n.seq
     String nodeId, {
     bool includeDeleted = false,
   }) {
-    _nodeRow(chatId, nodeId, includeDeleted: includeDeleted);
+    _ensureOpen();
+    if (_db.select(
+      'SELECT 1 FROM nodes WHERE chat_id = ? AND id = ? '
+      'AND (deleted_by IS NULL OR ? = 1)',
+      [chatId, nodeId, includeDeleted ? 1 : 0],
+    ).isEmpty) {
+      throw StateError('Node does not belong to chat: $nodeId');
+    }
     // Keep recursive rows stable so a corrupt cycle terminates in SQL before
     // the reconstruction below rejects it. A checkpoint still stops the walk.
     final rows = _db.select(
@@ -2091,7 +2375,7 @@ ORDER BY n.seq
              WHERE chat_id = ? AND id = ? AND deleted_by IS NULL
            UNION
            SELECT n.id, n.parent_id, n.selected_child_id
-           FROM nodes n JOIN descendants d ON n.id = d.selected_child_id
+           FROM descendants d CROSS JOIN nodes n ON n.id = d.selected_child_id
              WHERE n.chat_id = ? AND n.parent_id = d.id AND n.deleted_by IS NULL
          ) SELECT * FROM descendants''',
       [chatId, nodeId, chatId],
@@ -2130,7 +2414,7 @@ ORDER BY n.seq
       .select(
         '''WITH RECURSIVE ancestors(id, parent_id) AS (
          SELECT id, parent_id FROM nodes WHERE chat_id = ? AND id = ? AND deleted_by IS NULL
-         UNION SELECT n.id, n.parent_id FROM nodes n JOIN ancestors a ON n.id = a.parent_id WHERE n.chat_id = ? AND n.deleted_by IS NULL
+         UNION SELECT n.id, n.parent_id FROM ancestors a CROSS JOIN nodes n ON n.id = a.parent_id WHERE n.chat_id = ? AND n.deleted_by IS NULL
        ) SELECT 1 FROM ancestors WHERE id = ? LIMIT 1''',
         [chatId, nodeId, chatId, ancestorId],
       )
@@ -2172,6 +2456,19 @@ ORDER BY n.seq
     selectedChildId: row['selected_child_id'] as String?,
     extra: _nodeExtra(row),
     original: _map(row['original']),
+  );
+
+  static StoredNode _displayNode(Row row) => StoredNode(
+    message: _message(row),
+    depth: row['depth'] as int,
+    selectedChildId: row['selected_child_id'] as String?,
+    extra: {
+      'dshgo': {
+        if (row['display_state'] != null) 'tavernState': _map(row['display_state']),
+        if (row['display_source'] != null) 'chatJsonl': _map(row['display_source']),
+      },
+    },
+    original: {'is_system': row['display_system'] == 1},
   );
 
   static Map<String, Object?> _nodeExtra(Row row) {
@@ -2216,6 +2513,25 @@ ORDER BY n.seq
           'model': usage.model,
         });
 
+  // Every writer of extra uses the same already-owned map for both read
+  // projections. Streaming recovery only removes inspection, leaving display
+  // context unchanged while explicitly clearing reported_usage.
+  static _NodeExtraProjection _encodeNodeExtra(Map<String, Object?> extra, String chatId, String nodeId) {
+    final own = extra['dshgo'];
+    final state = own is Map<String, Object?> ? own['tavernState'] : null;
+    final source = own is Map<String, Object?> ? own['chatJsonl'] : null;
+    return _NodeExtraProjection(
+      jsonEncode(extra),
+      _reportedUsage(extra, chatId, nodeId),
+      jsonEncode({
+        'dshgo': {
+          'tavernState': state is Map<String, Object?> ? state : null,
+          'chatJsonl': source is Map<String, Object?> ? source : null,
+        },
+      }),
+    );
+  }
+
   // Read only this owned, small value. A path read never reconstructs the
   // inspection's prompt/trace or turns absent/invalid reporting into zero.
   static String? _reportedUsage(Map<String, Object?> extra, String chatId, String nodeId) {
@@ -2236,11 +2552,14 @@ ORDER BY n.seq
         (usage['model'] != null && usage['model'] is! String)) {
       return null;
     }
+    final startedAt = inspection['startedAt'];
+    final startedAtMs = startedAt is String ? DateTime.tryParse(startedAt)?.millisecondsSinceEpoch : null;
     return jsonEncode({
       'promptTokens': usage['promptTokens'],
       'cacheHitTokens': usage['cacheHitTokens'],
       'completionTokens': usage['completionTokens'],
       'model': usage['model'],
+      'startedAtMs': ?startedAtMs,
     });
   }
 
@@ -2286,6 +2605,32 @@ ORDER BY n.seq
     char(1) || n.reasoning AS reasoning, n.at, n.hidden, n.usage, n.extra, n.original,
     char(1) || n.stream_text AS stream_text, char(1) || n.stream_reasoning AS stream_reasoning,
     n.deleted_by, n.reported_usage, char(1) || n.speaker_character_id AS speaker_character_id''';
+
+  static const _displayVisible =
+      "(n.hidden = 0 AND n.role != 'system' AND "
+      "coalesce(json_type(n.original, '\$.is_system') != 'true', 1))";
+  static const _displayNodeColumns = '''
+    n.id, n.parent_id, n.selected_child_id, n.depth, n.role,
+    char(1) || n.speaker AS speaker, char(1) || n.text AS text,
+    char(1) || n.reasoning AS reasoning, n.at, n.hidden,
+    char(1) || n.stream_text AS stream_text, char(1) || n.stream_reasoning AS stream_reasoning,
+    char(1) || n.speaker_character_id AS speaker_character_id, NULL AS usage, NULL AS reported_usage,
+    json_type(n.original, '\$.is_system') = 'true' AS display_system,
+    CASE WHEN json_type(n.display_context, '\$.dshgo.tavernState') = 'object'
+      THEN json_extract(n.display_context, '\$.dshgo.tavernState') END AS display_state,
+    CASE WHEN json_type(n.display_context, '\$.dshgo.chatJsonl') = 'object'
+      THEN json_extract(n.display_context, '\$.dshgo.chatJsonl') END AS display_source''';
+
+  static const _promptNodeColumns = '''
+    n.seq, n.id, n.chat_id, n.parent_id, n.selected_child_id, n.depth, n.role,
+    char(1) || n.speaker AS speaker, char(1) || n.text AS text,
+    NULL AS reasoning, n.at, n.hidden, NULL AS usage,
+    json_object('is_system', json(CASE WHEN json_type(n.original, '\$.is_system') = 'true' THEN 'true' ELSE 'false' END),
+      'force_avatar', json_extract(n.original, '\$.force_avatar'),
+      'tool_calls', json_extract(n.original, '\$.tool_calls'),
+      'tool_call_id', json_extract(n.original, '\$.tool_call_id')) AS original,
+    char(1) || n.stream_text AS stream_text, NULL AS stream_reasoning,
+    n.deleted_by, NULL AS reported_usage, char(1) || n.speaker_character_id AS speaker_character_id''';
 
   static const _chatColumns = '''
     c.id, c.character_id, char(1) || c.title AS title, c.created_at, c.updated_at,
@@ -2373,6 +2718,20 @@ CREATE TRIGGER nodes_fts_update AFTER UPDATE OF text, speaker ON nodes BEGIN
   INSERT INTO nodes_fts(nodes_fts, rowid, text, speaker) VALUES ('delete', old.seq, old.text, old.speaker);
   INSERT INTO nodes_fts(rowid, text, speaker) VALUES (new.seq, new.text, new.speaker);
 END;
+''';
+
+  static const _schemaV9 = r'''
+CREATE INDEX nodes_path_ancestry ON nodes(id, chat_id, parent_id, deleted_by);
+CREATE INDEX nodes_reported_path ON nodes(chat_id, id, at, reported_usage)
+  WHERE deleted_by IS NULL AND role = 'character' AND stream_text IS NULL AND reported_usage IS NOT NULL;
+ALTER TABLE nodes ADD COLUMN display_context TEXT;
+UPDATE nodes SET display_context = CASE WHEN json_valid(extra) THEN
+  json_object('dshgo', json_object(
+    'tavernState', CASE WHEN json_type(extra, '$.dshgo.tavernState') = 'object'
+      THEN json_extract(extra, '$.dshgo.tavernState') END,
+    'chatJsonl', CASE WHEN json_type(extra, '$.dshgo.chatJsonl') = 'object'
+      THEN json_extract(extra, '$.dshgo.chatJsonl') END))
+  ELSE extra END;
 ''';
 
   static const _schemaV7 = '''

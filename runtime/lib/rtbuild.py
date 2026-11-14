@@ -418,9 +418,10 @@ def cmd_patch_dsh(args):
             pins["patches"].setdefault(name, {})[args.dsh_version] = observed
         applied.append(name)
     if args.record:
-        with open(pins_path, "w") as f:
+        with open(pins_path + ".tmp", "w") as f:
             json.dump(pins, f, indent=2, sort_keys=True)
             f.write("\n")
+        os.replace(pins_path + ".tmp", pins_path)
         print("recorded pins for DSH %s in %s" % (args.dsh_version, pins_path))
     if "zzzzzz-session-deletion.diff" in applied:
         # Source-owned companion module, installed only alongside the vetted rc4 seam.
@@ -1730,9 +1731,10 @@ def cmd_manifest(args):
         "launch": launch_template(),
         "build": v.get("build", {}),
     }
-    with open(args.out, "w") as f:
+    with open(args.out + ".tmp", "w") as f:
         json.dump(m, f, indent=2)
         f.write("\n")
+    os.replace(args.out + ".tmp", args.out)
     print("wrote " + args.out)
 
 

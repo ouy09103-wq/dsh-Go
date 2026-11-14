@@ -95,9 +95,14 @@ export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, w
       // Loopback alone does not establish Internet reachability. A platform that
       // denies getifaddrs cannot safely infer which family to suppress.
       try {
-        const available = new Set(Object.values(networkInterfaces()).flat().filter((e) => e && !e.internal)
-          .map((e) => e.family === 'IPv6' || e.family === 6 ? 6 : 4));
-        families = families.filter((value) => available.has(value));
+        const entries = Object.values(networkInterfaces()).flat();
+        // An empty observation does not establish that either family is absent.
+        // Nonempty observations retain the existing loopback/family filtering.
+        if (entries.length) {
+          const available = new Set(entries.filter((e) => e && !e.internal)
+            .map((e) => e.family === 'IPv6' || e.family === 6 ? 6 : 4));
+          families = families.filter((value) => available.has(value));
+        }
       } catch { /* retain both families when Android denies interface enumeration */ }
     }
     const hostEntries = snapshot.hosts.get(normalizeHost(hostname));

@@ -495,7 +495,26 @@ void main() {
     expect(find.byKey(const ValueKey('fake-canvas')), findsOneWidget);
     expect(canvas.builds, greaterThan(0));
     expect(hint, findsNothing);
-    expect((await SharedPreferences.getInstance()).getBool(TavernSettingsController.canvasKey), isTrue);
+    // For this card only: 酒馆设置 stay as they were.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(TavernCharacterRenderController.keyFor('sample-innkeeper')), 'canvas');
+    expect(prefs.getBool(TavernSettingsController.canvasKey), isFalse);
+  });
+
+  testWidgets("a character's own 整页画布 puts its chat on the canvas, the settings' off", (tester) async {
+    await _chat(
+      tester,
+      prefs: {
+        TavernSettingsController.canvasKey: false,
+        TavernCharacterRenderController.keyFor('sample-innkeeper'): 'canvas',
+      },
+    );
+    expect(find.byKey(const ValueKey('fake-canvas')), findsOneWidget);
+  });
+
+  testWidgets("a character's own 文字 keeps it off the canvas, the settings' on", (tester) async {
+    await _chat(tester, prefs: {TavernCharacterRenderController.keyFor('sample-innkeeper'): 'text'});
+    expect(find.byKey(const ValueKey('fake-canvas')), findsNothing);
   });
 
   testWidgets('put away, it is not said again for that card', (tester) async {

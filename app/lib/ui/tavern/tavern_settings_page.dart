@@ -27,13 +27,17 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'tavern_backup.dart';
+import 'tavern_channels_page.dart' show TavernAuxiliaryTile;
 import 'tavern_import_files.dart';
+import 'tavern_model_rows.dart';
+import 'tavern_number_tile.dart';
 import 'tavern_personas.dart';
 import 'tavern_preset_page.dart';
 import 'tavern_presets_page.dart';
 import 'tavern_quick_replies_page.dart';
 import 'tavern_reading.dart';
 import 'tavern_usage_page.dart';
+import 'tavern_tool_policy_group.dart';
 
 class TavernSettingsPage extends ConsumerWidget {
   const TavernSettingsPage({super.key});
@@ -90,33 +94,18 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
     title: l10n.tavernSettingsConnection,
     margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
     children: [
-      SettingsSegmentTile<String>(
-        key: const ValueKey('tavern-model'),
-        icon: AppIcons.model,
-        title: l10n.tavernSettingsModel,
-        segments: [
-          PillSegment(tavernModels[0], l10n.tavernModelFlash),
-          PillSegment(tavernModels[1], l10n.tavernModelPro),
-        ],
-        selected: settings.model,
-        onChanged: (model) => unawaited(controller.setModel(model)),
-      ),
-      SettingsSwitchTile(
-        key: const ValueKey('tavern-thinking'),
-        icon: AppIcons.generating,
-        title: l10n.tavernThinking,
-        subtitle: l10n.tavernThinkingSubtitle,
-        value: settings.thinking,
-        onChanged: (on) => unawaited(controller.setThinking(on)),
-      ),
-      SettingsTile(
-        key: const ValueKey('tavern-key'),
-        icon: hasKey ? AppIcons.apiKey : AppIcons.noApiKey,
-        title: l10n.tavernApiKey,
-        value: Text(hasKey ? l10n.tavernApiKeySet : l10n.tavernApiKeyMissing),
-        onTap: () =>
-            Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ApiKeyPage(onboarding: false))),
-      ),
+      ...tavernModelRows(context, ref, keyPrefix: 'tavern'),
+      const TavernAuxiliaryTile(),
+      // An added channel's key is on that channel.
+      if (settings.activeChannel == null)
+        SettingsTile(
+          key: const ValueKey('tavern-key'),
+          icon: hasKey ? AppIcons.apiKey : AppIcons.noApiKey,
+          title: l10n.tavernApiKey,
+          value: Text(hasKey ? l10n.tavernApiKeySet : l10n.tavernApiKeyMissing),
+          onTap: () =>
+              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ApiKeyPage(onboarding: false))),
+        ),
     ],
   );
   final generating = SheetGroup(
@@ -139,29 +128,39 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
           onTap: () => unawaited(Navigator.of(context).push(TavernPresetPage.route(defaultPreset))),
         )
       else ...[
-        SettingsSegmentTile<int>(
+        TavernNumberTile(
           key: const ValueKey('tavern-max-context'),
           icon: AppIcons.tavernContext,
           title: l10n.tavernMaxContext,
-          segments: [for (final tokens in tavernContextSizes) PillSegment(tokens, '${(tokens + 1) ~/ 1024}K')],
-          selected: generation.maxContext,
-          onChanged: (tokens) => unawaited(generate.setMaxContext(tokens)),
+          presets: tavernContextSizes,
+          presetLabel: tavernContextLabel,
+          value: generation.maxContext,
+          min: tavernContextRange.min,
+          max: tavernContextRange.max,
+          integer: true,
+          onChanged: (tokens) => unawaited(generate.setMaxContext(tokens.toInt())),
         ),
-        SettingsSegmentTile<int>(
+        TavernNumberTile(
           key: const ValueKey('tavern-max-reply'),
           icon: AppIcons.tavernReplyLength,
           title: l10n.tavernMaxReply,
-          segments: [for (final tokens in tavernReplySizes) PillSegment(tokens, '$tokens')],
-          selected: generation.maxReply,
-          onChanged: (tokens) => unawaited(generate.setMaxReply(tokens)),
+          presets: tavernReplySizes,
+          value: generation.maxReply,
+          min: tavernReplyRange.min,
+          max: tavernReplyRange.max,
+          integer: true,
+          onChanged: (tokens) => unawaited(generate.setMaxReply(tokens.toInt())),
         ),
-        SettingsSegmentTile<double>(
+        TavernNumberTile(
           key: const ValueKey('tavern-temperature'),
           icon: AppIcons.tavernTemperature,
           title: l10n.tavernTemperature,
-          segments: [for (final t in tavernTemperatures) PillSegment(t, t.toStringAsFixed(1))],
-          selected: generation.temperature,
-          onChanged: (t) => unawaited(generate.setTemperature(t)),
+          presets: tavernTemperatures,
+          presetLabel: (t) => t.toStringAsFixed(1),
+          value: generation.temperature,
+          min: tavernTemperatureRange.min,
+          max: tavernTemperatureRange.max,
+          onChanged: (t) => unawaited(generate.setTemperature(t.toDouble())),
         ),
       ],
       Padding(
@@ -171,17 +170,18 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
         ),
       ),
-      SettingsSegmentTile<double>(
+      TavernNumberTile(
         key: const ValueKey('tavern-cost-alert'),
         icon: AppIcons.notifications,
         title: l10n.tavernCostAlert,
         subtitle: l10n.tavernCostAlertSubtitle,
-        segments: [
-          for (final usd in tavernCostAlerts)
-            PillSegment(usd, usd == 0 ? l10n.tavernCostAlertOff : '\$${usd.toStringAsFixed(2)}'),
-        ],
-        selected: settings.costAlert,
-        onChanged: (usd) => unawaited(controller.setCostAlert(usd)),
+        presets: tavernCostAlerts,
+        presetLabel: (usd) => usd == 0 ? l10n.tavernCostAlertOff : '\$${usd.toStringAsFixed(2)}',
+        label: (usd) => '\$${tavernNumberText(usd)}',
+        value: settings.costAlert,
+        min: tavernCostAlertRange.min,
+        max: tavernCostAlertRange.max,
+        onChanged: (usd) => unawaited(controller.setCostAlert(usd.toDouble())),
       ),
     ],
   );
@@ -215,30 +215,36 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
         selected: settings.textSpeed,
         onChanged: (speed) => unawaited(controller.setTextSpeed(speed)),
       ),
-      SettingsSegmentTile<double>(
+      TavernNumberTile(
         key: const ValueKey('tavern-text-size'),
         icon: AppIcons.selectText,
         title: l10n.tavernTextSize,
-        segments: [
-          for (final (i, size) in tavernTextSizes.indexed)
-            PillSegment(
-              size,
-              [l10n.tavernTextSmall, l10n.tavernTextMedium, l10n.tavernTextLarge, l10n.tavernTextHuge][i],
-            ),
-        ],
-        selected: settings.textSize,
-        onChanged: (size) => unawaited(controller.setTextSize(size)),
+        presets: tavernTextSizes,
+        presetLabel: (size) => [
+          l10n.tavernTextSmall,
+          l10n.tavernTextMedium,
+          l10n.tavernTextLarge,
+          l10n.tavernTextHuge,
+        ][tavernTextSizes.indexOf(size.toDouble())],
+        value: settings.textSize,
+        min: tavernTextSizeRange.min,
+        max: tavernTextSizeRange.max,
+        onChanged: (size) => unawaited(controller.setTextSize(size.toDouble())),
       ),
-      SettingsSegmentTile<double>(
+      TavernNumberTile(
         key: const ValueKey('tavern-line-height'),
         icon: AppIcons.compact,
         title: l10n.tavernLineHeight,
-        segments: [
-          for (final (i, height) in tavernLineHeights.indexed)
-            PillSegment(height, [l10n.tavernLineTight, l10n.tavernLineNormal, l10n.tavernLineLoose][i]),
-        ],
-        selected: settings.lineHeight,
-        onChanged: (height) => unawaited(controller.setLineHeight(height)),
+        presets: tavernLineHeights,
+        presetLabel: (height) => [
+          l10n.tavernLineTight,
+          l10n.tavernLineNormal,
+          l10n.tavernLineLoose,
+        ][tavernLineHeights.indexOf(height.toDouble())],
+        value: settings.lineHeight,
+        min: tavernLineHeightRange.min,
+        max: tavernLineHeightRange.max,
+        onChanged: (height) => unawaited(controller.setLineHeight(height.toDouble())),
       ),
       SettingsSegmentTile<TavernPalette>(
         key: const ValueKey('tavern-palette'),
@@ -419,7 +425,7 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
       ),
     ],
   );
-  return [model, generating, display, safety, data, you, startupGroup];
+  return [model, generating, const TavernToolPolicyGroup(), display, safety, data, you, startupGroup];
 }
 
 /// What the room goes to, part by part.

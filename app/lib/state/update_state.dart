@@ -864,7 +864,10 @@ class AppUpdateController extends Notifier<AppUpdateState> {
   /// before asking and it reads as cancelled. False when it couldn't open.
   Future<bool> installWithSystem() async {
     final apk = _apk;
+    final run = _run;
     if (!ref.mounted || apk == null || state.busy || !apk.isFor(state) || !await apk.file.exists()) return false;
+    // The file check can outlive this owner, package or install attempt.
+    if (!ref.mounted || run != _run || state.busy || !identical(_apk, apk) || !apk.isFor(state)) return false;
     return _installer.openWithSystemInstaller(apk.file.path);
   }
 

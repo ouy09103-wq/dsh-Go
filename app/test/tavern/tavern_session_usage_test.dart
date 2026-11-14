@@ -56,7 +56,7 @@ void main() {
     expect(tavernTokenCount(2500000, zh: false), '2.5M');
   });
 
-  test("the whole line is read, page by page, and its replies' usage added up", () async {
+  test("the engine's sum of the line: its replies' usage added up", () async {
     final tavern = _LongChat(150); // 300 messages: two pages of 200
     final usage = await tavernSessionUsage(tavern, 'chat');
     expect(tavern.pages, 2);

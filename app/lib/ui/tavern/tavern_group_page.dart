@@ -52,6 +52,7 @@ class TavernGroupPage extends ConsumerWidget {
           TavernGroupError.invalidLimit => l10n.tavernGroupErrorInvalidLimit,
           TavernGroupError.invalidOrder => l10n.tavernGroupErrorInvalidOrder,
           TavernGroupError.hostInUse => l10n.tavernGroupErrorHostInUse,
+          TavernGroupError.invalidTitle => l10n.tavernGroupErrorInvalidTitle,
         }),
       );
     } on Object catch (e) {

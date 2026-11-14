@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import io.github.ouy09103.dsh_go_root.phone.PhoneControl
+import io.github.ouy09103.dsh_go_root.phone.DiagnosticsTool
 import org.json.JSONArray
 import org.json.JSONObject
 import io.github.ouy09103.dsh_go_root.phone.skills.PhoneSkillRoute
@@ -331,16 +332,29 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) app.startForegroundService(intent) else app.startService(intent)
     }
 
+    // The attached Flutter engine owns collection; detaching it revokes only its callback.
+    @Volatile private var diagnosticsRefresh: (() -> Boolean)? = null
+    val diagnosticsTool = DiagnosticsTool {
+        val callback = diagnosticsRefresh ?: throw DiagnosticsTool.Failure("diagnostics_unavailable")
+        callback() && diagnosticsRefresh === callback
+    }
+
+    @Synchronized internal fun attachDiagnosticsRefresh(callback: () -> Boolean) { diagnosticsRefresh = callback }
+    @Synchronized internal fun detachDiagnosticsRefresh(callback: () -> Boolean) {
+        if (diagnosticsRefresh === callback) diagnosticsRefresh = null
+    }
+
     /**
      * Writes the app's diagnostics snapshot where the engine's agent can read it
      * (`$DSH_HOME/dsh-app/diagnostics.md`). A few KB on the platform thread, after the
      * engine came up or when the person asks from 设置 → 诊断. Null when the runtime is
      * not installed or the write failed.
      */
-    fun publishDiagnostics(markdown: String, manual: Boolean = false): Map<String, Any?>? = try {
+    fun publishDiagnostics(markdown: String, manual: Boolean = false, collectedAt: Any? = null, sections: Any? = null): Map<String, Any?>? = try {
         if (!installer.isCurrent()) null
         else {
             val file = GuestSetup.writeDiagnostics(installer.rootfs, markdown, safe = currentModeSafe(), manual = manual)
+            diagnosticsTool.published(collectedAt, sections, manual)
             mapOf("path" to file.absolutePath, "bytes" to file.length())
         }
     } catch (_: Exception) {
@@ -527,6 +541,12 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         worker.execute {
             var launched: DshProcess? = null
             try {
+                try {
+                    installer.cleanupCommittedUpgrade()
+                } catch (e: Exception) {
+                    // The new engine is ready; a later start can retry only the retired payload.
+                    log("[dsh-app] completed engine cleanup failed: ${e.message}", "system")
+                }
                 noteDns(GuestSetup.writeResolvConf(app, installer.rootfs), DnsConfigSource.START)
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
@@ -599,7 +619,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     tawcEngine = tawc.saved == true, tawcFailed = tawc.failed,
                     rootEngine = root.saved == true) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
-                    if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
+                    if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone && PhoneControl.switchedOn(app), pendingVisualReplies, actualDirect)
                 }
                 if (phone) PhoneControl.get(app).launched(p.phoneMounted)
             } catch (e: Throwable) {

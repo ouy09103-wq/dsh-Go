@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dsh_tavern/src/store/chat_store.dart';
@@ -7,7 +8,7 @@ import 'package:test/test.dart';
 // Real SQLite queries and a fixed historical schema. No elapsed-time claim or
 // production query hook substitutes for the result and migration contracts.
 void main() {
-  test('a new V7 database retains the exact chat and kind index and reopens without replaying it', () async {
+  test('a new database retains the exact chat and kind index and reopens without replaying it', () async {
     final directory = await _temporaryDirectory();
     final path = '${directory.path}/current.sqlite3';
     final first = ChatStore.open(path);
@@ -18,8 +19,7 @@ void main() {
     }
     final database = sqlite3.open(path);
     final store = _own(database);
-    expect(ChatStore.schemaVersion, 7);
-    expect(_version(database), 7);
+    expect(_version(database), ChatStore.schemaVersion);
     _expectEmptyGroups(database);
     expect(_indexColumns(database), ['chat_id', 'kind']);
     expect(database.select("SELECT name FROM sqlite_master WHERE name = 'agent_runs_chat_kind'"), hasLength(1));
@@ -185,7 +185,7 @@ void main() {
       expect(_indexColumns(database), isEmpty);
       final before = _data(database, includeVendor: true);
       final store = _own(database);
-      expect(_version(database), 7);
+      expect(_version(database), ChatStore.schemaVersion);
       _expectEmptyGroups(database);
       expect(_indexColumns(database), ['chat_id', 'kind']);
       expect(_data(database, includeVendor: true), before);
@@ -220,7 +220,7 @@ void main() {
     }
     final database = sqlite3.open(path);
     _own(database);
-    expect(_version(database), 7);
+    expect(_version(database), ChatStore.schemaVersion);
     _expectEmptyGroups(database);
     expect(_indexColumns(database), ['chat_id', 'kind']);
     expect(_data(database, includeVendor: true), before);
@@ -245,7 +245,7 @@ void main() {
     await ChatStore.validateBackup(staging, sourceSchemaVersion: 5);
     final migrated = sqlite3.open(staging.path, mode: OpenMode.readOnly);
     try {
-      expect(_version(migrated), 7);
+      expect(_version(migrated), ChatStore.schemaVersion);
       expect(_indexColumns(migrated), ['chat_id', 'kind']);
       expect(_data(migrated, includeVendor: true), before);
     } finally {
@@ -278,7 +278,7 @@ void main() {
     final renamed = await staging.rename('${directory.path}/validated.sqlite3');
     final check = sqlite3.open(renamed.path, mode: OpenMode.readOnly);
     try {
-      expect(_version(check), 7);
+      expect(_version(check), ChatStore.schemaVersion);
       expect(_data(check, includeVendor: true), before);
     } finally {
       check.close();
@@ -286,14 +286,14 @@ void main() {
     expect(await archive.readAsBytes(), original);
   });
 
-  test('an online V7 backup includes the index and latest audit rows while its source remains writable', () async {
+  test('an online backup includes the index and latest audit rows while its source remains writable', () async {
     final directory = await _temporaryDirectory();
     final database = sqlite3.open('${directory.path}/live.sqlite3');
     final store = _own(database);
     _chats(store);
     _run(store, 'before-backup', 'director.success');
     final destination = File('${directory.path}/snapshot.sqlite3');
-    expect(await store.backupToFile(destination), 7);
+    expect(await store.backupToFile(destination), ChatStore.schemaVersion);
     final captured = sqlite3.open(destination.path, mode: OpenMode.readOnly);
     try {
       expect(captured.select('PRAGMA journal_mode').single['journal_mode'], 'delete');
@@ -301,10 +301,10 @@ void main() {
       captured.close();
     }
     _run(store, 'after-backup', 'director.failure');
-    await ChatStore.validateBackup(destination, sourceSchemaVersion: 7);
+    await ChatStore.validateBackup(destination, sourceSchemaVersion: ChatStore.schemaVersion);
     final copy = sqlite3.open(destination.path, mode: OpenMode.readOnly);
     try {
-      expect(_version(copy), 7);
+      expect(_version(copy), ChatStore.schemaVersion);
       expect(_indexColumns(copy), ['chat_id', 'kind']);
       expect(copy.select('SELECT id FROM agent_runs ORDER BY rowid').map((row) => row['id']), ['before-backup']);
     } finally {
@@ -396,13 +396,40 @@ Map<String, Object?> _data(Database database, {bool includeVendor = false}) => {
     ],
 };
 
-// Compare every historical column byte-for-byte while checking the one new
-// nullable identity field explicitly. Unknown vendor columns are never removed.
+// Compare every historical column byte-for-byte. Check each deliberate schema
+// addition before omitting it from the historical projection; retain vendor data.
 Map<String, Object?> _legacyRow(String table, Row row) {
   final result = Map<String, Object?>.from(row);
   if (table == 'nodes' && result.containsKey('speaker_character_id')) {
     expect(result['speaker_character_id'], isNull);
     result.remove('speaker_character_id');
+  }
+  if (table == 'nodes' && result.containsKey('source_epoch')) {
+    expect(result.remove('source_epoch'), 0);
+    expect(result.remove('content_version'), 1);
+  }
+  if (table == 'nodes' && result.containsKey('display_context')) {
+    expect(jsonDecode(result.remove('display_context')! as String), {
+      'dshgo': {'tavernState': null, 'chatJsonl': null},
+    });
+  }
+  if (table == 'memories' && result.containsKey('origin')) {
+    expect(result.remove('origin'), 'legacy');
+    for (final name in [
+      'origin_proposal_id',
+      'origin_logical_turn_id',
+      'origin_receipt_id',
+      'source_node_id',
+      'source_seq',
+      'source_epoch',
+      'source_content_version',
+      'source_live_node_id',
+      'source_validity',
+      'invalidated_reason',
+    ]) {
+      expect(result.containsKey(name), true, reason: name);
+      expect(result.remove(name), isNull, reason: name);
+    }
   }
   return result;
 }

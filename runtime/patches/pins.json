@@ -24,6 +24,14 @@
         }
       }
     },
+    "config-editor-lock-order.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-config-editor/lib/index.js": {
+          "after": "5afb26351f03086d97f5c3028bf80c49c495c367dd68f26473a1da0424601427",
+          "before": "8bcc6f2ea0ace1438ea5497fbc5417b1af53f8805b663b776e8d6a5231c1940f"
+        }
+      }
+    },
     "cordis-effect-dispose-completion.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/cordis/lib/index.js": {
@@ -43,6 +51,22 @@
         "node_modules/@deepseek-ai/dsh-credentials-local/lib/index.js": {
           "after": "4c4c3af9ed5580d9b6105d8c1767a2a58e2e294b001e585032c2fd68b711dd9f",
           "before": "6b4926ef62bfeb95bc3d7687b85303d739a41e813fe05ac06de50111361da069"
+        }
+      }
+    },
+    "deepseek-attachment-error.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "33932219045bc1f31f96c94ce2a18883ad108ecdf0f7f74d7911e8a7d6257917",
+          "before": "2e265c0bb1b759035682f65a8243ac8c9a33d7c6e793530fa290b48b0c55605f"
+        }
+      }
+    },
+    "fork-default-effort.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
+          "after": "5e14c333b6e401448f17205b5afc4abfcd52b8ed706ff9253a43215a061c73cd",
+          "before": "3b24a3b02a80a859bc3cae31e081cee2a2e16d152d19f70bfd9fe4d981e0a790"
         }
       }
     },
@@ -141,6 +165,14 @@
         "node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js": {
           "after": "f10502eab12993c68c1f886e5de5d3aa707604f504660cb861fc1b45faffecaf",
           "before": "df81627c173163d0b918692f4a3b87e22cbdb5883b809e4d70d6152d1e68d948"
+        }
+      }
+    },
+    "piai-overflow-output-limit.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@earendil-works/pi-ai/dist/utils/overflow.js": {
+          "after": "9607498e3da8815d4f52ae1193d4f1d70cb2708930233903f2b4db3c7088e0e4",
+          "before": "bc0b743fdbf33fe3dd2bb69b1838166ac0b6957f74051213fcaf336c11d041a3"
         }
       }
     },

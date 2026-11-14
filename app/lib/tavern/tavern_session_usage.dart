@@ -29,6 +29,31 @@ class TavernSessionUsage {
 
   /// Replies whose model is not on the price list: not in [cost].
   final int unpriced;
+
+  TavernSessionUsage operator +(TavernSessionUsage other) => TavernSessionUsage(
+    replies: replies + other.replies,
+    prompt: prompt + other.prompt,
+    cacheHit: cacheHit + other.cacheHit,
+    completion: completion + other.completion,
+    cost: cost + other.cost,
+    unpriced: unpriced + other.unpriced,
+  );
+
+  /// With [m]'s reported usage, when it is a reply that has some.
+  TavernSessionUsage plus(TavernMessage m) {
+    final usage = m.reportedUsage;
+    if (m.role != TavernRole.character || usage == null) return this;
+    final price = tavernModelPrice(usage.model);
+    return this +
+        TavernSessionUsage(
+          replies: 1,
+          prompt: usage.promptTokens,
+          cacheHit: usage.cacheHitTokens,
+          completion: usage.completionTokens,
+          cost: price == null ? 0 : tavernReplyCost(usage, price, m.at),
+          unpriced: price == null ? 1 : 0,
+        );
+  }
 }
 
 /// A DeepSeek model's list prices, US dollars per million tokens at peak
@@ -71,39 +96,30 @@ double tavernReplyCost(TavernUsage usage, TavernModelPrice price, DateTime at) {
 /// of a cent), two above.
 String tavernUsd(double usd) => usd < 1 ? usd.toStringAsFixed(4) : usd.toStringAsFixed(2);
 
-/// [chatId]'s current line, all of it (the engine hands it out a page at a
-/// time, newest first), its replies' usage summed.
-Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId, {int page = 200}) async {
-  var replies = 0, prompt = 0, cacheHit = 0, completion = 0, unpriced = 0;
-  var cost = 0.0;
-  String? before;
-  while (true) {
-    final messages = await tavern.path(chatId, limit: page, beforeNodeId: before);
-    for (final m in messages) {
-      if (m.role != TavernRole.character) continue;
-      if (m.reportedUsage case final usage?) {
-        replies++;
-        prompt += usage.promptTokens;
-        cacheHit += usage.cacheHitTokens;
-        completion += usage.completionTokens;
-        if (tavernModelPrice(usage.model) case final price?) {
-          cost += tavernReplyCost(usage, price, m.at);
-        } else {
-          unpriced++;
-        }
-      }
-    }
-    if (messages.length < page) break;
-    before = messages.first.nodeId;
+/// [chatId]'s current line, its replies' usage summed: the engine adds it up
+/// in one query ([Tavern.pathUsage]), by model and by the UTC weekday and
+/// hour, which is all DeepSeek's peak and off-peak prices need.
+Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId) async {
+  var total = const TavernSessionUsage();
+  for (final bucket in await tavern.pathUsage(chatId)) {
+    final usage = TavernUsage(
+      promptTokens: bucket.promptTokens,
+      cacheHitTokens: bucket.cacheHitTokens,
+      completionTokens: bucket.completionTokens,
+      model: bucket.model,
+    );
+    final price = tavernModelPrice(bucket.model);
+    total += TavernSessionUsage(
+      replies: bucket.replyCount,
+      prompt: usage.promptTokens,
+      cacheHit: usage.cacheHitTokens,
+      completion: usage.completionTokens,
+      // 2024-01-01 was a Monday: day N of that month is weekday N.
+      cost: price == null ? 0 : tavernReplyCost(usage, price, DateTime.utc(2024, 1, bucket.utcWeekday, bucket.utcHour)),
+      unpriced: price == null ? bucket.replyCount : 0,
+    );
   }
-  return TavernSessionUsage(
-    replies: replies,
-    prompt: prompt,
-    cacheHit: cacheHit,
-    completion: completion,
-    cost: cost,
-    unpriced: unpriced,
-  );
+  return total;
 }
 
 /// A token count at a glance: 8,421 as it is; 12,345 as 1.2万 (or 12.3k).

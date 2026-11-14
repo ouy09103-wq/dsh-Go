@@ -225,13 +225,20 @@ class _SlashBookFileEffect {
 
   void failed(TavernScriptException error) {
     if (!started || adopted) return;
+    final unknown = error.issues
+        .where(
+          (issue) =>
+              issue.code == 'authoring_adoption_unconfirmed' &&
+              issue.details['physicalResourceId'] == 'lorebook:$bookId',
+        )
+        .firstOrNull;
     scope.execution!.recordEffect(
       kind: TavernSlashEffectKind.storage,
-      state: TavernSlashEffectState.failed,
+      state: unknown == null ? TavernSlashEffectState.failed : TavernSlashEffectState.unconfirmed,
       stage: TavernSlashEffectStage.handler,
       operation: operation,
       target: target,
-      details: {'carrier': 'file', 'code': error.code.name},
+      details: {'carrier': 'file', 'code': error.code.name, ...?unknown?.details},
     );
   }
 }
@@ -585,8 +592,8 @@ extension _SlashWorldInfoOperations on _ScriptCoordinator {
       scope.checkAlive();
       return result;
     } catch (error, stack) {
-      scope.observe(error);
       final failure = _scriptFailure(error);
+      scope.observe(failure);
       effect?.failed(failure);
       if (effect?.adopted == true) resourcesChanged();
       Error.throwWithStackTrace(_scriptEffectException(scope, failure), stack);
@@ -801,8 +808,8 @@ extension _SlashWorldInfoOperations on _ScriptCoordinator {
       scope.checkAlive();
       return chosen.name;
     } catch (error, stack) {
-      scope.observe(error);
       final failure = _scriptFailure(error);
+      scope.observe(failure);
       effect?.failed(failure);
       if (effect?.adopted == true) {
         // Calling the metadata helper is not evidence that SQL started. A

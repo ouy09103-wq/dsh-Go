@@ -444,7 +444,9 @@ extension _ScriptMessageOperations on _ScriptCoordinator {
   }) async {
     late _ScriptMessagePlan plan;
     var committed = false;
-    TavernScriptMutation action() => engine._store.transaction(
+    TavernScriptMutation action(_ToolPreparationPermit? permit) => _toolPreparationSql(
+      engine,
+      permit,
       () {
         _checkChatCapture(capture, expectedRevision: options.expectedPathRevision, requireSamePath: requireSamePath);
         check?.call();
@@ -458,7 +460,9 @@ extension _ScriptMessageOperations on _ScriptCoordinator {
       },
     );
     try {
-      final mutation = structural ? await _structureWrite(capture, action) : await _dataWrite(capture, action);
+      final mutation = structural
+          ? await _structureWrite(capture, () => action(null))
+          : await _dataWrite(capture, action);
       // This Future waits for committed cache delivery, never for the lifecycle
       // notifications produced by this write. A RECEIVED handler may await it.
       await _publishMutation(capture.context, mutation, events: plan.lifecycle(mutation));
@@ -1225,6 +1229,19 @@ class _ScriptMessagePlan {
   }
 
   TavernScriptMutation commit() {
+    // Normalize only the final batch projection. An intermediate role change
+    // must not erase an identity a later patch validly keeps as character.
+    for (final value in pages.values) {
+      if (removed.contains(value.id) || value.role == TavernRole.character || value.speakerCharacterId == null) {
+        continue;
+      }
+      value.speakerCharacterId = null;
+      if (!value.created) {
+        value.dirty.add('speakerCharacterId');
+        updated.add(value.id);
+        affected.add(value.id);
+      }
+    }
     final beforeChat = engine._store.chat(chatId);
     final storedLatest = removed.isEmpty ? null : engine._storedLatestInspection(beforeChat);
     final latestPointer = _map(_map(beforeChat.metadata['dshgo'])['latestInspection'])['nodeId'];

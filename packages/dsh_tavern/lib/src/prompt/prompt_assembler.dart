@@ -99,6 +99,29 @@ final class PromptAssembler {
   PromptAssembly assemble(PromptInput input) => _AssemblyRun(input, counter).run();
 }
 
+/// The engine has already proved the unread prefix cannot fit. Retain its
+/// ordinary exclusions without loading its bodies or expanding its macros.
+PromptAssembly assemblePromptWindow(
+  PromptAssembler assembler,
+  PromptInput input, {
+  required List<PromptHistoryMessage> prefix,
+}) => _AssemblyRun(input, assembler.counter, historyPrefix: prefix).run();
+
+/// Cost of an unchanged, meaningful history message, using the assembler's
+/// exact name/CR/tool-field normalization. Only pure counters may preflight.
+int plainHistoryTokenCost(
+  PromptTokenCounter counter,
+  PromptHistoryMessage item, {
+  required Object? namesBehavior,
+  required String userName,
+  required bool group,
+}) {
+  if (item.hidden || item.isSystem) return 0;
+  final prompt = _historyPrompt(item, namesBehavior: namesBehavior, userName: userName, group: group);
+  final message = _messageData(prompt, prompt.content, includeName: namesBehavior == 1);
+  return _meaningfulMessage(message) ? counter.countMessage(message) : 0;
+}
+
 /// Internal quiet adapter: call the already-prepared stop supplier once at
 /// the assembler's real stop stage, without filtering or expanding it again.
 /// Its bias admission uses the first prepared value and JS whitespace; the
@@ -175,6 +198,46 @@ final class _TrimGroup {
   bool queued = false;
 }
 
+_Prompt _historyPrompt(
+  PromptHistoryMessage item, {
+  required Object? namesBehavior,
+  required String userName,
+  required bool group,
+}) {
+  final role = item.role == 'narrator' ? 'system' : item.role;
+  var content = item.content;
+  if ((namesBehavior == 2 && role != 'system') ||
+      (namesBehavior == 0 && item.name != userName && (group || (item.forceAvatar && role != 'system')))) {
+    content = '${item.name}: $content';
+  }
+  return _Prompt(
+    item.id,
+    content.replaceAll('\r', ''),
+    [PromptSource('history', item.id, label: item.name)],
+    role: role,
+    expandMacros: item.expandMacros,
+    data: {
+      'name': item.name,
+      if (item.toolCalls != null) 'tool_calls': item.toolCalls,
+      if (item.toolCallId != null) 'tool_call_id': item.toolCallId,
+    },
+  );
+}
+
+Map<String, Object?> _messageData(_Prompt prompt, String content, {required bool includeName}) {
+  final name = prompt.data['name'];
+  return <String, Object?>{
+    'role': presetTruthy(prompt.role) ? prompt.role : 'system',
+    'content': content,
+    if (includeName && name is String && name.isNotEmpty) 'name': sanitizeName(name),
+    if (prompt.data['tool_calls'] != null) 'tool_calls': prompt.data['tool_calls'],
+    if (prompt.data['tool_call_id'] != null) 'tool_call_id': prompt.data['tool_call_id'],
+  };
+}
+
+bool _meaningfulMessage(Map<String, Object?> message) =>
+    message['content'] != '' || message.containsKey('tool_calls') || message['role'] == 'tool';
+
 final class _ExampleBlock {
   const _ExampleBlock(this.messages, this.source, {this.trimGroup});
   final List<Map<String, Object?>> messages;
@@ -191,8 +254,13 @@ final class _DepthExtension {
 }
 
 final class _AssemblyRun {
-  _AssemblyRun(this.input, this.counter, {this.preparedStops, this.preparedBiasHasContent})
-    : settings = input.preset.settings {
+  _AssemblyRun(
+    this.input,
+    this.counter, {
+    this.preparedStops,
+    this.preparedBiasHasContent,
+    this.historyPrefix = const [],
+  }) : settings = input.preset.settings {
     type = input.generationType.trim().toLowerCase();
     if (type.isEmpty) type = 'normal';
     final extensions = settings['extensions'];
@@ -220,6 +288,7 @@ final class _AssemblyRun {
   final PromptInput input;
   final List<String> Function()? preparedStops;
   final bool? preparedBiasHasContent;
+  final List<PromptHistoryMessage> historyPrefix;
   final PromptTokenCounter counter;
   final Map<String, Object?> settings;
   late final bool enhancedPrefillEnabled;
@@ -291,11 +360,7 @@ final class _AssemblyRun {
 
   PromptSegment message(_Prompt prompt, {bool expandText = false, bool includeName = false}) {
     final content = expandText && prompt.expandMacros ? expand(prompt.content) : prompt.content;
-    final data = <String, Object?>{'role': presetTruthy(prompt.role) ? prompt.role : 'system', 'content': content};
-    final name = prompt.data['name'];
-    if (includeName && name is String && name.isNotEmpty) data['name'] = sanitizeName(name);
-    if (prompt.data['tool_calls'] != null) data['tool_calls'] = prompt.data['tool_calls'];
-    if (prompt.data['tool_call_id'] != null) data['tool_call_id'] = prompt.data['tool_call_id'];
+    final data = _messageData(prompt, content, includeName: includeName);
     final segment = PromptSegment(
       id: prompt.id,
       message: data,
@@ -393,10 +458,7 @@ final class _AssemblyRun {
     spend(segment);
   }
 
-  bool meaningful(PromptSegment segment) =>
-      segment.message['content'] != '' ||
-      segment.message.containsKey('tool_calls') ||
-      segment.message['role'] == 'tool';
+  bool meaningful(PromptSegment segment) => _meaningfulMessage(segment.message);
   void addFixed(String id) {
     final prompt = get(id);
     if (prompt == null || prompt.absolute || (disabled.contains(id) && id != 'main')) return;
@@ -844,33 +906,32 @@ final class _AssemblyRun {
   List<_Prompt> historyPrompts() {
     final result = <_Prompt>[];
     final names = settings['names_behavior'];
-    for (final item in input.history) {
-      final sources = [PromptSource('history', item.id, label: item.name)];
+    for (final item in historyPrefix) {
       if (item.hidden || item.isSystem) {
-        excluded.add(PromptExclusion(item.id, item.hidden ? 'hidden' : 'is_system', sources));
+        excluded.add(
+          PromptExclusion(item.id, item.hidden ? 'hidden' : 'is_system', [
+            PromptSource('history', item.id, label: item.name),
+          ]),
+        );
+      } else {
+        // Keep the original depth positions. The proven overflowing real
+        // suffix stops addHistory before these unread bodies are evaluated.
+        result.add(
+          _historyPrompt(item, namesBehavior: names, userName: input.userName, group: input.groupNames.isNotEmpty),
+        );
+      }
+    }
+    for (final item in input.history) {
+      if (item.hidden || item.isSystem) {
+        excluded.add(
+          PromptExclusion(item.id, item.hidden ? 'hidden' : 'is_system', [
+            PromptSource('history', item.id, label: item.name),
+          ]),
+        );
         continue;
       }
-      final role = item.role == 'narrator' ? 'system' : item.role;
-      var content = item.content;
-      if ((names == 2 && role != 'system') ||
-          (names == 0 &&
-              item.name != input.userName &&
-              (input.groupNames.isNotEmpty || (item.forceAvatar && role != 'system')))) {
-        content = '${item.name}: $content';
-      }
       result.add(
-        _Prompt(
-          item.id,
-          content.replaceAll('\r', ''),
-          sources,
-          role: role,
-          expandMacros: item.expandMacros,
-          data: {
-            'name': item.name,
-            if (item.toolCalls != null) 'tool_calls': item.toolCalls,
-            if (item.toolCallId != null) 'tool_call_id': item.toolCallId,
-          },
-        ),
+        _historyPrompt(item, namesBehavior: names, userName: input.userName, group: input.groupNames.isNotEmpty),
       );
     }
     return result;

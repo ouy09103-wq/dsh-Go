@@ -42,7 +42,9 @@ internal class StatusOwnership {
     /** A newer task may invalidate an old cleanup ticket without owning the old status. */
     fun takeStale(): Boolean {
         val owner = current ?: return false
-        if (owner {}) return false
+        // A new execution invalidates old publications, not the same owner's visible
+        // control. The display lifetime still ends on any intervening owner or retirement.
+        if (owner {} || controls?.isCurrentDisplay() == true) return false
         clear()
         return true
     }

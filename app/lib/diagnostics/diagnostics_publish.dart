@@ -13,11 +13,13 @@ import '../runtime/runtime_state.dart';
 import '../state/connection_state.dart';
 import 'diagnostics_bundle.dart';
 import 'diagnostics_markdown.dart';
+import 'diagnostics_sections.dart';
 
 class PublishedDiagnostics {
-  const PublishedDiagnostics({required this.bytes, this.hostPath});
+  const PublishedDiagnostics({required this.bytes, this.hostPath, this.manual = false});
 
   final int bytes;
+  final bool manual;
 
   /// Where Android wrote it; for logs only, the agent reads the guest path.
   final String? hostPath;
@@ -88,11 +90,16 @@ class DiagnosticsPublisher {
       final reply = await channel.invokeMapMethod<Object?, Object?>('publishDiagnostics', {
         'markdown': markdown,
         'manual': includeSystemIme,
+        if (!includeSystemIme) ...{
+          'sections': diagnosticsSections(snapshot),
+          'collectedAt': snapshot.at.toUtc().toIso8601String(),
+        },
       });
       if (reply == null) return null;
       final bytes = reply['bytes'];
       return PublishedDiagnostics(
         bytes: bytes is num ? bytes.toInt() : markdown.length,
+        manual: includeSystemIme,
         hostPath: reply['path'] is String ? reply['path'] as String : null,
       );
     } on MissingPluginException {
@@ -121,10 +128,20 @@ final diagnosticsPublisherProvider = Provider<DiagnosticsPublisher>((ref) {
     requested = key();
     return collectDiagnostics(ref, at, includeSystemIme: includeSystemIme);
   }
+
   final publisher = DiagnosticsPublisher(
     collect: (at) => collect(at),
     collectManual: (at) => collect(at, includeSystemIme: true),
   );
+  DiagnosticsPublisher.channel.setMethodCallHandler((call) async {
+    if (call.method != 'refreshDiagnostics') throw MissingPluginException();
+    if (!ref.mounted || ref.read(localRuntimeProvider).status.phase != RuntimePhase.running) return false;
+    // A concurrent manual IME publication is not an AI tool refresh. Try one
+    // ordinary collection after it; do not mislabel a second manual one as fresh.
+    var result = await publisher.publish();
+    if (result?.manual == true && ref.mounted) result = await publisher.publish();
+    return result != null && !result.manual;
+  });
   Timer? refresh;
   void refreshObserved() {
     refresh = null;
@@ -153,6 +170,7 @@ final diagnosticsPublisherProvider = Provider<DiagnosticsPublisher>((ref) {
   ref.onDispose(() {
     refresh?.cancel();
     unawaited(changes.cancel());
+    DiagnosticsPublisher.channel.setMethodCallHandler(null);
     publisher.dispose();
   });
   return publisher;

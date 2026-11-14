@@ -46,9 +46,11 @@ class AndroidShellController(context: Context, private val onChanged: () -> Unit
             config.second == "shizuku" && shizukuStatus["running"] != true -> "shizukuStopped"
             config.second == "shizuku" && shizukuStatus["granted"] != true -> "permissionRequired"
             config.second == "adb" && adbStatus["paired"] != true -> "adbNotPaired"
-            // Root needs no pairing: either su exists and the manager granted it, or this is the reason.
+            // Root needs no pairing. Only a su answer this app actually got may be reported:
+            // "not connected yet" is not evidence that the manager refused anything.
             config.second == "root" && rootStatus["su"] == null -> "suMissing"
-            config.second == "root" -> "rootNotGranted"
+            config.second == "root" && rootStatus["failure"] != null -> rootStatus["failure"] as String
+            config.second == "root" -> "notConnected"
             else -> "notConnected"
         }
         return mapOf(

@@ -116,7 +116,7 @@ extension _SlashChatEffects on _ScriptCoordinator {
     try {
       final result = await scope.drain(
         _bridgeOperation(() {
-          T action() {
+          T action(_ToolPreparationPermit? permit) {
             scope.checkAlive();
             _checkSlashChatAdmission(owner, admission);
             _checkChatCapture(
@@ -134,7 +134,9 @@ extension _SlashChatEffects on _ScriptCoordinator {
               target: target,
               details: const {'carrier': 'sql'},
             );
-            return engine._store.transaction(
+            return _toolPreparationSql(
+              engine,
+              permit,
               () {
                 plan = _ScriptMessagePlan(this, admission.capture, operation, const TavernScriptWriteOptions());
                 prepare(plan);
@@ -163,7 +165,9 @@ extension _SlashChatEffects on _ScriptCoordinator {
             );
           }
 
-          return structural ? _structureWrite(admission.capture, action) : _dataWrite(admission.capture, action);
+          return structural
+              ? _structureWrite(admission.capture, () => action(null))
+              : _dataWrite(admission.capture, action);
         }),
       );
       scope.checkAlive();
@@ -374,7 +378,7 @@ extension _SlashChatEffects on _ScriptCoordinator {
     try {
       final value = await scope.drain(
         _bridgeOperation(
-          () => _scriptEffectChatWrite(chatId, () {
+          () => _scriptEffectChatWrite(chatId, (permit) {
             scope.checkAlive();
             _checkSlashChatAdmission(owner, admission);
             for (final entry in versions.entries) {
@@ -425,7 +429,9 @@ extension _SlashChatEffects on _ScriptCoordinator {
               target: capturedTarget,
               details: const {'carrier': 'sql'},
             );
-            return engine._store.transaction(
+            return _toolPreparationSql(
+              engine,
+              permit,
               () {
                 engine._store.updateChat(chatId, metadata: root, settings: settings);
                 final raw = metadata['script_injects'];
@@ -485,7 +491,7 @@ extension _SlashChatEffects on _ScriptCoordinator {
                 }
               },
             );
-          }),
+          }, metadataOnly: true),
         ),
       );
       scope.checkAlive();

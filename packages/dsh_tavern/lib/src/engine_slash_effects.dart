@@ -120,14 +120,20 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
   }
 
   /// Same short non-cancelling gate as B2. Never wait on our own turn.done.
-  Future<T> _scriptEffectChatWrite<T>(String chatId, T Function() action) {
+  Future<T> _scriptEffectChatWrite<T>(
+    String chatId,
+    T Function(_ToolPreparationPermit? permit) action, {
+    bool metadataOnly = false,
+  }) {
+    final permit = _captureToolPreparationPermit(engine, chatId, metadataOnly: metadataOnly);
     final previous = engine._mutations[chatId] ?? Future<void>.value();
     final released = Completer<void>();
     engine._mutations[chatId] = released.future;
     return () async {
       try {
         await previous;
-        return action();
+        _checkToolPreparationPermit(engine, permit);
+        return action(permit);
       } finally {
         if (identical(engine._mutations[chatId], released.future)) {
           unawaited(engine._mutations.remove(chatId));
@@ -161,7 +167,7 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
       signals.onEntering?.call('chat');
       checkAlive();
       final chatId = plan.chatId!;
-      await _scriptEffectChatWrite(chatId, () {
+      await _scriptEffectChatWrite(chatId, (permit) {
         checkAlive();
         signals.onStarted('chat');
         _checkScriptEffectTargets(plan, global: false);
@@ -183,7 +189,7 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
           state[entry.key] = _copy({'value': entry.value})['value'];
         }
         if (plan.hasHashUpdate) state['stChatIdHash'] = plan.stChatIdHash;
-        _persistScriptEffectChat(chat, plan.anchor, state, local, plan.chatTargets, signals);
+        _persistScriptEffectChat(chat, plan.anchor, state, local, plan.chatTargets, signals, permit);
         signals.onFinished('chat');
       });
     }
@@ -237,13 +243,16 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
     Map<String, Object?> local,
     Set<String> targets,
     _ScriptCarrierSignals signals,
+    _ToolPreparationPermit? permit,
   ) {
     final chatId = chat.id;
     final group = engine._store.groupChat(chatId);
     final adopted = (leaf: anchor, values: _runtimeCopy(local));
     final storedLocal = _copy(local);
     final targetFingerprints = <String, String>{};
-    engine._store.transaction(
+    _toolPreparationSql(
+      engine,
+      permit,
       () {
         if (anchor != null) {
           engine._store.writeNodeState(chatId, anchor, state);
@@ -764,6 +773,8 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       model: config.model,
       deepseek: config.deepseek,
       thinking: config.thinking,
+      headers: config.headers,
+      auxiliary: config.auxiliary,
     );
     late final Map<String, Object?> settings, card, regexPreset;
     late final ChatPreset promptPreset;
@@ -1407,7 +1418,7 @@ extension _ScriptSlashVariables on _ScriptCoordinator {
             receipt = currentReceipt;
             final signals = _macroEffectSignals(scope, currentReceipt);
             currentReceipt.phase = 'chat';
-            await _scriptEffectChatWrite(chatId, () {
+            await _scriptEffectChatWrite(chatId, (permit) {
               scope.checkAlive();
               signals.onStarted('chat');
               _checkScriptLocalOwner(chatId, operation);
@@ -1424,7 +1435,15 @@ extension _ScriptSlashVariables on _ScriptCoordinator {
               scope.checkAlive();
               if (changed.changed) {
                 current.state['variables'] = _copy(current.local);
-                _persistScriptEffectChat(current.chat, anchor, current.state, current.local, const {'local'}, signals);
+                _persistScriptEffectChat(
+                  current.chat,
+                  anchor,
+                  current.state,
+                  current.local,
+                  const {'local'},
+                  signals,
+                  permit,
+                );
               }
               signals.onFinished('chat');
             });

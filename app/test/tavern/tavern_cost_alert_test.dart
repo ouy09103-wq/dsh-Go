@@ -206,8 +206,8 @@ void main() {
     expect(find.descendant(of: notice, matching: find.text(_said)), findsOneWidget);
   });
 
-  test('a stored line not on the list reads as off', () async {
-    SharedPreferences.setMockInitialValues({TavernSettingsController.costAlertKey: 0.3});
+  test('a stored line outside the range reads as off', () async {
+    SharedPreferences.setMockInitialValues({TavernSettingsController.costAlertKey: -1.0});
     final container = ProviderContainer();
     addTearDown(container.dispose);
     container.read(tavernSettingsProvider);

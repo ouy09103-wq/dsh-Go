@@ -2,7 +2,7 @@ package io.github.ouy09103.dsh_go_root.phone
 
 /** The actual notification/overlay selection. Lock order is Tasks -> selection; no UI or IO here. */
 class PhoneDisplaySelection {
-    class Ticket internal constructor(val task: PhoneTasks, val owner: PhoneTasks.Owner) {
+    class Ticket internal constructor(val task: PhoneTasks, val owner: PhoneTasks.Owner, internal val displayLifetime: Any) {
         internal var line: String? = null // Owned by the selection lock.
     }
     data class View(val task: PhoneTasks, val owner: PhoneTasks.Owner, val state: PhoneTasks.Snapshot, val line: String?)
@@ -14,7 +14,12 @@ class PhoneDisplaySelection {
         var ticket: Ticket? = null
         task.runIfCurrent(owner) {
             synchronized(lock) {
-                ticket = Ticket(task, owner)
+                // Publication always gets a new ticket. An already shown status can remain
+                // only through uninterrupted selection of the same owner, never A -> B -> A.
+                val previous = selected?.takeIf {
+                    it.task === task && it.owner.taskId == owner.taskId && it.owner.lifecycle == owner.lifecycle
+                }
+                ticket = Ticket(task, owner, previous?.displayLifetime ?: Any())
                 selected = ticket
             }
         }
@@ -32,6 +37,13 @@ class PhoneDisplaySelection {
         return object : TaskControls {
             override val taskId = owner.taskId
             override val lifecycle = owner.lifecycle
+            override fun isCurrentDisplay(): Boolean {
+                var current = false
+                task.runIfCurrent(owner) {
+                    synchronized(lock) { current = selected?.displayLifetime === ticket.displayLifetime }
+                }
+                return current
+            }
             override fun isPaused(): Boolean {
                 var paused = false
                 task.runIfCurrent(owner) { paused = task.isPaused }

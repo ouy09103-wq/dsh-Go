@@ -62,6 +62,7 @@ boot() {  # boot <label> <patch files...>; sets TOKEN
   for p in "$@"; do patches+=(--patch "$p"); done
   rm -rf "$TMP/home"; mkdir -p "$TMP/home/.dsh"
   LOG="$TMP/dsh-web-$label.log"
+  : > "$LOG"  # exists before the first poll; the background redirect may not have created it yet
   env -i PATH="$(dirname "$NODE"):/usr/bin:/bin" HOME="$TMP/home" DSH_HOME="$TMP/home/.dsh" LANG=C.UTF-8 \
     DEEPSEEK_API_KEY=sk-dsh-app-native-test-not-a-real-key UV_USE_IO_URING=0 \
     "$NODE" "$PREFIX/node_modules/@deepseek-ai/dsh/lib/bin.js" web "${patches[@]}" \

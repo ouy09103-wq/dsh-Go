@@ -2,7 +2,7 @@
 """把上游 ccch1mneyyy/dsh-Go 的 main 合进本 fork。
 
 fork 相对上游主要做了两件事：把 Kotlin 包名从
-``io.github.ccch1mneyyy.dsh_app`` 改成 ``io.github.ouy09103.dsh_go_root``，
+``io.github.ouy09103.dsh_go_root`` 改成 ``io.github.ouy09103.dsh_go_root``，
 以及新增 root 相关文件。所以冲突基本是「我们只改了包名、上游改了内容」。
 解决办法：把 base / theirs 也换成新包名后做一次真正的三方合并。
 
@@ -20,7 +20,7 @@ import sys
 
 BASE: list[str] = []
 
-OLD_DOT = "io.github.ccch1mneyyy.dsh_app"
+OLD_DOT = "io.github.ouy09103.dsh_go_root"
 NEW_DOT = "io.github.ouy09103.dsh_go_root"
 OLD_DIR = OLD_DOT.replace(".", "/")
 NEW_DIR = NEW_DOT.replace(".", "/")

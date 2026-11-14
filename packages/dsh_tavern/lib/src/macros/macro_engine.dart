@@ -34,6 +34,23 @@ class MacroMessage {
   final DateTime? sentAt;
 }
 
+/// Detached history inputs for display. Positions retain the full physical
+/// path's indices; only messages actually read by history macros need bodies.
+class MacroHistorySnapshot {
+  const MacroHistorySnapshot({required this.length, this.last, this.user, this.character, this.previousUser});
+  final int length;
+  final ({int index, MacroMessage message})? last;
+  final ({int index, MacroMessage message})? user;
+  final ({int index, MacroMessage message})? character;
+  final MacroMessage? previousUser;
+
+  ({int index, MacroMessage message})? latest({bool? isUser}) => isUser == null
+      ? last
+      : isUser
+      ? user
+      : character;
+}
+
 /// Explicit environment for a single turn; no globals or I/O are consulted.
 ///
 /// Variable maps are retained by reference and mutated synchronously. The
@@ -66,6 +83,7 @@ class MacroContext {
     this.mesExamplesOverride,
     this.persona = '',
     this.history = const [],
+    this.historySnapshot,
     this.model = '',
     this.input = '',
     this.maxContext = 0,
@@ -122,6 +140,9 @@ class MacroContext {
   final String? mesExamplesOverride;
   final String persona;
   final List<MacroMessage> history;
+  final MacroHistorySnapshot? historySnapshot;
+  int get _historyLength => historySnapshot?.length ?? history.length;
+  MacroMessage? get _historyLast => historySnapshot != null ? historySnapshot!.last?.message : history.lastOrNull;
   final String model;
   final String input;
   final int maxContext;
@@ -976,9 +997,9 @@ class _Evaluation {
       case 'firstdisplayedmessageid':
         return context.firstDisplayedMessageId?.toString() ?? '';
       case 'lastswipeid':
-        return context.history.isEmpty ? '' : context.history.last.swipeCount?.toString() ?? '';
+        return context._historyLast?.swipeCount?.toString() ?? '';
       case 'currentswipeid':
-        final id = context.history.isEmpty ? null : context.history.last.swipeId;
+        final id = context._historyLast?.swipeId;
         return id == null ? '' : '${id + 1}';
       case 'space':
       case 'newline':
@@ -1131,6 +1152,8 @@ class _Evaluation {
   }
 
   int? _lastMessageIndex({bool? user}) {
+    final snapshot = context.historySnapshot;
+    if (snapshot != null) return snapshot.latest(isUser: user)?.index;
     for (var i = context.history.length - 1; i >= 0; i--) {
       final message = context.history[i];
       if (message.swipeCount != null && message.swipeId != null && message.swipeId! >= message.swipeCount!) continue;
@@ -1140,6 +1163,8 @@ class _Evaluation {
   }
 
   MacroMessage? _lastMessage({bool? user}) {
+    final snapshot = context.historySnapshot;
+    if (snapshot != null) return snapshot.latest(isUser: user)?.message;
     final index = _lastMessageIndex(user: user);
     return index == null ? null : context.history[index];
   }
@@ -1172,6 +1197,11 @@ class _Evaluation {
     final clock = _MacroClock(context.now, context.timeZoneOffset, context.locale);
     switch (name) {
       case 'idleduration':
+        final snapshot = context.historySnapshot;
+        if (snapshot != null) {
+          final sentAt = snapshot.previousUser?.sentAt;
+          return sentAt == null ? 'just now' : clock.humanize(context.now, sentAt);
+        }
         var skip = true;
         for (final message in context.history.reversed) {
           if (message.isSystem) continue;

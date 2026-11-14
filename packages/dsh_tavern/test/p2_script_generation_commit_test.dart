@@ -136,7 +136,7 @@ void main() {
         },
         baseUrl: h.config.baseUrl,
         model: h.config.model,
-        deepseek: false,
+        deepseek: true,
       ),
     );
     final later = await h.bridge.generateRaw(
@@ -174,7 +174,7 @@ void main() {
         },
         baseUrl: h.config.baseUrl,
         model: h.config.model,
-        deepseek: false,
+        deepseek: true,
       ),
     );
     final inputs = ['{{setglobalvar::same::old}}Q', '{{deleteglobalvar::absent}}Q'];

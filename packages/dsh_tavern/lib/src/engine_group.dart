@@ -16,6 +16,15 @@ class _GroupView {
   ];
 }
 
+/// Name-only consumers do not load every member's original card and media.
+class _GroupNames {
+  _GroupNames(List<String> names, List<String> enabledNames)
+    : names = List.unmodifiable(names),
+      enabledNames = List.unmodifiable(enabledNames);
+  final List<String> names;
+  final List<String> enabledNames;
+}
+
 TavernGroupChat _groupCopy(
   TavernGroupChat value, {
   String? title,
@@ -34,15 +43,7 @@ TavernGroupChat _groupCopy(
 );
 
 TavernModelConfig _groupModelConfig(TavernModelConfig config, TavernGroupModelRole role) =>
-    role == TavernGroupModelRole.main
-    ? config
-    : TavernModelConfig(
-        apiKey: config.apiKey,
-        baseUrl: config.baseUrl,
-        model: config.deepseek ? 'deepseek-flash' : config.model,
-        deepseek: config.deepseek,
-        thinking: false,
-      );
+    role == TavernGroupModelRole.main ? config : _auxiliaryModelConfig(config);
 
 class _GroupCoordinator {
   _GroupCoordinator(this.engine);
@@ -77,6 +78,31 @@ class _GroupCoordinator {
       for (final member in group.members)
         {'characterId': member.characterId, 'name': names[member.characterId], 'muted': member.muted},
     ];
+  }
+
+  Future<_GroupNames> captureNames(TavernGroupChat group) async {
+    if (engine._deletingCharacters.contains(group.hostCharacterId)) {
+      throw TavernGroupException(TavernGroupError.characterNotFound, characterId: group.hostCharacterId);
+    }
+    final cards = {for (final card in await engine._characters()) card.id: card};
+    if (!cards.containsKey(group.hostCharacterId) || engine._deletingCharacters.contains(group.hostCharacterId)) {
+      throw TavernGroupException(TavernGroupError.characterNotFound, characterId: group.hostCharacterId);
+    }
+    final names = <String>[];
+    final enabled = <String>[];
+    for (final member in group.members) {
+      final card = cards[member.characterId];
+      if (card == null || engine._deletingCharacters.contains(member.characterId)) continue;
+      final nickname = card.nickname;
+      final name = nickname != null && nickname.isNotEmpty ? nickname : card.name;
+      names.add(name);
+      if (!member.muted) enabled.add(name);
+    }
+    return _GroupNames(names, enabled);
+  }
+
+  void _title(String value) {
+    if (value.trim().isEmpty) throw TavernGroupException(TavernGroupError.invalidTitle);
   }
 
   void _limit(int value) {
@@ -134,6 +160,8 @@ class _GroupCoordinator {
       throw TavernGroupException(TavernGroupError.invalidMembers);
     }
     final host = await _card(hostCharacterId ?? ids.first);
+    final resolvedTitle = title ?? host.card.name;
+    _title(resolvedTitle);
     final cards = <String, StoredCharacter>{};
     for (final id in ids) {
       cards[id] = id == host.id ? host : await _card(id);
@@ -156,10 +184,10 @@ class _GroupCoordinator {
     late final String id;
     try {
       id = engine._store.transaction(() {
-        final id = engine._store.createChat(characterId: host.id, title: title ?? host.card.name);
+        final id = engine._store.createChat(characterId: host.id, title: resolvedTitle);
         final group = TavernGroupChat(
           chatId: id,
-          title: title ?? host.card.name,
+          title: resolvedTitle,
           hostCharacterId: host.id,
           members: [
             for (final memberId in ids)
@@ -400,6 +428,7 @@ class _GroupCoordinator {
             engine._directors.latestSuccess(chatId),
             engine._store.agentRunsByKind(chatId, const {'director.secret_proposal'}, limit: 1).firstOrNull,
             engine._directors._cardRevisions[group.hostCharacterId] ?? 0,
+            _toolScope(engine, chat),
           );
           admitted = round;
           round.observers.add(controller);
@@ -581,7 +610,11 @@ class _GroupCoordinator {
             round,
             failure.kind == TavernFailure.cancelled ? TavernGroupEndReason.cancelled : TavernGroupEndReason.failed,
             failure: failure.kind,
-            code: failure.kind == TavernFailure.server ? 'group_actor_failed' : failure.kind.name,
+            code: failure.kind == TavernFailure.toolFailure
+                ? failure.toolFailureCode ?? failure.kind.name
+                : failure.kind == TavernFailure.server
+                ? 'group_actor_failed'
+                : failure.kind.name,
             detail: failure.detail,
             partial: failure.partial,
           );
@@ -835,6 +868,7 @@ class _GroupCoordinator {
     int? maxSpeakersPerTurn,
     bool? allowSelfResponses,
   }) async {
+    if (title != null) _title(title);
     if (maxSpeakersPerTurn != null) _limit(maxSpeakersPerTurn);
     engine._store.saveGroup(
       _groupCopy(
@@ -881,6 +915,7 @@ class _GroupRound {
     this.directorCaptured,
     this.secretCaptured,
     this.hostRevision,
+    this.toolPolicyScope,
   );
   final TavernGroupChat group;
   final String input;
@@ -893,6 +928,7 @@ class _GroupRound {
   final StoredAgentRun? directorCaptured;
   final StoredAgentRun? secretCaptured;
   final int hostRevision;
+  final TavernToolPolicySnapshot toolPolicyScope;
   final String id = 'group-${_newStateId()}';
   final cancellation = ModelCancellation();
   final done = Completer<void>();

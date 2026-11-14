@@ -6,6 +6,7 @@ import 'dart:convert';
 
 import '../state/app_info.dart';
 import 'diagnostics_bundle.dart';
+import 'diagnostics_channel.dart';
 import 'redact.dart';
 
 /// Most lines kept from each log tail (the model reads this file, not a zip).
@@ -28,6 +29,7 @@ String diagnosticsMarkdown(DiagnosticsSnapshot s, {int maxBytes = diagnosticsMar
     ..writeln();
   _systemIme(b, s);
   _environment(b, s);
+  _evidence(b, s);
   _connection(b, s);
   _phone(b, s);
   _performance(b, s);
@@ -69,7 +71,9 @@ void _systemIme(StringBuffer b, DiagnosticsSnapshot s) {
     final recent = evidence.events.reversed.take(diagnosticsSystemImeEvents).toList().reversed;
     b.writeln('- Most recent ${recent.length} events (ZIP contains the full bounded capture):');
     for (final event in recent) {
-      b.writeln('  - ${event.timestamp} ${event.event} fromUser=${event.fromUser} reason=${event.reason} origin=${event.origin}');
+      b.writeln(
+        '  - ${event.timestamp} ${event.event} fromUser=${event.fromUser} reason=${event.reason} origin=${event.origin}',
+      );
     }
   }
   b.writeln();
@@ -214,14 +218,30 @@ void _backgroundInputProbe(StringBuffer b, Object? raw) {
   }
   if (raw['observed'] != true || result != 'failure') return;
   const stages = {
-    'precondition', 'ui_dispatch', 'presentation_create', 'presentation_configure',
-    'presentation_show', 'activity_start', 'activity_ready_wait',
-    'view_layout_wait', 'frame_commit_wait', 'target_validate',
-    'input_send', 'receipt_wait', 'cleanup',
+    'precondition',
+    'ui_dispatch',
+    'presentation_create',
+    'presentation_configure',
+    'presentation_show',
+    'activity_start',
+    'activity_ready_wait',
+    'view_layout_wait',
+    'frame_commit_wait',
+    'target_validate',
+    'input_send',
+    'receipt_wait',
+    'cleanup',
   };
   const types = {
-    'none', 'SecurityException', 'IllegalStateException', 'IllegalArgumentException',
-    'InvalidDisplayException', 'BadTokenException', 'TimeoutException', 'InterruptedException', 'OtherException',
+    'none',
+    'SecurityException',
+    'IllegalStateException',
+    'IllegalArgumentException',
+    'InvalidDisplayException',
+    'BadTokenException',
+    'TimeoutException',
+    'InterruptedException',
+    'OtherException',
   };
   final stage = raw['stage'];
   final type = raw['exceptionType'];
@@ -249,6 +269,23 @@ void _performance(StringBuffer b, DiagnosticsSnapshot s) {
       }
     }
   }
+  b.writeln();
+}
+
+void _evidence(StringBuffer b, DiagnosticsSnapshot s) {
+  if (s.native.evidence.isEmpty) return;
+  final evidence = diagnosticEvidenceFacts(s.native.evidence);
+  b.writeln('## App 故障证据（跨重启保留）');
+  b.writeln('- 可用性：${jsonEncode(evidence['availability'])}');
+  for (final key in ['processExits', 'appErrors', 'voiceStages']) {
+    final rows = evidence[key];
+    if (rows is! List) continue;
+    final tail = rows.reversed.take(key == 'voiceStages' ? 8 : 3).toList().reversed;
+    for (final row in tail) {
+      b.writeln('- $key：${jsonEncode(row)}');
+    }
+  }
+  b.writeln('- 无记录或系统不提供记录，不代表没有发生故障；退出原因不等于完整崩溃堆栈。');
   b.writeln();
 }
 

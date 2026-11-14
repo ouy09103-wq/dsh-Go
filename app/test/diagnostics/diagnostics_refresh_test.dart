@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dsh_app/diagnostics/diagnostics_bundle.dart';
 import 'package:dsh_app/diagnostics/diagnostics_channel.dart';
@@ -167,10 +168,24 @@ void main() {
         final arguments = call.arguments as Map<Object?, Object?>;
         // Automatic calls run inside pump's async guard. The messenger converts
         // ordinary expect's guard error into PlatformException, hiding the write.
-        expectSync(arguments.keys, ['markdown', 'manual']);
         final markdown = arguments['markdown'] as String;
         final manual = arguments['manual'];
         expectSync(manual, isA<bool>(), reason: 'the channel flag must be a fixed Boolean, not a filename');
+        expectSync(
+          arguments.keys,
+          manual == true ? ['markdown', 'manual'] : ['markdown', 'manual', 'sections', 'collectedAt'],
+        );
+        if (manual == false) {
+          final sections = arguments['sections'] as Map;
+          expectSync(sections.keys, ['summary', 'evidence', 'appErrors', 'voice', 'engine', 'failure']);
+          final collectedAt = arguments['collectedAt'] as String;
+          expectSync(DateTime.tryParse(collectedAt), isNotNull);
+          for (final section in sections.values) {
+            final text = section as String;
+            expectSync(utf8.encode(text).length, lessThanOrEqualTo(16 * 1024));
+            expectSync((jsonDecode(text) as Map)['generatedAt'], collectedAt);
+          }
+        }
         manualFlags.add(manual as bool);
         written.add(markdown);
         reports[manual == true ? 'diagnostics-manual.md' : 'diagnostics.md'] = markdown;
@@ -389,10 +404,8 @@ void main() {
     final evidence = SystemImeDiagnostics(_SystemChannel());
     addTearDown(evidence.dispose);
     await evidence.collect(isCurrent: () => true);
-    final f = _Fixture(
-      voice: _Voice(hold),
-      extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)],
-    )..observe();
+    final f = _Fixture(voice: _Voice(hold), extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)])
+      ..observe();
     final manual = f.publisher.publish(includeSystemIme: true);
     await _flush(tester);
     expect(reports, isEmpty);
@@ -407,7 +420,11 @@ void main() {
     expect(written.last, isNot(contains('System IME evidence')));
     expect(manualFlags, [true, false]);
     expect(reports['diagnostics.md'], written.last, reason: 'automatic refresh must still update connection facts');
-    expect(reports['diagnostics-manual.md'], written.first, reason: 'queued refresh cannot discard manual IME evidence');
+    expect(
+      reports['diagnostics-manual.md'],
+      written.first,
+      reason: 'queued refresh cannot discard manual IME evidence',
+    );
   });
 
   testWidgets('clearing during manual collection cannot put old evidence in the eventual snapshot', (tester) async {
@@ -416,10 +433,7 @@ void main() {
     addTearDown(evidence.dispose);
     await evidence.collect(isCurrent: () => true);
     final voice = _Voice(hold);
-    final f = _Fixture(
-      voice: voice,
-      extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)],
-    );
+    final f = _Fixture(voice: voice, extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)]);
     final manual = f.publisher.publish(includeSystemIme: true);
     await _flush(tester);
     expect(voice.reads, 1);
@@ -431,7 +445,9 @@ void main() {
   });
 
   for (final manualFirst in [true, false]) {
-    testWidgets('queued manual opt-in survives coalesced automatic owner changes (manualFirst=$manualFirst)', (tester) async {
+    testWidgets('queued manual opt-in survives coalesced automatic owner changes (manualFirst=$manualFirst)', (
+      tester,
+    ) async {
       final held = Completer<DiagnosticsSnapshot>();
       var collections = 0;
       var manualCollections = 0;
@@ -450,8 +466,12 @@ void main() {
       );
       addTearDown(publisher.dispose);
       final initial = publisher.publish();
-      final first = manualFirst ? publisher.publish(includeSystemIme: true) : publisher.publish(isCurrent: () => current);
-      final second = manualFirst ? publisher.publish(isCurrent: () => current) : publisher.publish(includeSystemIme: true);
+      final first = manualFirst
+          ? publisher.publish(includeSystemIme: true)
+          : publisher.publish(isCurrent: () => current);
+      final second = manualFirst
+          ? publisher.publish(isCurrent: () => current)
+          : publisher.publish(includeSystemIme: true);
       current = false;
       held.complete(_snapshot('connecting'));
       await initial;

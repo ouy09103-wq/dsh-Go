@@ -172,12 +172,9 @@ class _LegacyEvaluation {
       _legacyPass(r'{{lastCharMessage}}', (_) => common._lastMessage(user: false)?.text ?? ''),
       _legacyPass(r'{{firstIncludedMessageId}}', (_) => context.firstIncludedMessageId?.toString() ?? ''),
       _legacyPass(r'{{firstDisplayedMessageId}}', (_) => context.firstDisplayedMessageId?.toString() ?? ''),
-      _legacyPass(
-        r'{{lastSwipeId}}',
-        (_) => context.history.isEmpty ? '' : context.history.last.swipeCount?.toString() ?? '',
-      ),
+      _legacyPass(r'{{lastSwipeId}}', (_) => context._historyLast?.swipeCount?.toString() ?? ''),
       _legacyPass(r'{{currentSwipeId}}', (_) => _currentSwipeId()),
-      _legacyPass(r'{{allChatRange}}', (_) => context.history.isEmpty ? '' : '0-${context.history.length - 1}'),
+      _legacyPass(r'{{allChatRange}}', (_) => context._historyLength == 0 ? '' : '0-${context._historyLength - 1}'),
       _legacyPass(r'{{reverse:(.+?)}}', (match) => String.fromCharCodes(match[1]!.runes.toList().reversed)),
       _legacyPass(r'\{\{\/\/([\s\S]*?)\}\}', (_) => '', caseSensitive: true, multiLine: true),
       _legacyPass(r'{{time}}', (_) => common._time('time', const [])),
@@ -545,8 +542,8 @@ class _LegacyEvaluation {
   }
 
   String _currentSwipeId() {
-    if (context.history.isEmpty) return 'NaN';
-    final last = context.history.last;
+    final last = context._historyLast;
+    if (last == null) return 'NaN';
     if (last.swipeId != null) return '${last.swipeId! + 1}';
     return last.swipeIdIsNull ? '' : 'NaN';
   }

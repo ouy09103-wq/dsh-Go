@@ -41,6 +41,8 @@ class BuildApkRuntimeTest(unittest.TestCase):
 args = sys.argv[1:]
 with open(os.environ['RUNTIME_GATE_TEST_CALLS'], 'a') as out:
     out.write(json.dumps(args) + '\\n')
+if code := int(os.environ.get('RUNTIME_GATE_TEST_FLUTTER_EXIT', '0')):
+    sys.exit(code)
 flavor = args[args.index('--flavor') + 1]
 mode = next((arg[2:] for arg in reversed(args) if arg in ('--release', '--debug', '--profile')), 'release')
 apk = pathlib.Path('build/app/outputs/flutter-apk') / f'app-{flavor}-{mode}.apk'
@@ -55,11 +57,53 @@ apk.write_bytes(b'fake APK: shell flow only')
         self.env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
                         RUNTIME_GATE_TEST_CALLS=str(self.calls_file))
 
-    def run_script(self, *args):
+    def run_script(self, *args, keep_daemon=True):
         self.calls_file.unlink(missing_ok=True)
         return subprocess.run(["bash", str(self.root / "tooling/build-apk.sh"),
-                               "--keep-daemon", "--build-name", "1.0.0", "-n", "10251234", *args],
+                               *(["--keep-daemon"] if keep_daemon else []),
+                               "--build-name", "1.0.0", "-n", "10251234", *args],
                               env=self.env, capture_output=True, text=True, timeout=15)
+
+    def test_exit_cleanup_leaves_daemons_outside_gradle_stop_alive(self):
+        android = self.root / "app/android"
+        android.mkdir()
+        stop_log = self.root / "gradle-stop.log"
+        gradlew = android / "gradlew"
+        gradlew.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$RUNTIME_GATE_TEST_STOP_LOG"\n')
+        gradlew.chmod(0o755)
+        self.env["RUNTIME_GATE_TEST_STOP_LOG"] = str(stop_log)
+        # Use the actual name predicate, but forward only our own peer's PID.
+        # No unrelated workspace process can reach the shipped shell's kill.
+        real_pgrep = shutil.which("pgrep")
+        self.assertIsNotNone(real_pgrep)
+        pgrep = self.root / "bin/pgrep"
+        pgrep.write_text(f"#!{sys.executable}\nimport os, subprocess, sys\n"
+                         f"pids = subprocess.check_output([{real_pgrep!r}, *sys.argv[1:]], text=True)\n"
+                         "for pid in pids.splitlines():\n"
+                         "    if pid == os.environ['RUNTIME_GATE_TEST_PEER_PID']: print(pid)\n")
+        pgrep.chmod(0o755)
+        for flutter_exit in (0, 23):
+            for keep_daemon in (False, True):
+                with self.subTest(flutter_exit=flutter_exit, keep_daemon=keep_daemon):
+                    stop_log.unlink(missing_ok=True)
+                    self.env["RUNTIME_GATE_TEST_FLUTTER_EXIT"] = str(flutter_exit)
+                    # A stand-in for another version/home: Gradle's scoped stop
+                    # leaves it alone; a global name-based SIGTERM reaches it.
+                    peer = subprocess.Popen(["bash", "-c",
+                                             "exec -a org.gradle.launcher.daemon.bootstrap.GradleDaemon sleep 30"])
+                    self.env["RUNTIME_GATE_TEST_PEER_PID"] = str(peer.pid)
+                    try:
+                        result = self.run_script("--debug", keep_daemon=keep_daemon)
+                        self.assertEqual(result.returncode, flutter_exit, result.stderr)
+                        if keep_daemon:
+                            self.assertFalse(stop_log.exists())
+                        else:
+                            self.assertEqual(stop_log.read_text().splitlines(), ["--stop", "-q"])
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            peer.wait(timeout=0.2)
+                    finally:
+                        peer.terminate()
+                        peer.wait(timeout=5)
 
     def calls(self):
         if not self.calls_file.exists():

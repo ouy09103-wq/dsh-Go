@@ -28,7 +28,7 @@ function scripts(html, context) {
 }
 
 function oldPage(t) {
-  const context = vm.createContext({});
+  const context = vm.createContext({AbortController, AbortSignal});
   vm.runInContext('delete Promise.withResolvers', context);
   scripts(bridge(t).render('<html><head></head><body></body></html>'), context);
   return context;
@@ -39,7 +39,7 @@ test('the served page installs the missing method before injected head scripts a
   // 66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db; head rows run before this body tail.
   const html = '<html><head><script>globalThis.head = Promise.withResolvers(); head.resolve(7)</script></head>' +
     '<body><script>(globalThis.__DSH_BOOT_READY__ ??= Promise.withResolvers()).resolve()</script></body></html>';
-  const context = vm.createContext({});
+  const context = vm.createContext({AbortController, AbortSignal});
   vm.runInContext('delete Promise.withResolvers', context);
   assert.throws(() => scripts(html, context), error => error.name === 'TypeError' && /withResolvers/.test(error.message));
   scripts(bridge(t).render(html), context);
@@ -48,7 +48,7 @@ test('the served page installs the missing method before injected head scripts a
 });
 
 test('an existing browser implementation keeps its identity and property descriptor', t => {
-  const context = vm.createContext({});
+  const context = vm.createContext({AbortController, AbortSignal});
   // A callable already supplied by this browser must not be replaced.
   vm.runInContext('Object.defineProperty(Promise, "withResolvers", {value: function existing() {}, configurable: true})', context);
   const before = vm.runInContext('Object.getOwnPropertyDescriptor(Promise, "withResolvers")', context);
