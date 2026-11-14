@@ -108,13 +108,16 @@ internal object RootExec {
         )
         // The command goes to a uid 0 helper, not to `su -c`: only that helper can kill the
         // child after the app has given up, and only it can report what really happened.
-        val outcome = RootHelperClient.run(apk, su, command, timeoutMs, cwd, env)
+        // A manager may hand its shell a bare environment, which is how `su -c "id -u"` used to
+        // fail with "id: inaccessible or not found". The helper gets the same PATH every time.
+        val environment = if (env["PATH"] == null) env + ("PATH" to ROOT_PATH) else env
+        val outcome = RootHelperClient.run(apk, su, command, timeoutMs, cwd, environment)
         val uid = UID.find(outcome.output)?.groupValues?.get(1)?.toIntOrNull() ?: -1
         val message = listOf(outcome.stderr, outcome.note)
             .filter { it.isNotEmpty() }
             .joinToString("\n")
         return Result(
-            ok = !outcome.busy && !outcome.timedOut && outcome.exitCode == 0 && !outcome.truncated,
+            ok = !outcome.busy && !outcome.timedOut && outcome.exitCode == 0,
             uid = uid,
             exitCode = if (outcome.busy) 124 else outcome.exitCode,
             stdout = outcome.output,

@@ -1,9 +1,11 @@
 package io.github.ouy09103.dsh_go_root.phone.shell
 
 import android.content.Context
+import io.github.ouy09103.dsh_go_root.root.ProcStat
 import io.github.ouy09103.dsh_go_root.root.RootExec
 import io.github.ouy09103.dsh_go_root.root.RootIdentity
 import io.github.ouy09103.dsh_go_root.root.RootSpawn
+import java.io.File
 import java.io.IOException
 
 /**
@@ -103,9 +105,17 @@ internal class ShellRootBackend(private val context: Context, private val onChan
         val info = context.applicationInfo ?: return null
         val paths = listOf(info.sourceDir) + info.splitSourceDirs.orEmpty()
         if (!paths.all { it.startsWith('/') && '\u0000' !in it && ':' !in it }) return null
+        // Who started this host: the app cannot signal a uid 0 child (EPERM), so the host has to
+        // notice for itself that the app is gone and leave. A pid alone can be reused, so the
+        // boot start time travels with it.
         return "CLASSPATH=${quote(paths.joinToString(":"))} exec /system/bin/app_process /system/bin " +
-            AndroidShellMain::class.java.name
+            AndroidShellMain::class.java.name + " " + android.os.Process.myPid() + " " + ownerStarted()
     }
+
+    /** The app's start time, from `/proc/self/stat`; -1 when it cannot be read. */
+    private fun ownerStarted(): Long = runCatching {
+        ProcStat.parse(File("/proc/self/stat").readText())?.started ?: -1L
+    }.getOrDefault(-1L)
 
     private fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
