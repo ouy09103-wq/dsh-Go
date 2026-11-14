@@ -40,6 +40,9 @@ class RootPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
+        // The root helper is started from this APK (`CLASSPATH=… app_process …`), so its path has
+        // to be known before the first su call, not deduced from the call site.
+        RootExec.bind(context)
         methods = MethodChannel(binding.binaryMessenger, CHANNEL).also { it.setMethodCallHandler(this) }
     }
 

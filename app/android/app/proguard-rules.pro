@@ -22,3 +22,9 @@
 -dontwarn org.bouncycastle.**
 -keep class org.conscrypt.** { *; }
 -keep class io.github.muntashirakon.adb.** { *; }
+
+# The root helper is started by name (`su -c "CLASSPATH=<apk> app_process /system/bin
+# io.github.ouy09103.dsh_go_root.root.RootHelperMain"`), which R8 cannot see. Renaming the class
+# would make every root command fail with "class not found"; keeping it whole also keeps the
+# `main` entry point and the org.json/Base64 calls it makes on the root side.
+-keep class io.github.ouy09103.dsh_go_root.root.RootHelperMain { *; }

@@ -83,6 +83,17 @@ internal object RootSpawn {
             env(builder, cwd, env)
         }
 
+    /**
+     * The root helper: stdin is a pipe the caller writes the JSON request into and then closes,
+     * stdout and stderr stay separate pipes so a result can be told apart from the command's own
+     * chatter. su must not see a terminal, and the helper must never inherit the app's stdin.
+     */
+    fun helper(argv: List<String>, cwd: String? = null): Process =
+        start(argv) { builder ->
+            builder.redirectErrorStream(false)
+            if (cwd != null) builder.directory(File(cwd))
+        }
+
     /** stdin, stdout and stderr all stay as pipes: an interactive child. */
     fun interactive(argv: List<String>, cwd: String? = null): Process =
         start(argv) { builder ->

@@ -2,8 +2,6 @@ package io.github.ouy09103.dsh_go_root.root
 
 import android.content.Context
 import java.io.File
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /**
  * Runs one command through the device's su (Magisk / KernelSU / APatch / SuperSU),
@@ -19,19 +17,47 @@ internal object RootExec {
         "/system/bin:/system/xbin:/vendor/bin:/product/bin" +
             ":/data/adb/magisk:/data/adb/ksu/bin:/data/adb/ap/bin:/sbin:/usr/bin:/bin"
 
-    /** Where su may live. First existing wins; a manager on PATH is checked last. */
-    private val SU_CANDIDATES = listOf(
-        "/system/bin/su",
-        "/system/xbin/su",
-        "/sbin/su",
-        "/su/bin/su",
-        "/debug_ramdisk/su",
-        "/data/adb/ksu/bin/su",
-        "/data/adb/ap/bin/su",
-        "/data/adb/magisk/su",
-    )
+    /**
+     * Root-owned su only — DSHA v0.2.2's `RootShellCandidates` check, applied here.
+     *
+     * `File.exists()` used to be the whole test: an entry earlier in the list wins, so a file the
+     * app could write would be run as root. Ownership, file type and the group/other write bits
+     * are checked instead, and a candidate that fails is skipped rather than used.
+     */
+    private fun verifiedSu(path: String): Boolean = runCatching {
+        val stat = android.system.Os.stat(path)
+        android.system.OsConstants.S_ISREG(stat.st_mode) &&
+            stat.st_uid == 0 &&
+            (stat.st_mode and
+                (android.system.OsConstants.S_IWGRP or android.system.OsConstants.S_IWOTH)) == 0 &&
+            File(path).canExecute()
+    }.getOrElse {
+        // Off device (plain JVM unit tests) Os.stat is unavailable: the file API is all there is.
+        val file = File(path)
+        file.isFile && file.canExecute()
+    }
 
-    fun suPath(): String? = SU_CANDIDATES.firstOrNull { File(it).exists() }
+    fun suPath(): String? = SuCandidates.firstVerified(::verifiedSu)
+
+    /**
+     * The installed APK, needed as app_process's CLASSPATH. Bound once at engine attach; the
+     * reflection fallback keeps a path available for work that starts earlier than that.
+     */
+    @Volatile
+    private var apk: String? = null
+
+    fun bind(context: Context) {
+        apk = context.applicationInfo.sourceDir
+    }
+
+    private fun apkPath(): String? = apk ?: runCatching {
+        val app = Class.forName("android.app.ActivityThread")
+            .getMethod("currentApplication")
+            .invoke(null) as? Context
+        app?.applicationInfo?.sourceDir
+    }.getOrNull()?.also { apk = it }
+
+    private val UID = Regex("^\\s*(\\d+)\\s*$", RegexOption.MULTILINE)
 
     fun manager(): String = when {
         File("/data/adb/ksu").exists() -> "KernelSU"
@@ -47,6 +73,12 @@ internal object RootExec {
         val exitCode: Int,
         val stdout: String,
         val stderr: String,
+        /** The helper never finished in time: the command may still be running. */
+        val timedOut: Boolean = false,
+        /** Every slot was taken, so su was never started: nothing was sent. */
+        val busy: Boolean = false,
+        /** [stdout] hit the size cap and is a prefix of the real answer. */
+        val truncated: Boolean = false,
     ) {
         fun map(): Map<String, Any?> = mapOf(
             "ok" to ok,
@@ -54,54 +86,45 @@ internal object RootExec {
             "exitCode" to exitCode,
             "stdout" to stdout,
             "stderr" to stderr,
+            "timedOut" to timedOut,
+            "busy" to busy,
+            "truncated" to truncated,
         )
     }
 
     /** `id -u` through su: 0 means a real root child, anything else no authorization. */
     fun probe(timeoutMs: Long = 30_000): Result = run("id -u", timeoutMs)
 
-    fun run(command: String, timeoutMs: Long = 60_000, cwd: String? = null, env: Map<String, String> = emptyMap()): Result {
+    fun run(
+        command: String,
+        timeoutMs: Long = 60_000,
+        cwd: String? = null,
+        env: Map<String, String> = emptyMap(),
+    ): Result {
         val su = suPath() ?: return Result(false, -1, -1, "", "no su on this device")
-        // A root shell's PATH depends on which manager granted it (Magisk, KernelSU and APatch
-        // each set their own), so spell out one that covers all of them. Without this,
-        // `su -c "id -u"` fails with "id: inaccessible or not found" on a manager that hands its
-        // shell a bare environment — which is exactly how the probe broke.
-        val path = env["PATH"] ?: ROOT_PATH
-        val process = try {
-            RootSpawn.piped(listOf(su, "-c", command), cwd, env + ("PATH" to path))
-        } catch (error: IOException) {
-            return Result(false, -1, -1, "", error.message ?: "su failed to start")
-        }
-        val out = StringBuilder()
-        val err = StringBuilder()
-        val outThread = drain(process.inputStream, out)
-        val errThread = drain(process.errorStream, err)
-        val finished = process.waitFor(timeoutMs.coerceAtLeast(1), TimeUnit.MILLISECONDS)
-        if (!finished) {
-            process.destroyForcibly()
-            outThread.join(500)
-            errThread.join(500)
-            return Result(false, -1, -1, out.toString(), err.toString().ifEmpty { "timeout" })
-        }
-        outThread.join(1000)
-        errThread.join(1000)
-        val code = process.exitValue()
-        val uid = Regex("^\\s*(\\d+)\\s*$", RegexOption.MULTILINE)
-            .find(out.toString())?.groupValues?.get(1)?.toIntOrNull() ?: -1
-        return Result(code == 0, uid, code, out.toString(), err.toString())
+        val apk = apkPath() ?: return Result(
+            false, -1, -1, "",
+            "root helper 需要安装包路径：App 上下文尚未绑定（RootExec.bind）",
+        )
+        // The command goes to a uid 0 helper, not to `su -c`: only that helper can kill the
+        // child after the app has given up, and only it can report what really happened.
+        val outcome = RootHelperClient.run(apk, su, command, timeoutMs, cwd, env)
+        val uid = UID.find(outcome.output)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        val message = listOf(outcome.stderr, outcome.note)
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+        return Result(
+            ok = !outcome.busy && !outcome.timedOut && outcome.exitCode == 0 && !outcome.truncated,
+            uid = uid,
+            exitCode = if (outcome.busy) 124 else outcome.exitCode,
+            stdout = outcome.output,
+            stderr = message,
+            timedOut = outcome.timedOut,
+            busy = outcome.busy,
+            truncated = outcome.truncated,
+        )
     }
 
-    private fun drain(stream: java.io.InputStream, into: StringBuilder): Thread =
-        Thread {
-            runCatching {
-                val buffer = ByteArray(8192)
-                while (true) {
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    synchronized(into) { into.append(String(buffer, 0, read)) }
-                }
-            }
-        }.apply { isDaemon = true; name = "dsh-root-drain"; start() }
 }
 
 /**
