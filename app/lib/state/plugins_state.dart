@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 
+import 'package:archive/archive.dart';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState, WidgetsBinding;
@@ -11,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/l10n.dart';
 import '../runtime/runtime_state.dart';
+import '../share_code/guest_fs.dart';
 import '../share_code/share_net.dart';
 import '../update/version.dart';
 import '../usage/usage_stats.dart';
@@ -28,6 +30,7 @@ part 'plugins/plugin_market.dart';
 part 'plugins/installed_plugins.dart';
 part 'plugins/plugin_failures.dart';
 part 'plugins/plugin_install_queue.dart';
+part 'plugins/plugin_local_source.dart';
 
 /// Plugin management and the plugin market for the active host.
 ///

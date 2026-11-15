@@ -1917,6 +1917,194 @@ class L10nEn extends L10n {
       'The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.';
 
   @override
+  String get androidShellRoot => 'Root';
+
+  @override
+  String get androidShellRootHint =>
+      'Every command runs through su as uid 0, and only after the root manager authorizes this app. A su that answers with the app identity is reported as a failure, never as root.';
+
+  @override
+  String get androidShellRootPermission => 'Root permission';
+
+  @override
+  String get androidShellRootPermissionHint =>
+      'One of the three channels, alongside Shizuku and self-ADB. Choose root to get the switch below.';
+
+  @override
+  String get androidShellRootSwitch => 'Root mode switch';
+
+  @override
+  String androidShellRootSwitchOn(int hours) {
+    return 'While on, the model can run any command as root. This grant lasts $hours more hours and turns itself off then.';
+  }
+
+  @override
+  String get androidShellRootSwitchExpired =>
+      'The last grant expired and was turned off. Turn it on again to keep using root.';
+
+  @override
+  String get androidShellRootSwitchStrikes =>
+      'root was unreachable 3 times in a row, so it was turned off. Check the grant for this app in the root manager first.';
+
+  @override
+  String get androidShellRootSwitchOff => 'While on, the model can call the shell tool and run any command as root.';
+
+  @override
+  String get androidShellRootSwitchShort =>
+      'While on, the model can run any command as root; irreversible operations are still blocked.';
+
+  @override
+  String get androidShellRootPolicy => 'Command policy';
+
+  @override
+  String get androidShellRootPolicyStrict => 'Strict';
+
+  @override
+  String get androidShellRootPolicyStrictHint =>
+      'Every command goes through the phone-control rules: the 不碰 list, system directories, credential stores and this app\'s own storage are refused.';
+
+  @override
+  String get androidShellRootPolicyRelaxed => 'Relaxed (default)';
+
+  @override
+  String get androidShellRootPolicyRelaxedHint =>
+      'Any command runs; only irreversible ones such as formatting, flashing or wiping data are blocked.';
+
+  @override
+  String get androidShellRootPolicyFull => 'Fully relaxed';
+
+  @override
+  String get androidShellRootPolicyFullHint =>
+      'Command content is not checked. Irreversible operations are still blocked.';
+
+  @override
+  String get androidShellRootPolicyWarn =>
+      'High risk: root commands are no longer checked against the phone-control rules.';
+
+  @override
+  String get androidShellRootPolicyWarnFull =>
+      'Severe risk: fully relaxed, so the model and plugins can run any command as root.';
+
+  @override
+  String get androidShellRootSu => 'su path';
+
+  @override
+  String get androidShellRootManager => 'Root manager';
+
+  @override
+  String get androidShellRootChanged => 'Could not change the policy: the native channel is not connected.';
+
+  @override
+  String get androidShellRootSuMissing =>
+      'No su on this phone: root is not available, or the root manager does not expose su.';
+
+  @override
+  String get androidShellRootSuNotExecutable =>
+      'su exists but cannot be executed. Do not delete it: fix it from a root shell on the phone.';
+
+  @override
+  String get androidShellRootNotGranted =>
+      'The root manager has no grant for this app. Authorize it there, then retry.';
+
+  @override
+  String get androidShellRootSuFailed =>
+      'su started but returned a failure. Check the root manager grant and its logs.';
+
+  @override
+  String get androidShellRootNotRoot =>
+      'su returned the app identity, not uid 0. This is not root; nothing was run as root.';
+
+  @override
+  String get androidShellRootDomainUnknown =>
+      'uid 0 but the SELinux domain could not be read, so the grant is unverified.';
+
+  @override
+  String get androidShellRootWrongDomain =>
+      'uid 0 but still in an untrusted_app SELinux domain: no real power over the files it claims.';
+
+  @override
+  String get androidShellRootHostFailed =>
+      'The root shell host did not start. Check the root manager grant, then retry.';
+
+  @override
+  String get androidShellRootLinux => 'Linux environment (rootfs)';
+
+  @override
+  String get androidShellRootLinuxReady => 'Ready';
+
+  @override
+  String get androidShellRootLinuxMissing => 'Not unpacked';
+
+  @override
+  String get androidShellRootLinuxNote =>
+      'This grant is for phone control only. It does not make the Linux environment (the engine) run as root.';
+
+  @override
+  String get androidShellRootProbe => 'Request root (id -u)';
+
+  @override
+  String get androidShellRootProbeRun => 'Tap to run';
+
+  @override
+  String get androidShellRootShell => 'Persistent root shell';
+
+  @override
+  String get androidShellRootShellOpen => 'Open root shell';
+
+  @override
+  String get androidShellRootShellClose => 'Close root shell';
+
+  @override
+  String androidShellRootShellOpened(int id) {
+    return 'Root shell opened (#$id)';
+  }
+
+  @override
+  String get androidShellRootShellClosed => 'Root shell closed';
+
+  @override
+  String androidShellRootShellRunning(int id) {
+    return '#$id running';
+  }
+
+  @override
+  String get androidShellRootShellIdle => 'Not open';
+
+  @override
+  String get androidShellRootShellHint => 'whoami / ls /data/adb';
+
+  @override
+  String get androidShellRootCommand => 'Run a root command';
+
+  @override
+  String get androidShellRootCommandHint => 'su -c \"…\"';
+
+  @override
+  String get androidShellRootCommandRun => 'Run as root';
+
+  @override
+  String get androidShellRootOutput => 'Output';
+
+  @override
+  String get androidShellRootOutputCopy => 'Copy output';
+
+  @override
+  String get androidShellRootOutputClear => 'Clear';
+
+  @override
+  String get androidShellRootNoSu => 'No su detected';
+
+  @override
+  String get androidShellRootReading => 'Reading…';
+
+  @override
+  String get androidShellRootRiskTitle => 'Enable root?';
+
+  @override
+  String get androidShellRootRiskBody =>
+      'Once on, the model can run any command as root: no confirmation, no preview, able to change the system and read every app\'s data.\n\nTurn it off when you are done.';
+
+  @override
   String get botsFolderGone => 'This folder is gone';
 
   @override
@@ -14454,6 +14642,47 @@ class L10nEn extends L10n {
 
   @override
   String get pluginsLoadRemoteLogs => 'Check the engine logs on this host.';
+
+  @override
+  String get pluginsLocalInstall => 'Install from this phone';
+
+  @override
+  String get pluginsLocalInstallNotBundle => 'That file has no package.json, so it is not a plugin package.';
+
+  @override
+  String get pluginsLocalInstallNoName => 'The package.json in that plugin package has no name.';
+
+  @override
+  String pluginsLocalInstallTooBig(int mb) {
+    return 'That plugin package is too large (limit $mb MB).';
+  }
+
+  @override
+  String pluginsLocalInstallExtractFailed(String reason) {
+    return 'Could not unpack the plugin package: $reason';
+  }
+
+  @override
+  String get pluginsLocalInstallUnsupported => 'This host cannot install plugins.';
+
+  @override
+  String get pluginsLocalInstallNotLocal =>
+      'Installing from this phone only works on the local engine. On a remote host, install it there with a command.';
+
+  @override
+  String pluginsLocalInstallDone(String title) {
+    return 'Installed「$title」from this phone';
+  }
+
+  @override
+  String pluginsLocalInstallConfirmTitle(String title) {
+    return 'Install「$title」from this phone?';
+  }
+
+  @override
+  String pluginsLocalInstallConfirmBody(String file, String name) {
+    return 'File: $file\nPackage: $name\n\nIt goes into the engine on this phone and, like anything from the market, can read your conversations and call tools. Only install plugins whose origin you know.';
+  }
 
   @override
   String get plugslotsSurfaceComposerTools => 'Plus panel tools';

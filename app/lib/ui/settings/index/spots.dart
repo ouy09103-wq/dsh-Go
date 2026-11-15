@@ -614,14 +614,17 @@ abstract final class Spots {
     keywords: (l) => l.searchKwCommunity,
   );
 
+  // Root 权限不再单独一页：它就是 Android Shell 页里的那一段，所以这一条
+  // 是个入口（opens），仍然挂在设置首页的「帮助」组里。
   static final root = SettingSpot(
     'root',
     page: SettingsPageId.hub,
     group: _help,
     title: (l) => l.localeName == 'en' ? 'Root access' : 'Root 权限',
     keywords: (l) => l.localeName == 'en'
-        ? 'root,su,sudo,rootfs,Ubuntu,persistent shell,terminal'
-        : 'root,su,sudo,rootfs,Ubuntu,常驻,shell,终端',
+        ? 'root,su,sudo,rootfs,Ubuntu,persistent shell,terminal,android shell'
+        : 'root,su,sudo,rootfs,Ubuntu,常驻,shell,终端,Android Shell',
+    opens: SettingsPageId.phoneAndroidShell,
   );
 
   // 模型.

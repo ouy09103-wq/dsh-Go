@@ -14,6 +14,7 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'installed_tab.dart';
 import 'market_tab.dart';
+import 'plugin_local_install.dart';
 
 enum PluginsTab { installed, market }
 
@@ -96,6 +97,14 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
       title: l10n.pluginsTitle,
       subtitle: Text(_subtitle(host)),
       actions: [
+        // 从手机存储里装：不走市场、不联网，给那些自己打好的插件包一条路。
+        if (host?.canInstall ?? false)
+          GlassIconButton(
+            key: const ValueKey('plugins-local-install'),
+            icon: AppIcons.folderOpen,
+            tooltip: l10n.pluginsLocalInstall,
+            onPressed: () => unawaited(installPluginFromPhone(context, ref)),
+          ),
         const AskAiButton(AskAiTopic.plugins),
         GlassIconButton(
           icon: AppIcons.refresh,

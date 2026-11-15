@@ -799,7 +799,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val value = linkedMapOf<String, Any?>(
             "enabled" to isEnabled(),
             "rootShell" to rootShellEnabled(),
-            "rootShellStrict" to rootShellStrict(),
+            "rootPolicyMode" to rootPolicyMode().id,
             // 授权到期时间与自动关掉的原因：设置页和胶囊都靠它说明「还剩多久」。
             "rootShellUntil" to rootGrant.expiresAt(),
             "rootShellOffReason" to (if (rootShellEnabled()) null else lastRootOffReason),
@@ -975,11 +975,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         emitStatus()
     }
 
-    /** 严格模式：在 root 工具上按 RootCommandPolicy 逐条判定。默认关。 */
-    override fun rootShellStrict(): Boolean = rootGrant.strict()
+    /** root 命令的三档拦截档位。默认「放宽」。 */
+    override fun rootPolicyMode(): RootPolicyMode = rootGrant.mode()
 
-    fun setRootShellStrict(on: Boolean) {
-        rootGrant.setStrict(on)
+    fun setRootPolicyMode(mode: RootPolicyMode) {
+        rootGrant.setMode(mode)
         emitStatus()
     }
 

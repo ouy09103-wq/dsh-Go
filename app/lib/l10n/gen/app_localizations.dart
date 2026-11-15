@@ -3452,6 +3452,330 @@ abstract class L10n {
   /// **'未能确认操作结果。先核实结果；已派发的命令不要自动重试。'**
   String get androidShellErrorUnknown;
 
+  /// No description provided for @androidShellRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'Root'**
+  String get androidShellRoot;
+
+  /// No description provided for @androidShellRootHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'每次执行都通过 su 以 uid 0 运行，且必须先由 root 管理器给本应用授权。su 如果返回的是应用身份，会按失败报告，不会当作 root。'**
+  String get androidShellRootHint;
+
+  /// No description provided for @androidShellRootPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'Root 权限'**
+  String get androidShellRootPermission;
+
+  /// No description provided for @androidShellRootPermissionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'三条通道里的一条：Shizuku、自连 ADB，或者 root。选了 root 才有下面这个开关。'**
+  String get androidShellRootPermissionHint;
+
+  /// No description provided for @androidShellRootSwitch.
+  ///
+  /// In zh, this message translates to:
+  /// **'root 模式开关'**
+  String get androidShellRootSwitch;
+
+  /// No description provided for @androidShellRootSwitchOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'开着时模型可以以 root 身份执行任意命令。这次授权还剩 {hours} 小时，到点自动关。'**
+  String androidShellRootSwitchOn(int hours);
+
+  /// No description provided for @androidShellRootSwitchExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次的授权已经到期，自动关掉了。要接着用就再打开一次。'**
+  String get androidShellRootSwitchExpired;
+
+  /// No description provided for @androidShellRootSwitchStrikes.
+  ///
+  /// In zh, this message translates to:
+  /// **'连续 3 次拿不到 root，已经自动关掉。先确认 root 管理器里给本应用的授权还在。'**
+  String get androidShellRootSwitchStrikes;
+
+  /// No description provided for @androidShellRootSwitchOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'开着时模型可以调 shell 工具，以 root 身份执行任意命令。'**
+  String get androidShellRootSwitchOff;
+
+  /// No description provided for @androidShellRootSwitchShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'开着时模型可以以 root 身份执行任意命令，不可逆的操作仍然拦住。'**
+  String get androidShellRootSwitchShort;
+
+  /// No description provided for @androidShellRootPolicy.
+  ///
+  /// In zh, this message translates to:
+  /// **'命令拦截档位'**
+  String get androidShellRootPolicy;
+
+  /// No description provided for @androidShellRootPolicyStrict.
+  ///
+  /// In zh, this message translates to:
+  /// **'严格'**
+  String get androidShellRootPolicyStrict;
+
+  /// No description provided for @androidShellRootPolicyStrictHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'每条命令都按手机操控的规则判定：不碰名单、系统目录、凭据库、本 App 存储都会被拒。'**
+  String get androidShellRootPolicyStrictHint;
+
+  /// No description provided for @androidShellRootPolicyRelaxed.
+  ///
+  /// In zh, this message translates to:
+  /// **'放宽（默认）'**
+  String get androidShellRootPolicyRelaxed;
+
+  /// No description provided for @androidShellRootPolicyRelaxedHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'任意命令都跑，只拦格式化、刷机、清数据这类不可逆的操作。'**
+  String get androidShellRootPolicyRelaxedHint;
+
+  /// No description provided for @androidShellRootPolicyFull.
+  ///
+  /// In zh, this message translates to:
+  /// **'完全放宽'**
+  String get androidShellRootPolicyFull;
+
+  /// No description provided for @androidShellRootPolicyFullHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不按命令内容拦截。不可逆的操作仍然拦着。'**
+  String get androidShellRootPolicyFullHint;
+
+  /// No description provided for @androidShellRootPolicyWarn.
+  ///
+  /// In zh, this message translates to:
+  /// **'高风险：root 命令不再逐条按手机操控的规则检查。'**
+  String get androidShellRootPolicyWarn;
+
+  /// No description provided for @androidShellRootPolicyWarnFull.
+  ///
+  /// In zh, this message translates to:
+  /// **'严重风险：已完全放宽，模型和插件可用 root 执行任意命令。'**
+  String get androidShellRootPolicyWarnFull;
+
+  /// No description provided for @androidShellRootSu.
+  ///
+  /// In zh, this message translates to:
+  /// **'su 路径'**
+  String get androidShellRootSu;
+
+  /// No description provided for @androidShellRootManager.
+  ///
+  /// In zh, this message translates to:
+  /// **'Root 管理器'**
+  String get androidShellRootManager;
+
+  /// No description provided for @androidShellRootChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'改档位失败：原生通道没接通。'**
+  String get androidShellRootChanged;
+
+  /// No description provided for @androidShellRootSuMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台手机上没有 su：没有 root，或者 root 管理器没把 su 暴露出来。'**
+  String get androidShellRootSuMissing;
+
+  /// No description provided for @androidShellRootSuNotExecutable.
+  ///
+  /// In zh, this message translates to:
+  /// **'su 存在但执行不了。不要直接删，请在手机上的 root shell 里修。'**
+  String get androidShellRootSuNotExecutable;
+
+  /// No description provided for @androidShellRootNotGranted.
+  ///
+  /// In zh, this message translates to:
+  /// **'root 管理器里没有给这个应用的授权。去那里授权后再试。'**
+  String get androidShellRootNotGranted;
+
+  /// No description provided for @androidShellRootSuFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'su 起来了但返回失败。检查 root 管理器的授权和日志。'**
+  String get androidShellRootSuFailed;
+
+  /// No description provided for @androidShellRootNotRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'su 返回的是应用身份而不是 uid 0。这不是 root，没有以 root 执行任何命令。'**
+  String get androidShellRootNotRoot;
+
+  /// No description provided for @androidShellRootDomainUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'uid 0 但读不到 SELinux 域，无法确认授权真的生效。'**
+  String get androidShellRootDomainUnknown;
+
+  /// No description provided for @androidShellRootWrongDomain.
+  ///
+  /// In zh, this message translates to:
+  /// **'uid 0 但仍在 untrusted_app 域：对它声称拥有的文件没有实际权限。'**
+  String get androidShellRootWrongDomain;
+
+  /// No description provided for @androidShellRootHostFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'root shell 宿主没起来。检查 root 管理器授权后重试。'**
+  String get androidShellRootHostFailed;
+
+  /// No description provided for @androidShellRootLinux.
+  ///
+  /// In zh, this message translates to:
+  /// **'Linux 环境（rootfs）'**
+  String get androidShellRootLinux;
+
+  /// No description provided for @androidShellRootLinuxReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已就绪'**
+  String get androidShellRootLinuxReady;
+
+  /// No description provided for @androidShellRootLinuxMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'未解压'**
+  String get androidShellRootLinuxMissing;
+
+  /// No description provided for @androidShellRootLinuxNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个授权只给手机操控用，不会让 Linux 环境（引擎）获得 root。'**
+  String get androidShellRootLinuxNote;
+
+  /// No description provided for @androidShellRootProbe.
+  ///
+  /// In zh, this message translates to:
+  /// **'申请 root 授权（id -u）'**
+  String get androidShellRootProbe;
+
+  /// No description provided for @androidShellRootProbeRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'点按执行'**
+  String get androidShellRootProbeRun;
+
+  /// No description provided for @androidShellRootShell.
+  ///
+  /// In zh, this message translates to:
+  /// **'常驻 root shell'**
+  String get androidShellRootShell;
+
+  /// No description provided for @androidShellRootShellOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开 root shell'**
+  String get androidShellRootShellOpen;
+
+  /// No description provided for @androidShellRootShellClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭 root shell'**
+  String get androidShellRootShellClose;
+
+  /// No description provided for @androidShellRootShellOpened.
+  ///
+  /// In zh, this message translates to:
+  /// **'root shell 已打开（#{id}）'**
+  String androidShellRootShellOpened(int id);
+
+  /// No description provided for @androidShellRootShellClosed.
+  ///
+  /// In zh, this message translates to:
+  /// **'root shell 已关闭'**
+  String get androidShellRootShellClosed;
+
+  /// No description provided for @androidShellRootShellRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'#{id} 运行中'**
+  String androidShellRootShellRunning(int id);
+
+  /// No description provided for @androidShellRootShellIdle.
+  ///
+  /// In zh, this message translates to:
+  /// **'未打开'**
+  String get androidShellRootShellIdle;
+
+  /// No description provided for @androidShellRootShellHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'whoami / ls /data/adb'**
+  String get androidShellRootShellHint;
+
+  /// No description provided for @androidShellRootCommand.
+  ///
+  /// In zh, this message translates to:
+  /// **'执行 root 命令'**
+  String get androidShellRootCommand;
+
+  /// No description provided for @androidShellRootCommandHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'su -c \"…\"'**
+  String get androidShellRootCommandHint;
+
+  /// No description provided for @androidShellRootCommandRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'以 root 执行'**
+  String get androidShellRootCommandRun;
+
+  /// No description provided for @androidShellRootOutput.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出'**
+  String get androidShellRootOutput;
+
+  /// No description provided for @androidShellRootOutputCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制输出'**
+  String get androidShellRootOutputCopy;
+
+  /// No description provided for @androidShellRootOutputClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空'**
+  String get androidShellRootOutputClear;
+
+  /// No description provided for @androidShellRootNoSu.
+  ///
+  /// In zh, this message translates to:
+  /// **'未检测到 su'**
+  String get androidShellRootNoSu;
+
+  /// No description provided for @androidShellRootReading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取…'**
+  String get androidShellRootReading;
+
+  /// No description provided for @androidShellRootRiskTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'启用 root？'**
+  String get androidShellRootRiskTitle;
+
+  /// No description provided for @androidShellRootRiskBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开后，模型可以以 root 身份执行任意命令：无确认、无预览，能改系统、读所有应用的数据。\n\n不用的时候记得关掉。'**
+  String get androidShellRootRiskBody;
+
   /// No description provided for @botsFolderGone.
   ///
   /// In zh, this message translates to:
@@ -25249,6 +25573,66 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'请在这台主机上查看引擎日志。'**
   String get pluginsLoadRemoteLogs;
+
+  /// No description provided for @pluginsLocalInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'从本地安装'**
+  String get pluginsLocalInstall;
+
+  /// No description provided for @pluginsLocalInstallNotBundle.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个包里没有 package.json，不是插件包。'**
+  String get pluginsLocalInstallNotBundle;
+
+  /// No description provided for @pluginsLocalInstallNoName.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件包的 package.json 里没有 name。'**
+  String get pluginsLocalInstallNoName;
+
+  /// No description provided for @pluginsLocalInstallTooBig.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件包太大（上限 {mb} MB）。'**
+  String pluginsLocalInstallTooBig(int mb);
+
+  /// No description provided for @pluginsLocalInstallExtractFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件包解不开：{reason}'**
+  String pluginsLocalInstallExtractFailed(String reason);
+
+  /// No description provided for @pluginsLocalInstallUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机不能安装插件。'**
+  String get pluginsLocalInstallUnsupported;
+
+  /// No description provided for @pluginsLocalInstallNotLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地安装只支持本机引擎；远程主机请在那台电脑上用命令安装。'**
+  String get pluginsLocalInstallNotLocal;
+
+  /// No description provided for @pluginsLocalInstallDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已从本地安装「{title}」'**
+  String pluginsLocalInstallDone(String title);
+
+  /// No description provided for @pluginsLocalInstallConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'从本地安装「{title}」？'**
+  String pluginsLocalInstallConfirmTitle(String title);
+
+  /// No description provided for @pluginsLocalInstallConfirmBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件：{file}\n包名：{name}\n\n它会装进这台手机上的引擎，和从市场安装的插件一样能读你的对话、调用工具。只装你自己了解来源的插件。'**
+  String pluginsLocalInstallConfirmBody(String file, String name);
 
   /// No description provided for @plugslotsSurfaceComposerTools.
   ///

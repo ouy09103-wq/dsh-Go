@@ -1818,6 +1818,174 @@ class L10nZh extends L10n {
   String get androidShellErrorUnknown => '未能确认操作结果。先核实结果；已派发的命令不要自动重试。';
 
   @override
+  String get androidShellRoot => 'Root';
+
+  @override
+  String get androidShellRootHint => '每次执行都通过 su 以 uid 0 运行，且必须先由 root 管理器给本应用授权。su 如果返回的是应用身份，会按失败报告，不会当作 root。';
+
+  @override
+  String get androidShellRootPermission => 'Root 权限';
+
+  @override
+  String get androidShellRootPermissionHint => '三条通道里的一条：Shizuku、自连 ADB，或者 root。选了 root 才有下面这个开关。';
+
+  @override
+  String get androidShellRootSwitch => 'root 模式开关';
+
+  @override
+  String androidShellRootSwitchOn(int hours) {
+    return '开着时模型可以以 root 身份执行任意命令。这次授权还剩 $hours 小时，到点自动关。';
+  }
+
+  @override
+  String get androidShellRootSwitchExpired => '上次的授权已经到期，自动关掉了。要接着用就再打开一次。';
+
+  @override
+  String get androidShellRootSwitchStrikes => '连续 3 次拿不到 root，已经自动关掉。先确认 root 管理器里给本应用的授权还在。';
+
+  @override
+  String get androidShellRootSwitchOff => '开着时模型可以调 shell 工具，以 root 身份执行任意命令。';
+
+  @override
+  String get androidShellRootSwitchShort => '开着时模型可以以 root 身份执行任意命令，不可逆的操作仍然拦住。';
+
+  @override
+  String get androidShellRootPolicy => '命令拦截档位';
+
+  @override
+  String get androidShellRootPolicyStrict => '严格';
+
+  @override
+  String get androidShellRootPolicyStrictHint => '每条命令都按手机操控的规则判定：不碰名单、系统目录、凭据库、本 App 存储都会被拒。';
+
+  @override
+  String get androidShellRootPolicyRelaxed => '放宽（默认）';
+
+  @override
+  String get androidShellRootPolicyRelaxedHint => '任意命令都跑，只拦格式化、刷机、清数据这类不可逆的操作。';
+
+  @override
+  String get androidShellRootPolicyFull => '完全放宽';
+
+  @override
+  String get androidShellRootPolicyFullHint => '不按命令内容拦截。不可逆的操作仍然拦着。';
+
+  @override
+  String get androidShellRootPolicyWarn => '高风险：root 命令不再逐条按手机操控的规则检查。';
+
+  @override
+  String get androidShellRootPolicyWarnFull => '严重风险：已完全放宽，模型和插件可用 root 执行任意命令。';
+
+  @override
+  String get androidShellRootSu => 'su 路径';
+
+  @override
+  String get androidShellRootManager => 'Root 管理器';
+
+  @override
+  String get androidShellRootChanged => '改档位失败：原生通道没接通。';
+
+  @override
+  String get androidShellRootSuMissing => '这台手机上没有 su：没有 root，或者 root 管理器没把 su 暴露出来。';
+
+  @override
+  String get androidShellRootSuNotExecutable => 'su 存在但执行不了。不要直接删，请在手机上的 root shell 里修。';
+
+  @override
+  String get androidShellRootNotGranted => 'root 管理器里没有给这个应用的授权。去那里授权后再试。';
+
+  @override
+  String get androidShellRootSuFailed => 'su 起来了但返回失败。检查 root 管理器的授权和日志。';
+
+  @override
+  String get androidShellRootNotRoot => 'su 返回的是应用身份而不是 uid 0。这不是 root，没有以 root 执行任何命令。';
+
+  @override
+  String get androidShellRootDomainUnknown => 'uid 0 但读不到 SELinux 域，无法确认授权真的生效。';
+
+  @override
+  String get androidShellRootWrongDomain => 'uid 0 但仍在 untrusted_app 域：对它声称拥有的文件没有实际权限。';
+
+  @override
+  String get androidShellRootHostFailed => 'root shell 宿主没起来。检查 root 管理器授权后重试。';
+
+  @override
+  String get androidShellRootLinux => 'Linux 环境（rootfs）';
+
+  @override
+  String get androidShellRootLinuxReady => '已就绪';
+
+  @override
+  String get androidShellRootLinuxMissing => '未解压';
+
+  @override
+  String get androidShellRootLinuxNote => '这个授权只给手机操控用，不会让 Linux 环境（引擎）获得 root。';
+
+  @override
+  String get androidShellRootProbe => '申请 root 授权（id -u）';
+
+  @override
+  String get androidShellRootProbeRun => '点按执行';
+
+  @override
+  String get androidShellRootShell => '常驻 root shell';
+
+  @override
+  String get androidShellRootShellOpen => '打开 root shell';
+
+  @override
+  String get androidShellRootShellClose => '关闭 root shell';
+
+  @override
+  String androidShellRootShellOpened(int id) {
+    return 'root shell 已打开（#$id）';
+  }
+
+  @override
+  String get androidShellRootShellClosed => 'root shell 已关闭';
+
+  @override
+  String androidShellRootShellRunning(int id) {
+    return '#$id 运行中';
+  }
+
+  @override
+  String get androidShellRootShellIdle => '未打开';
+
+  @override
+  String get androidShellRootShellHint => 'whoami / ls /data/adb';
+
+  @override
+  String get androidShellRootCommand => '执行 root 命令';
+
+  @override
+  String get androidShellRootCommandHint => 'su -c \"…\"';
+
+  @override
+  String get androidShellRootCommandRun => '以 root 执行';
+
+  @override
+  String get androidShellRootOutput => '输出';
+
+  @override
+  String get androidShellRootOutputCopy => '复制输出';
+
+  @override
+  String get androidShellRootOutputClear => '清空';
+
+  @override
+  String get androidShellRootNoSu => '未检测到 su';
+
+  @override
+  String get androidShellRootReading => '正在读取…';
+
+  @override
+  String get androidShellRootRiskTitle => '启用 root？';
+
+  @override
+  String get androidShellRootRiskBody => '打开后，模型可以以 root 身份执行任意命令：无确认、无预览，能改系统、读所有应用的数据。\n\n不用的时候记得关掉。';
+
+  @override
   String get botsFolderGone => '这个文件夹已经不在了';
 
   @override
@@ -13745,6 +13913,46 @@ class L10nZh extends L10n {
 
   @override
   String get pluginsLoadRemoteLogs => '请在这台主机上查看引擎日志。';
+
+  @override
+  String get pluginsLocalInstall => '从本地安装';
+
+  @override
+  String get pluginsLocalInstallNotBundle => '这个包里没有 package.json，不是插件包。';
+
+  @override
+  String get pluginsLocalInstallNoName => '插件包的 package.json 里没有 name。';
+
+  @override
+  String pluginsLocalInstallTooBig(int mb) {
+    return '插件包太大（上限 $mb MB）。';
+  }
+
+  @override
+  String pluginsLocalInstallExtractFailed(String reason) {
+    return '插件包解不开：$reason';
+  }
+
+  @override
+  String get pluginsLocalInstallUnsupported => '这台主机不能安装插件。';
+
+  @override
+  String get pluginsLocalInstallNotLocal => '本地安装只支持本机引擎；远程主机请在那台电脑上用命令安装。';
+
+  @override
+  String pluginsLocalInstallDone(String title) {
+    return '已从本地安装「$title」';
+  }
+
+  @override
+  String pluginsLocalInstallConfirmTitle(String title) {
+    return '从本地安装「$title」？';
+  }
+
+  @override
+  String pluginsLocalInstallConfirmBody(String file, String name) {
+    return '文件：$file\n包名：$name\n\n它会装进这台手机上的引擎，和从市场安装的插件一样能读你的对话、调用工具。只装你自己了解来源的插件。';
+  }
 
   @override
   String get plugslotsSurfaceComposerTools => '加号面板';

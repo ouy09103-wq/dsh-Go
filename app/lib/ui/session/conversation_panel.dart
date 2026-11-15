@@ -13,6 +13,7 @@ import '../shell/quick_panel.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'conversation_panes.dart';
+import 'root_switch_pill.dart';
 import 'session_detail_page.dart';
 
 /// Which side is showing, and which plugin; they come back as they were left.
@@ -88,6 +89,8 @@ class ConversationPanel extends ConsumerWidget {
             ),
           ),
         ),
+        // root 开关就摆在快捷入口这一排的上面：它和它们一样，是「现在就要用」的东西。
+        const RootSwitchPill(),
         if (destinations.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),

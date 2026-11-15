@@ -38,6 +38,33 @@ String get phoneNotReadyReason => appL10n.statePhoneNotReady;
 
 // ── Status ───────────────────────────────────────────────────────────────────
 
+/// root 命令的三档拦截，跟 DSHA 的「严格 / 放宽 / 完全放宽」一致。
+///
+/// 只作用于 `shell` 工具和 Android Shell 的 root 后端；Shizuku / ADB 通道
+/// 和短信这类原生授权闸门不受影响。三个档位都还会拦不可逆的操作。
+enum RootPolicyMode {
+  /// 逐条按手机操控的规则判定：不碰名单、系统目录、凭据库、本 App 存储都会被拒。
+  strict,
+
+  /// 默认。任意命令都跑，只拦格式化、刷机、清数据这类不可逆的操作。
+  relaxed,
+
+  /// 不再按命令内容拦截（不可逆操作仍然拦）。
+  full;
+
+  static RootPolicyMode parse(Object? wire) => switch (wire) {
+    'strict' => strict,
+    'full' => full,
+    _ => relaxed,
+  };
+
+  String get wire => switch (this) {
+    strict => 'strict',
+    relaxed => 'relaxed',
+    full => 'full',
+  };
+}
+
 /// Where 不打扰模式 gets its shell identity from.
 enum PhoneBackgroundMode {
   off,
@@ -590,7 +617,7 @@ class PhoneStatus {
     this.error,
     this.enabled = false,
     this.rootShell = false,
-    this.rootShellStrict = false,
+    this.rootPolicyMode = RootPolicyMode.relaxed,
     this.rootShellUntil,
     this.rootShellOffReason,
     this.bridgeListening = false,
@@ -617,7 +644,7 @@ class PhoneStatus {
       statusRevisionPresent = false,
       enabled = false,
       rootShell = false,
-      rootShellStrict = false,
+      rootPolicyMode = RootPolicyMode.relaxed,
       rootShellUntil = null,
       rootShellOffReason = null,
       bridgeListening = false,
@@ -642,7 +669,7 @@ class PhoneStatus {
     statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
     rootShell: _flag(m['rootShell']),
-    rootShellStrict: _flag(m['rootShellStrict']),
+    rootPolicyMode: RootPolicyMode.parse(m['rootPolicyMode']),
     rootShellUntil: m['rootShellUntil'] is int ? m['rootShellUntil'] as int : null,
     rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
@@ -679,8 +706,8 @@ class PhoneStatus {
   /// 设置 › Root 权限的开关：关着时 `shell` 工具拒绝执行。
   final bool rootShell;
 
-  /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
-  final bool rootShellStrict;
+  /// root 命令的三档拦截：严格 / 放宽 / 完全放宽。默认放宽。
+  final RootPolicyMode rootPolicyMode;
 
   /// 授权到期时间（毫秒时间戳）；null 表示没记录。
   final int? rootShellUntil;
@@ -716,7 +743,7 @@ class PhoneStatus {
   PhoneStatus copyWith({
     bool? enabled,
     bool? rootShell,
-    bool? rootShellStrict,
+    RootPolicyMode? rootPolicyMode,
     int? rootShellUntil,
     bool clearRootShellUntil = false,
     String? rootShellOffReason,
@@ -730,7 +757,7 @@ class PhoneStatus {
     statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
     rootShell: rootShell ?? this.rootShell,
-    rootShellStrict: rootShellStrict ?? this.rootShellStrict,
+    rootPolicyMode: rootPolicyMode ?? this.rootPolicyMode,
     rootShellUntil: clearRootShellUntil ? null : (rootShellUntil ?? this.rootShellUntil),
     rootShellOffReason:
         clearRootShellOffReason ? null : (rootShellOffReason ?? this.rootShellOffReason),
@@ -1431,11 +1458,12 @@ class PhoneChannel {
   }
 
 
-  /// 设置 › Root 权限的开关：只影响之后的 `shell` 调用，不重启引擎。
+  /// root 权限的总开关（Android Shell 页 / 聊天页胶囊）：只影响之后的
+  /// `shell` 调用，不重启引擎。
   Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
 
-  /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
-  Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
+  /// root 命令的三档拦截档位。
+  Future<bool> setRootPolicyMode(RootPolicyMode mode) => _bool('setRootPolicyMode', {'mode': mode.wire});
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

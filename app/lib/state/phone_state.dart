@@ -317,9 +317,9 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
-  /// 设置 › Root 权限：严格模式。同样以回读为准。
-  Future<bool> setRootShellStrict(bool on) async {
-    final ok = await _channel.setRootShellStrict(on);
+  /// Android Shell 页的 root 权限：三档拦截。同样以回读为准。
+  Future<bool> setRootPolicyMode(RootPolicyMode mode) async {
+    final ok = await _channel.setRootPolicyMode(mode);
     if (!ref.mounted) return ok;
     if (ok) await refreshStatus();
     return ok;

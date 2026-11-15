@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../phone/android_shell_channel.dart';
+import '../../root/root_channel.dart';
 import '../../state/phone_state.dart';
 import '../common/app_dialog.dart';
 import '../common/list_page_row.dart';
@@ -36,6 +37,15 @@ String androidShellErrorText(L10n l10n, String code) => switch (code) {
   'nativeUnavailable' => l10n.androidShellErrorNativeUnavailable,
   'invalidResponse' => l10n.androidShellErrorInvalidResponse,
   'stopFailed' => l10n.androidShellErrorStopFailed,
+  // root 通道每种失败都有自己的码，页面按码说清楚是哪一步坏了。
+  'suMissing' => l10n.androidShellRootSuMissing,
+  'suNotExecutable' => l10n.androidShellRootSuNotExecutable,
+  'rootNotGranted' => l10n.androidShellRootNotGranted,
+  'rootSuFailed' => l10n.androidShellRootSuFailed,
+  'rootNotRoot' => l10n.androidShellRootNotRoot,
+  'rootDomainUnknown' => l10n.androidShellRootDomainUnknown,
+  'rootWrongDomain' => l10n.androidShellRootWrongDomain,
+  'rootHostFailed' => l10n.androidShellRootHostFailed,
   _ => l10n.androidShellErrorUnknown,
 };
 
@@ -51,6 +61,9 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
   static const _channel = AndroidShellChannel();
   static const _margin = EdgeInsets.fromLTRB(16, 12, 16, 12);
 
+  static const _root = RootChannel();
+  static const _maxOutputLines = 40;
+
   late final AppLifecycleListener _lifecycle;
   AndroidShellStatus _status = const AndroidShellStatus();
   bool _loading = true;
@@ -59,6 +72,13 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
   String? _errorCode;
   int _read = 0;
   int _operation = 0;
+
+  // root 那半页的状态：su 能力清单和控制台，和上面「Android Shell 通道」各管各的。
+  RootStatus? _rootStatus;
+  bool _rootBusy = false;
+  bool _rootSwitchBusy = false;
+  final _rootCommand = TextEditingController(text: 'id');
+  final _rootOutput = <String>[];
 
   @override
   void initState() {
@@ -74,6 +94,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
 
   @override
   void dispose() {
+    _rootCommand.dispose();
     _lifecycle.dispose();
     super.dispose();
   }
@@ -86,6 +107,20 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
       _status = status;
       _loading = false;
     });
+    // su 清单是另一半，读它不该拖住这一半：缺原生模块（MissingPluginException）
+    // 和原生报错一样只是让 root 那一段显示「读不到」，通道状态照常画。
+    unawaited(_refreshRootStatus());
+  }
+
+  Future<void> _refreshRootStatus() async {
+    RootStatus? rootStatus;
+    try {
+      rootStatus = await _root.status();
+    } on Object {
+      rootStatus = null;
+    }
+    if (!mounted) return;
+    setState(() => _rootStatus = rootStatus);
   }
 
   Future<void> _run(Future<AndroidShellResult> Function() action) async {
@@ -163,6 +198,82 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     }
   }
 
+  // ── root 的一半：开关、档位、控制台 ──────────────────────────────────────
+  //
+  // 这个开关就是「模型能不能以 root 身份动手」的那一个，和聊天页的 root 胶囊
+  // 是同一个值；档位是 DSHA 那三档，决定命令内容怎么拦。
+
+  void _rootLog(String line) {
+    if (!mounted) return;
+    setState(() => _rootOutput.insert(0, line));
+    if (_rootOutput.length > _maxOutputLines) _rootOutput.removeLast();
+  }
+
+  Future<void> _runRoot(Future<RootResult> Function() action, String title) async {
+    if (_rootBusy) return;
+    setState(() => _rootBusy = true);
+    try {
+      final result = await action();
+      _rootLog('$title\n${result.report}');
+    } on PlatformException catch (error) {
+      _rootLog('$title\n失败：${error.code} ${error.message ?? ''}');
+    } on Object catch (error) {
+      _rootLog('$title\n失败：$error');
+    } finally {
+      if (mounted) setState(() => _rootBusy = false);
+    }
+  }
+
+  /// 打开前问一句（关掉不需要）；确认只是拦一下误触，不保护什么。
+  Future<void> _toggleRootShell(bool on) async {
+    if (_rootSwitchBusy) return;
+    final l10n = context.l10n;
+    if (!on) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: Text(l10n.androidShellRootRiskTitle),
+          content: Text(l10n.androidShellRootRiskBody),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(l10n.commonCancel)),
+            FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text(l10n.androidShellRootSwitch)),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    setState(() => _rootSwitchBusy = true);
+    try {
+      final ok = await ref.read(phoneProvider.notifier).setRootShell(!on);
+      if (!mounted) return;
+      if (!ok) _rootLog(l10n.androidShellRootChanged);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _rootSwitchBusy = false);
+    }
+  }
+
+  Future<void> _setRootPolicy(RootPolicyMode mode) async {
+    final ok = await ref.read(phoneProvider.notifier).setRootPolicyMode(mode);
+    if (!mounted || ok) return;
+    _rootLog(context.l10n.androidShellRootChanged);
+  }
+
+  /// 开关下面那行字：开着说到期时间，关着说明为什么关。
+  String _rootSwitchSubtitle(L10n l10n, PhoneStatus status) {
+    if (status.rootShell) {
+      final until = status.rootShellUntil;
+      if (until == null) return l10n.androidShellRootSwitchShort;
+      final left = DateTime.fromMillisecondsSinceEpoch(until).difference(DateTime.now());
+      return l10n.androidShellRootSwitchOn(left.inHours < 1 ? 1 : left.inHours);
+    }
+    return switch (status.rootShellOffReason) {
+      'expired' => l10n.androidShellRootSwitchExpired,
+      'strikes' => l10n.androidShellRootSwitchStrikes,
+      _ => l10n.androidShellRootSwitchOff,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -172,7 +283,10 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     final reasonCode = _status.reasonCode;
     final timeout = _status.limits['maxTimeoutMs'];
     final output = _status.limits['maxOutputBytes'];
-    final shizuku = _status.backend == AndroidShellBackend.shizuku;
+    final selected = _status.backend;
+    final shizuku = selected == AndroidShellBackend.shizuku;
+    final adb = selected == AndroidShellBackend.adb;
+    final root = selected == AndroidShellBackend.root;
     final authorize = ListPageRow(
       key: const ValueKey('android-shell-authorize'),
       title: l10n.androidShellAuthorize,
@@ -251,7 +365,11 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                 child: ListPageRow(
                   key: ValueKey('android-shell-backend-${backend.name}'),
                   leading: Icon(_status.backend == backend ? AppIcons.radioOn : AppIcons.radioOff),
-                  title: backend == AndroidShellBackend.shizuku ? 'Shizuku' : l10n.androidShellAdb,
+                  title: switch (backend) {
+                    AndroidShellBackend.shizuku => 'Shizuku',
+                    AndroidShellBackend.adb => l10n.androidShellAdb,
+                    AndroidShellBackend.root => l10n.androidShellRoot,
+                  },
                   onTap: !canSetup || _status.backend == backend
                       ? null
                       : () => unawaited(_run(() => _channel.configure(enabled: _status.enabled, backend: backend))),
@@ -261,19 +379,31 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
         ),
         if (shizuku && !_status.shizuku.granted)
           ListPageCard(margin: _margin, children: [authorize])
-        else if (!shizuku && !_status.adb.paired)
+        else if (adb && !_status.adb.paired)
           ListPageCard(margin: _margin, children: pairing),
-        if (!_status.ready && (shizuku ? _status.shizuku.granted : _status.adb.paired))
+        // root 不用配对，只要有 su 就能连；没有 su 就把原因摆在按钮上。
+        if (!_status.ready && (shizuku ? _status.shizuku.granted : !adb || _status.adb.paired))
           ListPageCard(
             margin: _margin,
             children: [
               ListPageRow(
-                key: ValueKey(shizuku ? 'android-shell-connect-shizuku' : 'android-shell-connect'),
+                key: ValueKey(
+                  shizuku
+                      ? 'android-shell-connect-shizuku'
+                      : adb
+                      ? 'android-shell-connect'
+                      : 'android-shell-connect-root',
+                ),
                 title: shizuku ? l10n.androidShellConnectChannel : l10n.androidShellConnect,
                 titleMaxLines: 2,
-                subtitle: !_status.enabled ? l10n.androidShellErrorDisabled : null,
-                onTap: canSetup && _status.enabled
-                    ? () => unawaited(shizuku ? _run(_channel.connect) : _adbInput(pairing: false))
+                subtitle: !_status.enabled
+                    ? l10n.androidShellErrorDisabled
+                    : root && !_status.root.available
+                    ? androidShellErrorText(l10n, 'suMissing')
+                    : null,
+                subtitleMaxLines: 3,
+                onTap: canSetup && _status.enabled && !(root && !_status.root.available)
+                    ? () => unawaited(adb ? _adbInput(pairing: false) : _run(_channel.connect))
                     : null,
               ),
             ],
@@ -291,13 +421,26 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
             ),
           ],
         ),
+        // ── Root 权限 ────────────────────────────────────────────────────────
+        //
+        // 这里就是「Root 权限」的全套：一个总开关（模型能否以 root 动手）、
+        // 一个命令拦截档位（怎么拦）、su 能力清单、和一个能直接跑命令的控制台。
+        // 它跟上面那条 Android Shell 通道共用一个页面，因为它们本来就是同一件事：
+        // 从这台手机上执行系统命令，只是换了个身份。
+        _rootSection(context, l10n, phone.status),
         PhoneOptionsFold(
           key: const ValueKey('android-shell-details'),
           title: l10n.androidShellDetails,
           children: [
             PhoneNote(text: l10n.androidShellSubtitle),
             PhoneNote(text: l10n.androidShellEnableHint),
-            PhoneNote(text: shizuku ? l10n.androidShellShizukuHint : l10n.androidShellAdbHint),
+            PhoneNote(
+              text: shizuku
+                  ? l10n.androidShellShizukuHint
+                  : adb
+                  ? l10n.androidShellAdbHint
+                  : l10n.androidShellRootHint,
+            ),
             ListPageCard(
               margin: _margin,
               children: [
@@ -320,20 +463,198 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
                   _fact(l10n.androidShellRunning, _status.shizuku.running),
                   _fact(l10n.androidShellGranted, _status.shizuku.granted),
                   if (_status.shizuku.granted) authorize,
-                ] else ...[
+                ] else if (adb) ...[
                   _fact(l10n.androidShellPaired, _status.adb.paired),
                   _fact(l10n.androidShellConnected, _status.adb.connected),
                   if (_status.adb.paired) ...pairing,
+                ] else ...[
+                  ListPageRow(
+                    key: const ValueKey('android-shell-root-su'),
+                    title: l10n.androidShellRootSu,
+                    titleMaxLines: 2,
+                    value: _status.root.su ?? l10n.androidShellRootNoSu,
+                  ),
+                  ListPageRow(
+                    key: const ValueKey('android-shell-root-manager'),
+                    title: l10n.androidShellRootManager,
+                    titleMaxLines: 2,
+                    value: _status.root.manager.isEmpty ? l10n.androidShellUidUnknown : _status.root.manager,
+                  ),
                 ],
               ],
             ),
-            PhoneNote(text: shizuku ? l10n.androidShellAuthorizeHint : l10n.androidShellPairingGuide),
+            PhoneNote(
+              text: shizuku
+                  ? l10n.androidShellAuthorizeHint
+                  : adb
+                  ? l10n.androidShellPairingGuide
+                  : l10n.androidShellRootHint,
+            ),
             PhoneNote(text: l10n.androidShellStopHint),
           ],
         ),
       ],
     );
   }
+
+  /// Root 权限那一段：总开关、档位、su 清单、控制台。
+  ///
+  /// 开关只有这一个：聊天页胶囊、这里、以及任何别的地方读的都是同一个值
+  /// （[PhoneStatus.rootShell]），不存在第二个能打开 root 的入口。
+  Widget _rootSection(BuildContext context, L10n l10n, PhoneStatus phone) {
+    final rootEnabled = phone.rootShell;
+    final mode = phone.rootPolicyMode;
+    final rootStatus = _rootStatus;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListPageCard(
+          margin: _margin,
+          children: [
+            ListPageRow(
+              key: const ValueKey('android-shell-root-portal'),
+              icon: AppIcons.terminal,
+              title: l10n.androidShellRootPermission,
+              titleMaxLines: 2,
+              subtitle: l10n.androidShellRootPermissionHint,
+              subtitleMaxLines: 4,
+              trailing: Switch(
+                key: const ValueKey('android-shell-root-switch'),
+                value: rootEnabled,
+                onChanged: _rootSwitchBusy || !_status.supported || !phone.enabled
+                    ? null
+                    : (value) => unawaited(_toggleRootShell(value)),
+              ),
+            ),
+            ListPageRow(
+              key: const ValueKey('android-shell-root-switch-state'),
+              title: l10n.androidShellRootSwitch,
+              titleMaxLines: 2,
+              subtitle: _rootSwitchSubtitle(l10n, phone),
+              subtitleMaxLines: 4,
+            ),
+          ],
+        ),
+        // 档位只在开着的时候有意义：关着时它拦谁去。
+        if (rootEnabled)
+          ListPageCard(
+            margin: _margin,
+            title: l10n.androidShellRootPolicy,
+            children: [
+              for (final choice in RootPolicyMode.values)
+                Semantics(
+                  selected: mode == choice,
+                  inMutuallyExclusiveGroup: true,
+                  child: ListPageRow(
+                    key: ValueKey('android-shell-root-policy-${choice.wire}'),
+                    leading: Icon(mode == choice ? AppIcons.radioOn : AppIcons.radioOff),
+                    title: _policyLabel(l10n, choice),
+                    titleMaxLines: 2,
+                    subtitle: _policyHint(l10n, choice),
+                    subtitleMaxLines: 4,
+                    onTap: mode == choice ? null : () => unawaited(_setRootPolicy(choice)),
+                  ),
+                ),
+              if (mode != RootPolicyMode.strict)
+                PhoneNote(
+                  key: const ValueKey('android-shell-root-policy-warning'),
+                  tone: NoteTone.warn,
+                  text: mode == RootPolicyMode.full
+                      ? l10n.androidShellRootPolicyWarnFull
+                      : l10n.androidShellRootPolicyWarn,
+                ),
+            ],
+          ),
+        ListPageCard(
+          margin: _margin,
+          children: [
+            ListPageRow(
+              key: const ValueKey('android-shell-root-status'),
+              icon: AppIcons.systemAccess,
+              title: l10n.androidShellRootSu,
+              titleMaxLines: 2,
+              subtitle: rootStatus == null
+                  ? l10n.androidShellRootReading
+                  : rootStatus.hasSu
+                  ? '${rootStatus.manager.isEmpty ? 'su' : rootStatus.manager} · ${rootStatus.abi} · '
+                        'Android ${rootStatus.sdk} · ${l10n.androidShellRootLinux}: '
+                        '${rootStatus.guestRootfs ? l10n.androidShellRootLinuxReady : l10n.androidShellRootLinuxMissing}'
+                  : l10n.androidShellRootNoSu,
+              subtitleMaxLines: 4,
+              value: rootStatus?.su ?? '—',
+            ),
+            ListPageRow(
+              key: const ValueKey('android-shell-root-probe'),
+              icon: AppIcons.verified,
+              title: l10n.androidShellRootProbe,
+              titleMaxLines: 2,
+              value: _rootBusy ? '…' : l10n.androidShellRootProbeRun,
+              onTap: _rootBusy ? null : () => unawaited(_runRoot(_root.probe, 'id -u')),
+            ),
+          ],
+        ),
+        PhoneNote(text: l10n.androidShellRootLinuxNote),
+        ListPageCard(
+          margin: _margin,
+          title: l10n.androidShellRootCommand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: TextField(
+                key: const ValueKey('android-shell-root-command'),
+                controller: _rootCommand,
+                minLines: 1,
+                maxLines: 4,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: l10n.androidShellRootCommandHint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            ListPageRow(
+              key: const ValueKey('android-shell-root-run'),
+              icon: AppIcons.command,
+              title: l10n.androidShellRootCommandRun,
+              value: _rootBusy ? '…' : '▶',
+              onTap: _rootBusy ? null : () => unawaited(_runRoot(() => _root.exec(_rootCommand.text), 'root 执行')),
+            ),
+          ],
+        ),
+        if (_rootOutput.isNotEmpty)
+          ListPageCard(
+            margin: _margin,
+            title: l10n.androidShellRootOutput,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: SelectableText(
+                  _rootOutput.join('\n\n'),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.4),
+                ),
+              ),
+              ListPageRow(
+                title: l10n.androidShellRootOutputCopy,
+                onTap: () => Clipboard.setData(ClipboardData(text: _rootOutput.join('\n\n'))),
+              ),
+              ListPageRow(title: l10n.androidShellRootOutputClear, onTap: () => setState(_rootOutput.clear)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  static String _policyLabel(L10n l10n, RootPolicyMode mode) => switch (mode) {
+    RootPolicyMode.strict => l10n.androidShellRootPolicyStrict,
+    RootPolicyMode.relaxed => l10n.androidShellRootPolicyRelaxed,
+    RootPolicyMode.full => l10n.androidShellRootPolicyFull,
+  };
+
+  static String _policyHint(L10n l10n, RootPolicyMode mode) => switch (mode) {
+    RootPolicyMode.strict => l10n.androidShellRootPolicyStrictHint,
+    RootPolicyMode.relaxed => l10n.androidShellRootPolicyRelaxedHint,
+    RootPolicyMode.full => l10n.androidShellRootPolicyFullHint,
+  };
 
   Widget _fact(String title, bool ready) => ListPageRow(
     title: title,

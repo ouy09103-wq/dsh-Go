@@ -371,5 +371,53 @@
         "type": "int"
       }
     }
+  },
+  "pluginsLocalInstall": "Install from this phone",
+  "pluginsLocalInstallNotBundle": "That file has no package.json, so it is not a plugin package.",
+  "pluginsLocalInstallNoName": "The package.json in that plugin package has no name.",
+  "pluginsLocalInstallTooBig": "That plugin package is too large (limit {mb} MB).",
+  "@pluginsLocalInstallTooBig": {
+    "placeholders": {
+      "mb": {
+        "type": "int"
+      }
+    }
+  },
+  "pluginsLocalInstallExtractFailed": "Could not unpack the plugin package: {reason}",
+  "@pluginsLocalInstallExtractFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallUnsupported": "This host cannot install plugins.",
+  "pluginsLocalInstallNotLocal": "Installing from this phone only works on the local engine. On a remote host, install it there with a command.",
+  "pluginsLocalInstallDone": "Installed「{title}」from this phone",
+  "@pluginsLocalInstallDone": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallConfirmTitle": "Install「{title}」from this phone?",
+  "@pluginsLocalInstallConfirmTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallConfirmBody": "File: {file}\nPackage: {name}\n\nIt goes into the engine on this phone and, like anything from the market, can read your conversations and call tools. Only install plugins whose origin you know.",
+  "@pluginsLocalInstallConfirmBody": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

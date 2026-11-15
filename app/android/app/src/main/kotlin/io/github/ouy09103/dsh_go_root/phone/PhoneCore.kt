@@ -40,8 +40,8 @@ interface PhoneEnv {
     fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? = null
     /** 聊天页的「启用 root」开关。关着时 shell 工具拒绝执行。 */
     fun rootShellEnabled(): Boolean = false
-    /** 严格模式：开着时按 RootCommandPolicy 逐条判定，默认关。 */
-    fun rootShellStrict(): Boolean = false
+    /** root 命令的三档拦截档位，默认「放宽」。 */
+    fun rootPolicyMode(): RootPolicyMode = RootPolicyMode.DEFAULT
     fun appLabel(pkg: String): String? = null
 
     /** 上一次 `shell` 落盘的完整输出文件；null 表示 path 不是它自己的临时文件。 */
@@ -1345,9 +1345,18 @@ class PhoneCore(
             ?: return Out("shell 需要 command：要执行的命令。", error = true, summary = "shell",
                 decision = "refused:no-command")
         val timeoutMs = (a.int("timeoutMs") ?: RootShell.DEFAULT_TIMEOUT_MS.toInt()).toLong()
-        // 严格模式默认关：打开「启用 root」就是要它能干活，不该再被自己的规则管着。
-        // 在 设置 › Root 权限 里打开严格模式才逐条判定。
-        if (env.rootShellStrict()) {
+        // 三档拦截：严格档走手机操控那套规则；放宽档只拦不可逆的操作；
+        // 完全放宽档不再看命令内容。档位在 Android Shell 页的 root 权限里改。
+        val mode = env.rootPolicyMode()
+        // 三个档位都拦不可逆的操作：做下去回不来，谁选的档位都一样。
+        IrreversibleCommands.hit(command)?.let { hit ->
+            return Out(
+                "这条命令里有不可逆的操作（$hit）：格式化、刷机、清数据这类做下去回不来的事，"
+                    + "root 通道在任何档位下都不执行。确实要做请由用户自己在 root shell 里动手。",
+                error = true, summary = "shell", decision = "refused:irreversible",
+            )
+        }
+        if (mode == RootPolicyMode.STRICT) {
             val verdict = rootPolicy.judge(command, env.policies()) { pkg -> env.appLabel(pkg) }
             if (verdict is RootCommandPolicy.Verdict.Refuse) {
                 return Out(verdict.message, error = true, summary = "shell",

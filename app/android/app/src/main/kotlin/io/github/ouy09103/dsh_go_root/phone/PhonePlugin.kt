@@ -351,11 +351,16 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 control.emitStatus()
                 result.success(true)
             }
-            // 设置 › Root 权限：严格模式。开着时逐条判定 root 命令。
-            "setRootShellStrict" -> {
-                control.setRootShellStrict(call.argument<Boolean>("on") ?: false)
-                control.emitStatus()
-                result.success(true)
+            // Android Shell 页的 root 权限：三档拦截（strict / relaxed / full）。
+            "setRootPolicyMode" -> {
+                val mode = call.argument<String>("mode")
+                if (mode == null || RootPolicyMode.entries.none { it.id == mode }) {
+                    result.success(false)
+                } else {
+                    control.setRootPolicyMode(RootPolicyMode.parse(mode))
+                    control.emitStatus()
+                    result.success(true)
+                }
             }
             else -> result.notImplemented()
         }

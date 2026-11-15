@@ -37,6 +37,7 @@ import '../features/permission_page.dart';
 import '../onboarding/api_key_page.dart' show maskApiKey;
 import '../pets/pet_settings_page.dart';
 import '../phone/phone_control_screen.dart';
+import '../phone/android_shell_page.dart';
 import '../plugins/plugins_screen.dart';
 import '../plugins/seats/plugin_settings_tiles.dart';
 import '../plugins/seats/seat_probe.dart';
@@ -58,7 +59,6 @@ import 'notification_settings.dart';
 import 'performance_page.dart';
 import 'personalization_page.dart';
 import 'privacy_page.dart';
-import 'root_page.dart';
 import 'search/settings_search_page.dart';
 import 'settings_widgets.dart';
 import 'system_access_page.dart';
@@ -311,7 +311,9 @@ class SettingsScreen extends ConsumerWidget {
               icon: AppIcons.terminal,
               tint: SettingsHues.help,
               spot: Spots.root,
-              onTap: () => _push(context, const RootPage()),
+              // Root 权限不再单独一页：它和 Android Shell 是同一件事（换身份执行
+              // 系统命令），开关、档位和控制台都在那里，只留一个入口。
+              onTap: () => _push(context, const AndroidShellPage()),
             ),
             SettingsTile(
               icon: AppIcons.diagnostics,

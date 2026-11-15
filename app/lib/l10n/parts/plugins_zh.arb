@@ -836,5 +836,53 @@
         "type": "int"
       }
     }
+  },
+  "pluginsLocalInstall": "从本地安装",
+  "pluginsLocalInstallNotBundle": "这个包里没有 package.json，不是插件包。",
+  "pluginsLocalInstallNoName": "插件包的 package.json 里没有 name。",
+  "pluginsLocalInstallTooBig": "插件包太大（上限 {mb} MB）。",
+  "@pluginsLocalInstallTooBig": {
+    "placeholders": {
+      "mb": {
+        "type": "int"
+      }
+    }
+  },
+  "pluginsLocalInstallExtractFailed": "插件包解不开：{reason}",
+  "@pluginsLocalInstallExtractFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallUnsupported": "这台主机不能安装插件。",
+  "pluginsLocalInstallNotLocal": "本地安装只支持本机引擎；远程主机请在那台电脑上用命令安装。",
+  "pluginsLocalInstallDone": "已从本地安装「{title}」",
+  "@pluginsLocalInstallDone": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallConfirmTitle": "从本地安装「{title}」？",
+  "@pluginsLocalInstallConfirmTitle": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsLocalInstallConfirmBody": "文件：{file}\n包名：{name}\n\n它会装进这台手机上的引擎，和从市场安装的插件一样能读你的对话、调用工具。只装你自己了解来源的插件。",
+  "@pluginsLocalInstallConfirmBody": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

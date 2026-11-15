@@ -75,15 +75,20 @@ class RootGrant(private val prefs: SharedPreferences, private val clock: () -> L
     }
 
     /**
-     * 严格模式：`shell` 是否也走手机操控那套规则。默认 **关**。
+     * root 命令的三档拦截：严格 / 放宽 / 完全放宽。
      *
-     * 打开 root 开关本身就是一句明确的允许；再在每条命令上拦一次，用户会觉得「自己的机器
-     * 自己说了不算」。想多一层保险的人可以在这里打开。
+     * 打开 root 开关本身就是一句明确的允许，所以默认不是最严的那档；但也不能一开就什么都
+     * 不拦，默认「放宽」——任意命令都跑，只有不可逆的操作（格式化、刷机、清数据）还拦着。
+     * 想完全按手机操控那套规则逐条判定就选「严格」。
      */
-    fun strict(): Boolean = prefs.getBoolean(K_STRICT, false)
+    fun mode(): RootPolicyMode {
+        prefs.getString(K_MODE, null)?.let { return RootPolicyMode.parse(it) }
+        // 旧版本只有一个「严格模式」布尔：当时打开过的人继续留在严格档，其余用默认。
+        return if (prefs.getBoolean(K_STRICT, false)) RootPolicyMode.STRICT else RootPolicyMode.DEFAULT
+    }
 
-    fun setStrict(on: Boolean) {
-        prefs.edit().putBoolean(K_STRICT, on).apply()
+    fun setMode(mode: RootPolicyMode) {
+        prefs.edit().putString(K_MODE, mode.id).apply()
     }
 
     /** Why [enabled] last read false: `expired` or `strikes`. Reset by [set]. */
@@ -99,6 +104,7 @@ class RootGrant(private val prefs: SharedPreferences, private val clock: () -> L
         const val MAX_STRIKES = 3
 
         const val K_ON = "root_shell"
+        private const val K_MODE = "root_policy_mode"
         private const val K_STRICT = "root_shell_strict"
         private const val K_UNTIL = "root_shell_until"
         private const val K_STRIKES = "root_shell_strikes"

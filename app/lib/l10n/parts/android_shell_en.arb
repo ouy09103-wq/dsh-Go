@@ -79,5 +79,80 @@
   "androidShellErrorNativeUnavailable": "The Android Shell native module is unavailable in this build.",
   "androidShellErrorInvalidResponse": "No valid native status was received. Refresh or update the app.",
   "androidShellErrorStopFailed": "Stopping was not confirmed. Refresh the status and retry stopping.",
-  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command."
+  "androidShellErrorUnknown": "The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.",
+  "androidShellRoot": "Root",
+  "androidShellRootHint": "Every command runs through su as uid 0, and only after the root manager authorizes this app. A su that answers with the app identity is reported as a failure, never as root.",
+  "androidShellRootPermission": "Root permission",
+  "androidShellRootPermissionHint": "One of the three channels, alongside Shizuku and self-ADB. Choose root to get the switch below.",
+  "androidShellRootSwitch": "Root mode switch",
+  "androidShellRootSwitchOn": "While on, the model can run any command as root. This grant lasts {hours} more hours and turns itself off then.",
+  "@androidShellRootSwitchOn": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "androidShellRootSwitchExpired": "The last grant expired and was turned off. Turn it on again to keep using root.",
+  "androidShellRootSwitchStrikes": "root was unreachable 3 times in a row, so it was turned off. Check the grant for this app in the root manager first.",
+  "androidShellRootSwitchOff": "While on, the model can call the shell tool and run any command as root.",
+  "androidShellRootSwitchShort": "While on, the model can run any command as root; irreversible operations are still blocked.",
+  "androidShellRootPolicy": "Command policy",
+  "androidShellRootPolicyStrict": "Strict",
+  "androidShellRootPolicyStrictHint": "Every command goes through the phone-control rules: the 不碰 list, system directories, credential stores and this app's own storage are refused.",
+  "androidShellRootPolicyRelaxed": "Relaxed (default)",
+  "androidShellRootPolicyRelaxedHint": "Any command runs; only irreversible ones such as formatting, flashing or wiping data are blocked.",
+  "androidShellRootPolicyFull": "Fully relaxed",
+  "androidShellRootPolicyFullHint": "Command content is not checked. Irreversible operations are still blocked.",
+  "androidShellRootPolicyWarn": "High risk: root commands are no longer checked against the phone-control rules.",
+  "androidShellRootPolicyWarnFull": "Severe risk: fully relaxed, so the model and plugins can run any command as root.",
+  "androidShellRootSu": "su path",
+  "androidShellRootManager": "Root manager",
+  "androidShellRootChanged": "Could not change the policy: the native channel is not connected.",
+  "androidShellRootSuMissing": "No su on this phone: root is not available, or the root manager does not expose su.",
+  "androidShellRootSuNotExecutable": "su exists but cannot be executed. Do not delete it: fix it from a root shell on the phone.",
+  "androidShellRootNotGranted": "The root manager has no grant for this app. Authorize it there, then retry.",
+  "androidShellRootSuFailed": "su started but returned a failure. Check the root manager grant and its logs.",
+  "androidShellRootNotRoot": "su returned the app identity, not uid 0. This is not root; nothing was run as root.",
+  "androidShellRootDomainUnknown": "uid 0 but the SELinux domain could not be read, so the grant is unverified.",
+  "androidShellRootWrongDomain": "uid 0 but still in an untrusted_app SELinux domain: no real power over the files it claims.",
+  "androidShellRootHostFailed": "The root shell host did not start. Check the root manager grant, then retry.",
+  "androidShellRootLinux": "Linux environment (rootfs)",
+  "androidShellRootLinuxReady": "Ready",
+  "androidShellRootLinuxMissing": "Not unpacked",
+  "androidShellRootLinuxNote": "This grant is for phone control only. It does not make the Linux environment (the engine) run as root.",
+  "androidShellRootProbe": "Request root (id -u)",
+  "androidShellRootProbeRun": "Tap to run",
+  "androidShellRootShell": "Persistent root shell",
+  "androidShellRootShellOpen": "Open root shell",
+  "androidShellRootShellClose": "Close root shell",
+  "androidShellRootShellOpened": "Root shell opened (#{id})",
+  "@androidShellRootShellOpened": {
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "androidShellRootShellClosed": "Root shell closed",
+  "androidShellRootShellRunning": "#{id} running",
+  "@androidShellRootShellRunning": {
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "androidShellRootShellIdle": "Not open",
+  "androidShellRootShellHint": "whoami / ls /data/adb",
+  "androidShellRootCommand": "Run a root command",
+  "androidShellRootCommandHint": "su -c \"…\"",
+  "androidShellRootCommandRun": "Run as root",
+  "androidShellRootOutput": "Output",
+  "androidShellRootOutputCopy": "Copy output",
+  "androidShellRootOutputClear": "Clear",
+  "androidShellRootNoSu": "No su detected",
+  "androidShellRootReading": "Reading…",
+  "androidShellRootRiskTitle": "Enable root?",
+  "androidShellRootRiskBody": "Once on, the model can run any command as root: no confirmation, no preview, able to change the system and read every app's data.\n\nTurn it off when you are done."
 }
