@@ -98,7 +98,7 @@ Future<LocalPluginPackage> stageLocalPluginPackage({
   final gzipped = GZipEncoder().encode(tar);
 
   final safeName = name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '-');
-  final staged = '${safeName}-${version.isEmpty ? 'local' : version}.tgz';
+  final staged = '$safeName-${version.isEmpty ? 'local' : version}.tgz';
   final target = fs.file('$_localPluginStageDir/$staged');
   await target.parent.create(recursive: true);
   await target.writeAsBytes(gzipped, flush: true);
