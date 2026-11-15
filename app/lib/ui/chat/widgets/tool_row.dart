@@ -4,8 +4,6 @@
 
 import 'dart:async';
 
-import 'dart:async';
-
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 
