@@ -1,6 +1,6 @@
 # Android Shell validation
 
-Scope: independent Shizuku UserService and local self-ADB command backends, phone MCP `android_shell`, separate Flutter configuration/authorization, owner-scoped cancellation and bounded output. Based on `origin/main` commit `1c5b220093295f8d069f6bfb06d8b4fc97b9e9c2`. No Operit source was copied.
+Scope: independent Shizuku UserService and local self-ADB command backends, phone MCP `android_shell`, separate Flutter configuration/authorization, owner-scoped cancellation and bounded output. Based on `origin/main` commit `1c5b220093295f8d069f6bfb06d8b4fc97b9e9c2`.
 
 ## Executed on 2026-11-09
 

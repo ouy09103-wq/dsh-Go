@@ -100,12 +100,11 @@ Future<bool> showWorkshopLetGoDialog(
 }) async {
   final l10n = context.l10n;
   final colors = DshColors.of(context);
-  final forum = workshopHostText(offer.forum);
   final worker = workshopHostText(offer.worker);
   final scope = switch (offer.range) {
-    WorkshopPendingAbandonRange.currentAccount => l10n.workshopPublishLetGoAccount(forum, worker),
+    WorkshopPendingAbandonRange.currentAccount => l10n.workshopPublishLetGoAccount(worker),
     // The whole container is unreadable: every account's record goes.
-    WorkshopPendingAbandonRange.allLocalAccounts => l10n.workshopPublishLetGoAll(forum, worker),
+    WorkshopPendingAbandonRange.allLocalAccounts => l10n.workshopPublishLetGoAll(worker),
   };
   final facts = resultKnown ? l10n.workshopPublishLetGoFactsKnown : l10n.workshopPublishLetGoFacts;
   final go = await showAppDialog<bool>(

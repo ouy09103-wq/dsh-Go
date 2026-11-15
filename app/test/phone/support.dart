@@ -204,7 +204,7 @@ class FakePhoneNative {
   Future<bool> Function()? onRetryInterruption;
 
   /// The 悬浮条 settings as the native side keeps them.
-  Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': false};
+  Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': true};
 
   /// Replies for `{ok, reason}` methods, by method name (default ok).
   final results = <String, Map<String, Object?>>{};

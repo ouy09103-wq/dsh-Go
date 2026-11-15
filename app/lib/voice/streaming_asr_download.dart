@@ -9,6 +9,7 @@ import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 
+import 'native_trial.dart';
 import 'streaming_asr_model.dart';
 
 class StreamingAsrFile {
@@ -88,6 +89,9 @@ class StreamingAsrDownloadProgress {
 class StreamingAsrDownloadCancelled implements Exception {}
 
 /// One owner writes this directory. Cancel keeps the `.part` files; delete waits for the writer.
+/// The ONNX Runtime sherpa-onnx brings (pubspec.yaml); a trial is per version.
+const streamingAsrNativeKey = 'ort-1.27.0';
+
 class StreamingAsrModelStore {
   StreamingAsrModelStore(this.directory, {this.manifest = streamingAsrDefaultManifest});
 
@@ -97,6 +101,9 @@ class StreamingAsrModelStore {
   Future<void>? _deleting;
   HttpClient? _client;
   bool _cancelled = false;
+
+  /// The recognizer's first run here; its marks go when the model is deleted.
+  late final trial = NativeTrial(directory, streamingAsrNativeKey);
 
   File _file(StreamingAsrFile file) => File('${directory.path}/${file.name}');
   File _part(StreamingAsrFile file) => File('${directory.path}/${file.name}.part');

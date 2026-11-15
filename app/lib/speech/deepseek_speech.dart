@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../state/account_state.dart';
 import '../state/connection_state.dart';
 import '../state/settings_state.dart';
 
@@ -34,6 +35,11 @@ const _bridge = '/dsh-go/v1/speech';
 enum DeepSeekSpeechFailure {
   /// No account and no key: nothing to pay with.
   noCredential,
+
+  /// Signed in, but the account cannot pay for speech here: the DSH connected
+  /// to predates speech (its bridge has no speech route), or it is reached
+  /// through DSH Remote.
+  accountUnusable,
 
   /// The account was signed out or its sign-in expired.
   signIn,
@@ -429,6 +435,15 @@ final deepSeekSpeechProvider = Provider<DeepSeekSpeechResolver>((ref) {
     return null;
   };
 });
+
+/// Why [deepSeekSpeechProvider] has nothing to offer: signed in, the account
+/// cannot pay for speech here; else there is no account and no key.
+final deepSeekSpeechGapProvider = Provider<DeepSeekSpeechFailure Function()>(
+  (ref) =>
+      () => ref.read(accountProvider).signedIn
+      ? DeepSeekSpeechFailure.accountUnusable
+      : DeepSeekSpeechFailure.noCredential,
+);
 
 /// Adds a WAV header to DeepSeek's PCM, for players and tools that want a file.
 Uint8List deepSeekWav(Uint8List pcm, {int rate = deepSeekTtsRate}) {

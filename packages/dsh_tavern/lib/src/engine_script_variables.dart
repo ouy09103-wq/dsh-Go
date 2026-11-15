@@ -24,21 +24,34 @@ class _ScriptVariableVersion {
 }
 
 class _ScriptDataContext {
-  _ScriptDataContext(this.chatId, this.hostId, this.hostRevision, this.hostData, this.definition, this.settings);
+  _ScriptDataContext(
+    this.chatId,
+    this.hostId,
+    this.hostRevision,
+    this.hostData,
+    this.definition,
+    this.settings, {
+    this.gameplay,
+    this.gameplayAdmission,
+  });
   final String chatId;
   final String hostId;
   final int hostRevision;
   final Map<String, Object?> hostData;
   final state_core.StateDefinition definition;
   final Map<String, Object?> settings;
+  final _GameplayRuntime? gameplay;
+  final _GameplayAdmission? gameplayAdmission;
 }
 
 class _ScriptPreparedData {
-  _ScriptPreparedData(this.state, this.stateEdit, this.audit, this.run);
+  _ScriptPreparedData(this.state, this.stateEdit, this.audit, this.run, {this.adoptedGameplay, this.gameplayAdmission});
   final Map<String, Object?> state;
   final TavernStateEditResult? stateEdit;
   final Map<String, Object?>? audit;
   final Map<String, Object?>? run;
+  final _GameplayRuntime? adoptedGameplay;
+  final _GameplayAdmission? gameplayAdmission;
 }
 
 extension _ScriptVariableOperations on _ScriptCoordinator {
@@ -404,7 +417,10 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
           });
         case TavernVariableScope.message:
           final ref = target.messageRef!;
-          final dataContext = await _prepareDataContext(ref.chatId);
+          final dataContext = await _prepareDataContext(
+            ref.chatId,
+            forceGameplay: engine._stateAt(ref.chatId, ref.nodeId).containsKey('dshgoPackDefinitionConfigId'),
+          );
           saved = await _dataWrite(
             resolved.capture!,
             (permit) => _toolPreparationSql(
@@ -600,13 +616,52 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
     await _readStoredVariable(TavernVariableTarget(scope: TavernVariableScope.script, scriptOwner: owner), (_) {});
   }
 
-  Future<_ScriptDataContext> _prepareDataContext(String chatId) async {
+  Future<_ScriptDataContext> _prepareDataContext(String chatId, {bool forceGameplay = false}) async {
+    final admittedChat = engine._store.chat(chatId);
+    final admission = _captureGameplayAdmission(
+      engine,
+      characterId: admittedChat.characterId,
+      chatId: chatId,
+      settings: const {},
+    );
+    final useGameplay = admission.hasActivePacks || forceGameplay;
+    final settings = useGameplay
+        ? engine._effectiveSettings(admittedChat, engine._chatCodec.metadataForNode(engine._store, chatId))
+        : null;
     while (true) {
       final chat = engine._store.chat(chatId);
       final revision = engine._directors._cardRevisions[chat.characterId] ?? 0;
       final record = await engine._record(chat.characterId);
       if (record == null) {
         throw _scriptError(TavernScriptErrorCode.notFound, 'data', 'The host character does not exist.');
+      }
+      if (chat.characterId != admission.hostCharacterId) {
+        throw _scriptError(TavernScriptErrorCode.revisionConflict, 'data', 'The captured host identity changed.');
+      }
+      if (revision != (engine._directors._cardRevisions[chat.characterId] ?? 0)) {
+        continue;
+      }
+      final _GameplayRuntime? gameplay;
+      if (useGameplay) {
+        try {
+          gameplay = await _prepareGameplayRuntime(
+            engine,
+            admission,
+            hostData: record.card.data,
+            force: forceGameplay,
+            settings: settings,
+          );
+        } on TavernGameplayException catch (error, stack) {
+          if (error.code != 'capture_conflict') {
+            rethrow;
+          }
+          Error.throwWithStackTrace(
+            _scriptError(TavernScriptErrorCode.revisionConflict, 'data', 'The captured gameplay bindings changed.'),
+            stack,
+          );
+        }
+      } else {
+        gameplay = null;
       }
       if (revision != (engine._directors._cardRevisions[chat.characterId] ?? 0)) {
         continue;
@@ -616,21 +671,37 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
         chat.characterId,
         revision,
         _copy(record.card.data),
-        _stateDefinition(record.card.data),
-        engine._effectiveSettings(chat, engine._chatCodec.metadataForNode(engine._store, chatId)),
+        gameplay?.state ?? _stateDefinition(record.card.data),
+        settings ?? engine._effectiveSettings(chat, engine._chatCodec.metadataForNode(engine._store, chatId)),
+        gameplay: gameplay,
+        gameplayAdmission: admission,
       );
     }
   }
 
-  Map<String, Object?> _initialMessageState(_ScriptDataContext dataContext) {
+  _ScriptPreparedData _initialMessageState(_ScriptDataContext dataContext) {
     _checkDataContext(dataContext);
     final chat = engine._store.chat(dataContext.chatId);
     final state = engine._store.groupChat(chat.id) == null
         ? _emptyChatState(engine._chatCodec.metadataForNode(engine._store, chat.id))
         : engine._store.groupInitialState(chat.id);
     state['variables'] = _copy(chat.variables);
-    _initializeDshState(dataContext.definition, state, dataContext.settings['stateEnabled'] != false);
-    return state;
+    final before = _StateInput(state);
+    _initializeDshState(
+      dataContext.definition,
+      state,
+      dataContext.settings['stateEnabled'] != false,
+      gameplay: dataContext.gameplay,
+    );
+    final adopted = !before.valueExists && _StateInput(state).valueExists ? dataContext.gameplay : null;
+    return _ScriptPreparedData(
+      state,
+      null,
+      null,
+      null,
+      adoptedGameplay: adopted,
+      gameplayAdmission: adopted == null ? null : dataContext.gameplayAdmission,
+    );
   }
 
   void _checkDataContext(_ScriptDataContext dataContext) {
@@ -639,6 +710,10 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
         engine._deletingCharacters.contains(dataContext.hostId) ||
         dataContext.hostRevision != (engine._directors._cardRevisions[dataContext.hostId] ?? 0)) {
       throw _scriptError(TavernScriptErrorCode.revisionConflict, 'data', 'The captured host definition changed.');
+    }
+    final admission = dataContext.gameplayAdmission;
+    if (admission != null && !_gameplayAdmissionCurrent(engine, admission)) {
+      throw _scriptError(TavernScriptErrorCode.revisionConflict, 'data', 'The captured gameplay bindings changed.');
     }
   }
 
@@ -660,7 +735,19 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
     );
   }
 
+  void _ensurePreparedGameplay(_ScriptPreparedData prepared) {
+    if (prepared.adoptedGameplay == null) {
+      return;
+    }
+    final admission = prepared.gameplayAdmission;
+    if (admission != null && !_gameplayAdmissionCurrent(engine, admission)) {
+      throw _scriptError(TavernScriptErrorCode.revisionConflict, 'data', 'The captured gameplay bindings changed.');
+    }
+    _ensureGameplayConfig(engine, prepared.adoptedGameplay);
+  }
+
   void _commitMessageData(String chatId, String nodeId, _ScriptPreparedData prepared) {
+    _ensurePreparedGameplay(prepared);
     engine._store.writeNodeState(chatId, nodeId, prepared.state);
     final extra = engine._store.rawNodeExtra(chatId, nodeId);
     engine._store.updateMessage(
@@ -704,9 +791,20 @@ _ScriptPreparedData _prepareScriptMessageData(
       oldObject.containsKey('dshgo') == requested.containsKey('dshgo') &&
       _stateJsonEqual(oldObject['dshgo'], requested['dshgo']);
   final next = _copy(baseline)..['messageVariables'] = requested;
-  if (!context.definition.hasSchema ||
-      sameDshgo ||
+  if (sameDshgo ||
       (oldObject == null && !baseline.containsKey('messageVariables') && !requested.containsKey('dshgo'))) {
+    return _ScriptPreparedData(next, null, null, null);
+  }
+  final referenced = baseline.containsKey('dshgoPackDefinitionConfigId');
+  if (context.gameplay == null && referenced) {
+    throw _scriptError(
+      TavernScriptErrorCode.revisionConflict,
+      'messageData',
+      'The target acquired a gameplay interpretation after preparation.',
+      nodeId: nodeId,
+    );
+  }
+  if (!context.definition.hasSchema && context.gameplay == null) {
     return _ScriptPreparedData(next, null, null, null);
   }
   final input = _StateInput(baseline);
@@ -724,6 +822,8 @@ _ScriptPreparedData _prepareScriptMessageData(
       value: input.value,
       runtimeExists: input.runtimeExists,
       runtime: input.runtime,
+      packRuntimeExists: input.packRuntimeExists,
+      packRuntime: input.packRuntime,
     );
     final remove = !requested.containsKey('dshgo');
     final operation = session.apply(
@@ -742,6 +842,7 @@ _ScriptPreparedData _prepareScriptMessageData(
       changes = result.changes;
       effects = _identifiedEffects(result.effects, invocation);
       candidate = _stateResultSnapshot(next, result, effects, const {});
+      _stampGameplayConfig(context.gameplay, candidate);
     }
   }
   final audit = _stateOwnAudit(invocation, changes, effects, issues);
@@ -752,7 +853,9 @@ _ScriptPreparedData _prepareScriptMessageData(
     applied ? _stateNodeExtra(extra, candidate, audit) : extra,
     context.definition,
     context.settings,
-    protection: _SecretProtection(context.hostData, applied ? candidate : baseline),
+    dshgoOnly: context.gameplay != null || referenced,
+    allowInitialPreview: context.gameplay == null && !referenced,
+    protection: _SecretProtection(context.hostData, applied ? candidate : baseline, gameplay: context.gameplay),
   );
   final stateEdit = TavernStateEditResult(
     applied: applied,
@@ -770,18 +873,25 @@ _ScriptPreparedData _prepareScriptMessageData(
       stateEdit: stateEdit,
     );
   }
-  return _ScriptPreparedData(candidate, stateEdit, audit, {
-    'version': 1,
-    'invocationId': invocation,
-    'source': 'script',
-    'definitionFingerprint': context.definition.fingerprint,
-    'committed': true,
-    'changed': changed,
-    'receipts': receipts,
-    'changes': changes,
-    'effects': effects,
-    'issues': issues,
-  });
+  return _ScriptPreparedData(
+    candidate,
+    stateEdit,
+    audit,
+    {
+      'version': 1,
+      'invocationId': invocation,
+      'source': 'script',
+      'definitionFingerprint': context.definition.fingerprint,
+      'committed': true,
+      'changed': changed,
+      'receipts': receipts,
+      'changes': changes,
+      'effects': effects,
+      'issues': issues,
+    },
+    adoptedGameplay: context.gameplay,
+    gameplayAdmission: context.gameplayAdmission,
+  );
 }
 
 void _checkOwnerIdentity(TavernScriptOwner owner) {

@@ -162,12 +162,14 @@ import hashlib, json, os, sys
 root, pins, manifest = sys.argv[1:4]
 m = json.load(open(manifest))
 terminal = {}
-for name, versions in sorted(json.load(open(pins))["patches"].items()):
-    for rel, pin in versions[m["dshVersion"]].items():
+patches = json.load(open(pins))["patches"]
+assert set(patches) <= set(m["dshPatches"]), m["dshPatches"]
+# The build records the series application order in the manifest.
+for name in m["dshPatches"]:
+    for rel, pin in patches[name][m["dshVersion"]].items():
         if rel in terminal:
             assert terminal[rel] == pin["before"], (name, rel, 'broken ordered hash chain')
         terminal[rel] = pin["after"]
-    assert name in m["dshPatches"], m["dshPatches"]
 for rel, expected in terminal.items():
     got = hashlib.sha256(open(os.path.join(root, "opt/dsh", rel), "rb").read()).hexdigest()
     assert got == expected, (rel, got)

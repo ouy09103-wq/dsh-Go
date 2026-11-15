@@ -4,6 +4,9 @@ package io.github.ouy09103.dsh_go_root.nativemedia
 interface TurnGate : AutoCloseable {
     fun consume(frame: ShortArray, levelDb: Double, nowMs: Long): SpeechGate.Edge
     fun setPlaying(on: Boolean, nowMs: Long)
+
+    /** How long a pause ends the turn; may change between frames. */
+    var pause: TurnPause
     fun reset() {}
     override fun close() {}
 }

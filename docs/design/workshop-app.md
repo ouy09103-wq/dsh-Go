@@ -38,7 +38,7 @@
 
 下载复用 `ApkDownloader`，沿用 Range 续传、取消、重试与 SHA-256。包装传输只接受本次固定的内容寻址 URL，禁止跳转，严格校验 Content-Range 和总长；没有 Content-Length 时也在超过目录 `size` 前中止流。有界正文使用保留上游取消传播的 `Stream.map`，避免额外的异步生成器在等待下一块时阻碍取消；这不承诺网络或文件系统立即完成清理。
 
-空间预检的预算为 ZIP、64 MiB staging、伙伴 runtime 的复制量和 4 MiB 余量。Android 既有的 update info 提供 `cacheDir` 可用空间；调用方可注入与目标目录同文件系统的更精确探针。预检不预留磁盘空间，未知剩余空间也不表示「足够」。本层直接取得的存储错误数字码 28、122 映射成 `workshop_no_space`，其他或未知码为 `workshop_storage`。既有下载器把写入失败归并为 storage，丢失原 errno，因此本层在该失败后再查空间：预算不足返回 `workshop_no_space`，探针不可用或预算足够仍返回 `workshop_storage`。该探针只说明查询时预算是否够用，不能证明刚才的写入失败原因，也不能排除已经丢失的配额错误。
+空间预检的预算为 ZIP、256 MiB staging、伙伴 runtime 的复制量和 4 MiB 余量。Android 既有的 update info 提供 `cacheDir` 可用空间；调用方可注入与目标目录同文件系统的更精确探针。预检不预留磁盘空间，未知剩余空间也不表示「足够」。本层直接取得的存储错误数字码 28、122 映射成 `workshop_no_space`，其他或未知码为 `workshop_storage`。既有下载器把写入失败归并为 storage，丢失原 errno，因此本层在该失败后再查空间：预算不足返回 `workshop_no_space`，探针不可用或预算足够仍返回 `workshop_storage`。该探针只说明查询时预算是否够用，不能证明刚才的写入失败原因，也不能排除已经丢失的配额错误。
 
 伙伴解压写入失败时保留原始的存储错误类型、errno 和栈，再由既有映射给出 `no_space` 或 `storage`。写入失败后关闭输出流，以及失败事务最后关闭输入流，都不能遮蔽主错误；正常写入后的输出 close 失败仍为 `storage`，非存储的提取错误仍为 `notAPack`。生产路径在 `compute` isolate 里提取；仅测试构造器可替换一个输出文件流边界，并在当前 isolate 执行同一安装事务。依赖的控制流按官方 archive v4.6.0 标签 commit `3852d7e402a2a796d3f2af00ac3c28f129c0bb78` 的源码核对。
 
@@ -46,7 +46,7 @@
 
 每个工坊安装目录里有 `.workshop-source.json`，仅记录 kind、id、version、SHA、origin。它在 staging 中写好，随资源目录一起切换，没有先装好资源再补数据库的双写窗口。手工导入没有收据，因此覆盖后不再冒充旧工坊版本。宠物本地 ID 仍走现有的 `userPetIdFor`；网络身份 `(kind, id)` 与本地目录名分别处理。两个网络 ID 映射到一个目录、或者伙伴单槽位已有别的角色时，默认 `workshop_install_conflict`；调用方显式确认后传 `replaceExisting: true`。
 
-提交切换前在原安装器队列内再次核对收据。同版不同 SHA 拒绝，已装新版本不被旧下载降级。卸载传入此前观察到的收据；期间被替换后，旧卸载请求失败，不删除新包。`states(catalog)` 为公开条目给出 `installed`、`updateAvailable`、`installedWithdrawn`、`unavailable`。`installedStates(catalog)` 保留全部已装资源，即使撤回后公开条目已消失，也明确显示被撤回且仍可卸载；来自其他 Worker 的收据不会被当前目录误认。卸载不访问记忆、聊天、语音或论坛身份。
+提交切换前在原安装器队列内再次核对收据。同版不同 SHA 拒绝，已装新版本不被旧下载降级。卸载传入此前观察到的收据；期间被替换后，旧卸载请求失败，不删除新包。`states(catalog)` 为公开条目给出 `installed`、`updateAvailable`、`installedWithdrawn`、`unavailable`。`installedStates(catalog)` 保留全部已装资源，即使撤回后公开条目已消失，也明确显示被撤回且仍可卸载；来自其他 Worker 的收据不会被当前目录误认。卸载不访问记忆、聊天、语音或作者账号。
 
 宠物列表按条目隔离可识别的收据或包读取问题。`PetLibrary.workshopReceipts()` 以 localId 为 Map 键，每条值为 `(receipt: WorkshopReceipt?, issue: String?)`；无收据的普通本地导入仍不进入工坊列表。共同结果类型 `WorkshopLocalEntry` 包含两种情况：`WorkshopInstalled` 保留非空可信 receipt 和可选 issue，`WorkshopInstallationIssue` 只有本地标识和问题，不伪造网络身份。
 
@@ -97,7 +97,7 @@ Companion 槽位的列表读取将预期的收据、存储和恢复错误经既�
 
 不同目标也会等待前一项完成，资源库可能因此更久持有自己的队列；尚未完成的写入会延迟所有后续导出。写入回调只应生成本次 staging，不得递归等待另一次导出。该并发承诺限于同一 App isolate 的这些导出 API，不是跨 isolate、跨进程或外部文件系统写入者之间的 no-replace 原语；最后一次检查与普通 rename 之间仍不具备这种原子保证。
 
-伙伴导出对每张 PNG 复用 `pngIntact` 的完整校验：8 MiB 文件、每边 4096、16 MiB 解码后 RGBA、CRC / IDAT 和像素解码。超界或损坏在 prepare 返回前以稳定错误拒绝，不缩小一般本地导入范围，也不放宽 Worker。导出的 JSON 成员仍限 1 MiB；空的许可 / notice 文件省略。缺少 `character.model` 时沿用舞台的 index 首模型顺序，不能因为另一个模型路径更浅而换角色。
+伙伴导出只读每张 PNG 的签名和 IHDR：单边最多 8192（2026-11-15 放宽：Live2D 贴图常见 4096×4096，按宠物精灵图的 4096 / 16 MiB 解码门会被拦），像素交给 WebView 解码。单个成员最多 32 MiB，JSON 成员最多 8 MiB，开头的 UTF-8 BOM 照常读；空的许可 / notice 文件省略。缺少 `character.model` 时沿用舞台的 index 首模型顺序，不能因为另一个模型路径更浅而换角色。
 
 ### 为本次投稿选择公开图
 
@@ -113,11 +113,23 @@ PNG 构造失败直接抛 `WorkshopException`，发生在 controller 动作之�
 
 最终仍只有一份 `archive.zip`：模型、署名与选择的 PNG 一起计算 SHA / size，返回实际成员清单。没有第二次图片上传、journal、偏好键或发布 phase。prepare provider 先核 source 与 publication 模式一致，失败清理它拥有的私有草稿目录。pending journal 保存包含模式的完整 metadata 与同一 ZIP 身份；可能已发送后不能改图。冷恢复可以没有当前 source，仍用原 requestId、metadata 和归档对账，不从当前模型或新图重建另一份投稿。
 
+## 作者登录
+
+作者用 GitHub 账号登录工坊，走 OAuth 设备码流程（`lib/workshop/github_device_flow.dart`），App 不持有 client secret，也不需要回跳地址：
+
+1. `POST https://github.com/login/device/code`（表单 `client_id`、空 `scope`）拿到设备码、要用户输入的短码和验证页。验证页必须是 `https://github.com/…`，否则按 `workshop_account_unavailable` 拒绝。`device_flow_disabled` / `incorrect_client_credentials` 记为未配置。
+2. 按返回的 `interval` 轮询 `POST https://github.com/login/oauth/access_token`（`grant_type=urn:ietf:params:oauth:grant-type:device_code`）：`authorization_pending` 继续，`slow_down` 把间隔加 5 秒，`expired_token` / `access_denied` 结束本次登录。
+3. 拿到 token 后 `GET https://api.github.com/user` 取 `id` 与 `login`。
+
+空 scope 意味着 token 只能读公开资料，正好是 Worker 核身份所需。两个主机各用一个工坊的无重定向传输，响应体限 64 KiB；token 不出现在错误、日志或 `toString` 里。`client_id` 来自 Worker 的 capabilities：`"account": {"origin": "https://github.com", "clientId": …}`；`clientId` 为 null 表示该部署还没登记 GitHub OAuth App，此时不能登录（`WorkshopAccessState.signInAvailable` 为 false）。
+
+`workshopAccountProvider`（`lib/state/workshop_account_state.dart`）持有登录状态：`restoring → signedOut → awaitingCode → signedIn`。`{token, id, login}` 存在 flutter_secure_storage 的 `workshop.github.account.v1` 一个键下，读不出或格式不对就当作未登录。这和论坛 User API Key（`forum_auth.dart`）、模型服务商 key（`provider_keys.dart`）一样只放系统安全存储：AGENTS.md「不持久化完整 token」指的是日志、偏好、普通文件和诊断包，不包括系统钥匙串；令牌不进 SharedPreferences、日志、错误文本或 toString。`startSignIn()` 读 capabilities 的 clientId、请求短码、轮询、取资料，先写存储再切到 signedIn；`cancelSignIn()` 停止等待；`signOut()` 只删本机 token，撤销 App 的授权要用户自己到 GitHub 设置里做；Worker 回 `account_auth_invalid` 时，作者操作在记下失败的同时调用 `markInvalid()`，删掉 token 回到未登录，页面随之请用户重新登录。待结算投稿的 journal 按 worker / 账号来源 / 账号 id 分区，同一个 GitHub 账号重新登录后能接着对账。以前按论坛账号记下的 journal 不迁移，和别的账号的记录一样留在原处。
+
 ## 投稿与凭据
 
-`WorkshopCredential.forConsentedWorker(worker, forum, userApiKey, disclosureAccepted)` 只表示外层已完成确认，不会替用户获得授权。Key 只用于本次 API 请求；不进入缓存、收据、JSON 正文或错误信息。工坊 origin 必须与确认目标相同，capabilities 的 `forumOrigin` 必须与该账号来源相同。真实传输禁止重定向，不把 Key 发给下载裸桶或任意网址。
+`WorkshopCredential.forConsentedWorker(worker, account, token, disclosureAccepted)` 只表示外层已完成确认，不会替用户获得授权。token 只用于本次 API 请求；不进入缓存、收据、JSON 正文或错误信息。工坊 origin 必须与确认目标相同，capabilities 的 `account.origin` 必须与该账号来源（`https://github.com`）相同。真实传输禁止重定向，不把 token 发给下载裸桶或任意网址。
 
-所有作者请求还携带 `X-Workshop-Forum-Origin`，值为该 credential 的规范化论坛 origin。Worker 在请求论坛前再次与配置严格比较，缺失或不等返回 `409 / workshop_forum_origin`；断言不选择上游地址。capabilities 之后的配置变化因此不能靠前一次检查放行。收到该错误应重新核对账号来源与转交目标，不自动把 credential 的来源改成服务器新值；公开查询不携带 Key 或此断言。
+作者请求以 `Authorization: Bearer <token>` 携带 token，并带 `X-Workshop-Account-Origin`，值为该 credential 的规范化账号 origin。Worker 在向 GitHub 核身份前再次与自己的账号来源严格比较，缺失或不等返回 `409 / workshop_account_origin`；断言不选择上游地址。capabilities 之后的配置变化因此不能靠前一次检查放行。收到该错误应重新核对账号来源与转交目标，不自动把 credential 的来源改成服务器新值；公开查询不携带 token 或此断言。投稿响应的 owner 为 `{accountOrigin, accountId, username}`。
 
 Worker 目标、credential、capabilities 和投稿 owner 响应共用 `workshopOrigin`。它先执行 HTTPS、无 userInfo / query / fragment、路径为空或单斜杠的既有门，再重建 origin；普通 ASCII 主机转小写、默认 443 消去、根路径省略。普通 IPv6 按地址值输出最短小写十六进制段，并压缩最长的至少两段连续零；并列时取左侧。展开式与压缩式因此相等，不同地址仍不同。zone 标识和 IPvFuture 不在该规范化支持承诺内；其他输入门没有因此放宽。capabilities 与单条 / 分页投稿响应的来源比较全部保留。
 
@@ -133,13 +145,13 @@ Worker 目标、credential、capabilities 和投稿 owner 响应共用 `workshop
 
 举报没有投稿创建的 requestId 幂等合同，也没有作者侧举报查询接口。举报结果未知时不得自动按「肯定失败」重复发送。客户端本身不自动重试这些写操作。撤回与举报在暂停新投稿时仍可调用。App 不保存管理员 Key，不实现运维审核页。
 
-User API Key 的本地格式门与 Worker 一致，为 1–512 个可见 ASCII 字符。本人列表允许 100 条合法多字节记录，所以该接口单独采用 8 MiB 有界响应门（与 Worker 状态对象上限一致）；其他普通 JSON 请求仍限 1 MiB。最大页不是无界读流。
+token 的本地格式门与 Worker 一致，为 1–255 个 `[A-Za-z0-9_]` 字符。本人列表允许 100 条合法多字节记录，所以该接口单独采用 8 MiB 有界响应门（与 Worker 状态对象上限一致）；其他普通 JSON 请求仍限 1 MiB。最大页不是无界读流。
 
 ### 本机待结算记录的恢复能力
 
 恢复由可选的 `WorkshopPendingRecoveryStore` 能力提供；`workshopPendingRecoveryProvider` 只从同一个 preferences 实例取得该能力，原偏好接口不变。未实现能力的存储仍可用于原流程，但恢复请求会在 `recoveryError` 给出 `workshop_recovery_unsupported`。`canRequestPendingAbandonment` 只说明当前状态允许请求，不保证存储支持或读取成功：非 working 时，无 result 分支要求有 pending，或首次 pending 检查未完成且有 preferenceError；有 result 分支要求同时有 pending 和 preferenceError。
 
-`WorkshopPublishController.requestPendingAbandonment()` 返回 **`Future<void>`**，不返回 offer。调用方应 await，再检查页面仍 mounted、session 未变，然后从**当前 state**读取 `abandonOffer`；没有 offer 就不能确认清理。请求只读取本机恢复版本，受理新的读取时先使旧 offer 失效。offer 只带公开的 worker / forum / forumUserId 和 `range`，不带 Key、文件路径、坏记录原文或其中声称的投稿 ID。
+`WorkshopPublishController.requestPendingAbandonment()` 返回 **`Future<void>`**，不返回 offer。调用方应 await，再检查页面仍 mounted、session 未变，然后从**当前 state**读取 `abandonOffer`；没有 offer 就不能确认清理。请求只读取本机恢复版本，受理新的读取时先使旧 offer 失效。offer 只带公开的 worker / account / accountId 和 `range`，不带 token、文件路径、坏记录原文或其中声称的投稿 ID。
 
 确认必须先展示 offer 的来源、账号、范围与本机恢复线索丢失的风险。`currentAccount` 仅清对应来源与账号的本机 pending 记录；`allLocalAccounts` 明确清整个本机 pending 容器，可能包含其他账号的续传线索，不能从不可读内容虚构数量或标题。用户明确确认后，调用 `confirmPendingAbandonment(offer)`，交回当前 state 中的**同一对象**；该方法也是 `Future<void>`，完成后以当前状态判断结果。working 时不受理；旧 offer 被拒绝，存储层还重读并核对绑定版本，不能用旧确认清除新记录。若前次写入实际成功后才报错，重试确认目标 scope 已不存在（全范围则 key 已不存在）时，可只完成本机收尾而不再写入；变化后目标仍存在则须重新读取、展示并确认。只读到了错误、或只显示过一个通用确认框，都不构成清理授权。
 
@@ -156,7 +168,7 @@ User API Key 的本地格式门与 Worker 一致，为 1–512 个可见 ASCII �
 
 ## 页面
 
-页面在 `app/lib/ui/workshop/`，只画 `app/lib/state/workshop_*.dart` 给出的状态，不自己判断能不能装、能不能卸、能不能投。入口有两处：宠物设置页和伙伴小屋菜单各一行「创意工坊」。`workshopAvailableProvider` 为假（构建时没有给 `DSH_WORKSHOP_ORIGIN`）时两行都不出现。
+页面在 `app/lib/ui/workshop/`，只画 `app/lib/state/workshop_*.dart` 给出的状态，不自己判断能不能装、能不能卸、能不能投。入口有两处：宠物设置页和伙伴小屋菜单各一行「创意工坊」。工坊地址默认是 `https://go.dshtui.com`，构建时用 `--dart-define=DSH_WORKSHOP_ORIGIN=<地址>` 换成别的部署；设成空串时 `workshopAvailableProvider` 为假，两行都不出现。
 
 `WorkshopScreen` 是一个列表页，三个页签：
 
@@ -164,7 +176,7 @@ User API Key 的本地格式门与 Worker 一致，为 1–512 个可见 ASCII �
 - 已安装（`workshop_installed.dart`、`workshop_installed_sheet.dart`）：列表来自本机记录，目录只往行上加「有更新」「已撤回」之类的状态，不决定某一行在不在。离线、没有配置工坊、作品下架后列表照旧。下拉刷新先读目录，再让本机行取目录带来的变化。卸载的结果从控制器的移除状态读，不看调用的返回值。
 - 我的投稿（`workshop_mine.dart`、`workshop_mine_sheet.dart`）：本人投稿及审核状态，撤回要写原因并二次确认。撤回结果未知时只提供「查询结果」，查到确实没撤回才允许再撤一次。
 
-投稿页（`workshop_publish_page.dart`、`workshop_publish_form.dart`）是一个随状态换步骤的表单页，顺序为：工坊暂不收稿 → 登录论坛 → 凭据说明 → 有没有没交完的投稿 → 选来源 → 填资料 → 查看打好的包并勾选权利声明 → 发送 → 结果。没交完的投稿总是先于新投稿显示；结果未知时只能就同一个请求再问一次，页面上没有办法另发一份顶替它。只有一种情况可以放下没交完的投稿回到表单：状态层确认创建请求从未发出（`canDiscardUnsentSubmission`）。这时页面提供「回去修改」，只清本机记录，不向工坊发任何请求；之前可能发出过、或是重启后恢复出来的投稿没有这个选项；它们在本机记录用不了时可以走下面的「放下用不了的本机记录」。
+投稿页（`workshop_publish_page.dart`、`workshop_publish_form.dart`）是一个随状态换步骤的表单页，顺序为：工坊暂不收稿 → 用 GitHub 登录 → 凭据说明 → 有没有没交完的投稿 → 选来源 → 填资料 → 查看打好的包并勾选权利声明 → 发送 → 结果。没交完的投稿总是先于新投稿显示；结果未知时只能就同一个请求再问一次，页面上没有办法另发一份顶替它。只有一种情况可以放下没交完的投稿回到表单：状态层确认创建请求从未发出（`canDiscardUnsentSubmission`）。这时页面提供「回去修改」，只清本机记录，不向工坊发任何请求；之前可能发出过、或是重启后恢复出来的投稿没有这个选项；它们在本机记录用不了时可以走下面的「放下用不了的本机记录」。
 
 举报（`workshop_report_sheet.dart`）从详情弹层进入。举报没有幂等合同，结果未知时页面如实说明，不替用户重发。
 
@@ -186,7 +198,8 @@ User API Key 的本地格式门与 Worker 一致，为 1–512 个可见 ASCII �
 
 ## 测试覆盖
 
-- `app/test/workshop/`：`workshop_models_test.dart`（模型与版本比较）、`workshop_client_test.dart`（目录缓存与离线重启、撤回与 `blockedVersions`、重定向不带 Key、凭据与投稿 API、分页与响应上限）、`workshop_http_test.dart`（超时后晚到的请求、请求头失败时关闭请求）、`workshop_repository_test.dart`（续传 / 校验 / 取消、低空间、下载中撤回、离线浏览与拒绝离线安装、已装撤回状态、卸载、ENOSPC 映射、伙伴导出的 PNG 门）、`workshop_export_test.dart`（导出目标队列、提交处再次检查目标、悬空链接）。
+- `app/test/workshop/`：`workshop_models_test.dart`（模型与版本比较）、`workshop_client_test.dart`（目录缓存与离线重启、撤回与 `blockedVersions`、重定向不带 token、凭据与投稿 API、分页与响应上限）、`workshop_http_test.dart`（超时后晚到的请求、请求头失败时关闭请求）、`workshop_repository_test.dart`（续传 / 校验 / 取消、低空间、下载中撤回、离线浏览与拒绝离线安装、已装撤回状态、卸载、ENOSPC 映射、伙伴导出的 PNG 门）、`workshop_export_test.dart`（导出目标队列、提交处再次检查目标、悬空链接）、`github_device_flow_test.dart`（设备码请求、验证页主机门、pending → slow_down → token、过期与拒绝、取资料）。
+- `app/test/state/workshop_account_state_test.dart`：恢复与坏记录、登录全程与存储、过期 / 拒绝 / 未配置 / 网络、取消后不再领取 token、登出与 `markInvalid` 删除存储。
 - `app/test/workshop/workshop_installed_test.dart`：混合健康条目、坏收据、坏包与无收据本地包，核对逐条错误、可信身份匹配及有效收据的卸载围栏；单条读取失败在委托边界注入，根目录失败和意外 `StateError` 继续传播。
 - 公开预览测试覆盖 descriptor / capability 解析、未知 kind、同源纯地址、旧缓存 ETag 迁移、写前与写后错误、单 ZIP 准备、固定成员冲突，以及真实发布 controller 的选择 / 替换 / 移除、pending / busy 和恢复围栏；图像及 HTTP 替身不构成浏览器或真机显示验收。
 - `app/test/pets/pet_workshop_export_test.dart`：宠物导出。
@@ -199,7 +212,7 @@ User API Key 的本地格式门与 Worker 一致，为 1–512 个可见 ASCII �
 
 低空间、断网 / 杀进程后的续传、换包时悬浮窗的销毁重建、已有 runtime 缺失 / 损坏、厂商 WebView / GPU，以及导出后的分享流程。公开图还需核有图 / 无图占位、加载失败、origin 与条目切换后的旧图清理、撤回 / 关闭后的重新请求，以及真实图片组件的缓存、重定向和设备内存表现。
 
-页面这一层没有在真机上跑过：工坊未部署，App 也没有连过真实的工坊和论坛。上线前要在真机上走一遍浏览、安装、卸载、投稿、撤回和举报，并看小屋开着时安装伙伴后的换人。
+页面这一层没有在真机上跑过：工坊未部署，App 也没有连过真实的工坊和 GitHub。上线前要在真机上走一遍浏览、安装、卸载、投稿、撤回和举报，并看小屋开着时安装伙伴后的换人。
 
 ## 还没有做的
 

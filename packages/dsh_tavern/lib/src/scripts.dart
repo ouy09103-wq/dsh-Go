@@ -1419,7 +1419,7 @@ class TavernScriptInjectionView {
   final bool once, claimed;
 }
 
-enum TavernScriptRegexSource { global, preset, character }
+enum TavernScriptRegexSource { global, preset, character, chat }
 
 class TavernScriptRegexQuery {
   TavernScriptRegexQuery({
@@ -1427,6 +1427,7 @@ class TavernScriptRegexQuery {
       TavernScriptRegexSource.global,
       TavernScriptRegexSource.preset,
       TavernScriptRegexSource.character,
+      TavernScriptRegexSource.chat,
     },
     this.effectiveOnly = false,
     this.characterId,

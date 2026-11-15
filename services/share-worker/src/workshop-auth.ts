@@ -5,48 +5,50 @@ import { readBounded } from './pet-market-io';
 import { burstAllowed, clientKey, uploadQuota } from './limits';
 import { strictJson } from './workshop-archive';
 import { requireWorkshop as need, sha256, text, whole, WorkshopError, type WorkshopKind } from './workshop-common';
-import type { Owner } from './workshop-state';
+import { ACCOUNT_ORIGIN, type Owner } from './workshop-state';
 
 export function features(env: Env) { return { uploads: env.WORKSHOP_UPLOAD_ENABLED === undefined || env.WORKSHOP_UPLOAD_ENABLED === '1', companion: env.WORKSHOP_COMPANION_ENABLED === undefined || env.WORKSHOP_COMPANION_ENABLED === '1' }; }
 export function enabled(env: Env, kind?: WorkshopKind): void {
   need(features(env).uploads, 'upload_disabled', 503);
   if (kind === 'companion') need(features(env).companion, 'companion_disabled', 503);
 }
-export function forumOrigin(env: Env): string {
-  try {
-    const value = env.WORKSHOP_FORUM_URL ?? 'https://forum.dshtui.com', url = new URL(value);
-    need(url.protocol === 'https:' && url.origin.length <= 2048 && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash, 'forum_configuration', 503);
-    return url.origin;
-  } catch { throw new WorkshopError('forum_configuration', 503); }
+/// The App runs GitHub's device flow with this public OAuth App id; the Worker
+/// only verifies the token it yields. A malformed id is announced as absent.
+export function account(env: Env) {
+  const id = env.WORKSHOP_GITHUB_CLIENT_ID;
+  return { origin: ACCOUNT_ORIGIN, clientId: id && /^[A-Za-z0-9._-]{1,64}$/.test(id) ? id : null };
+}
+function githubApi(env: Env): string {
+  // Operator configuration for tests and the local rehearsal; never taken from a request.
+  const url = new URL(env.WORKSHOP_GITHUB_API_URL ?? 'https://api.github.com');
+  need(url.protocol === 'https:' && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash, 'account_unavailable', 503);
+  return url.origin;
 }
 export async function user(request: Request, env: Env): Promise<Owner> {
-  const key = request.headers.get('User-Api-Key');
-  need(key && key.length <= 512 && /^[\x21-\x7e]+$/.test(key), 'forum_auth_required', 401);
-  const origin = forumOrigin(env);
-  // This is an assertion about the configured destination, never an upstream URL.
-  need(request.headers.get('X-Workshop-Forum-Origin') === origin, 'forum_origin', 409);
+  const token = request.headers.get('Authorization')?.match(/^Bearer ([A-Za-z0-9_]{1,255})$/)?.[1];
+  need(token, 'account_auth_required', 401);
+  // The App names the account system it signed in with, so a client built
+  // for another one fails plainly before its credential leaves the Worker.
+  need(request.headers.get('X-Workshop-Account-Origin') === ACCOUNT_ORIGIN, 'account_origin', 409);
   await limitBurst(request, env, false);
   try {
-    // Do not forward a client-selected origin, cookies, Authorization, or
-    // User-Api-Client-Id: Discourse can mutate client binding from that header.
-    // Workers supports manual/follow, not error. Manual plus the strict200
-    // check below prevents any redirect carrying the key to another origin.
-    const response = await fetch(origin + '/session/current.json', {
+    // Workers supports manual/follow, not error. Manual plus the strict 200
+    // check below keeps a redirect from carrying the token to another origin.
+    const response = await fetch(githubApi(env) + '/user', {
       method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(15_000),
-      headers: { 'User-Api-Key': key, Accept: 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'dshgo-workshop' },
     });
-    if (response.status === 401 || response.status === 403 || response.status === 404) {
-      void response.body?.cancel().catch(() => {}); throw new WorkshopError('forum_auth_invalid', 401);
-    }
-    if (response.status !== 200 || !response.body) { void response.body?.cancel().catch(() => {}); throw new WorkshopError('forum_unavailable', 503); }
+    // Only 401 says the token is bad; GitHub also answers 403 for its rate limit.
+    if (response.status === 401) { void response.body?.cancel().catch(() => {}); throw new WorkshopError('account_auth_invalid', 401); }
+    if (response.status !== 200 || !response.body) { void response.body?.cancel().catch(() => {}); throw new WorkshopError('account_unavailable', 503); }
     const length = response.headers.get('Content-Length');
-    if (length !== null && (!/^\d+$/.test(length) || Number(length) > 65536)) { void response.body.cancel().catch(() => {}); throw new WorkshopError('forum_unavailable', 503); }
+    if (length !== null && (!/^\d+$/.test(length) || Number(length) > 65536)) { void response.body.cancel().catch(() => {}); throw new WorkshopError('account_unavailable', 503); }
     const value = strictJson(await readBounded(response.body, 65536), 65536, 32);
-    need(record(value) && record(value.current_user) && whole(value.current_user.id, 1, Number.MAX_SAFE_INTEGER) && text(value.current_user.username, 256), 'forum_auth_invalid', 401);
-    return { forumOrigin: origin, forumUserId: value.current_user.id, username: value.current_user.username };
+    need(record(value) && whole(value.id, 1, Number.MAX_SAFE_INTEGER) && text(value.login, 256), 'account_unavailable', 503);
+    return { accountOrigin: ACCOUNT_ORIGIN, accountId: value.id, username: value.login };
   } catch (error) {
-    if (error instanceof WorkshopError && ['forum_auth_invalid', 'forum_unavailable'].includes(error.code)) throw error;
-    throw new WorkshopError('forum_unavailable', 503);
+    if (error instanceof WorkshopError && error.code === 'account_auth_invalid') throw error;
+    throw new WorkshopError('account_unavailable', 503);
   }
 }
 export async function admin(request: Request, env: Env): Promise<void> {
@@ -64,7 +66,7 @@ export async function limitBurst(request: Request, env: Env, write: boolean, sco
 }
 export async function quota(request: Request, env: Env, owner: Owner, action: string, count: number): Promise<void> {
   await limitBurst(request, env, true);
-  const meter = await uploadQuota({ ...env, UPLOADS_PER_HOUR: String(count) }, `workshop:${owner.forumOrigin}:${owner.forumUserId}:${action}`);
+  const meter = await uploadQuota({ ...env, UPLOADS_PER_HOUR: String(count) }, `workshop:${owner.accountOrigin}:${owner.accountId}:${action}`);
   if (!meter.allowed) throw new WorkshopError('rate_limited', 429, { 'Retry-After': String(meter.retryAfter) });
   // Charge the attempt before archive parsing, including malformed packages.
   // KV remains an approximate cross-colo limit, as in the existing service.

@@ -19,10 +19,10 @@ enum WorkshopPublishPhase { idle, checking, preparing, ready, creating, uploadin
 /// return this exact offer. It is not a server cancellation authorization.
 class WorkshopPendingAbandonOffer {
   const WorkshopPendingAbandonOffer._({required this.range, required this.worker,
-    required this.forum, required this.forumUserId});
+    required this.account, required this.accountId});
   final WorkshopPendingAbandonRange range;
-  final Uri worker, forum;
-  final int forumUserId;
+  final Uri worker, account;
+  final int accountId;
 }
 
 /// Page state deliberately excludes credentials, authorization objects, files,
@@ -130,7 +130,7 @@ class _PublishContext {
   _PublishContext(this.session);
   final Object session;
   String? scope;
-  ({Uri worker, Uri forum, int userId})? account;
+  ({Uri worker, Uri account, int userId})? account;
   bool checked = false, closed = false;
   _DraftLease? prepared;
   _PublishIntent? intent;
@@ -212,7 +212,7 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
     if (!_current(context)) return false;
     final access = ref.read(workshopAccessProvider);
     final code = state.working ? 'workshop_busy'
-        : requireProfile && access.forumUserId == null ? 'workshop_profile_required'
+        : requireProfile && access.accountId == null ? 'workshop_profile_required'
         : !context.checked ? 'workshop_pending_check_required' : null;
     if (code == null) return true;
     state = state.copyWith(error: WorkshopException(code));
@@ -223,15 +223,15 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
     final authorization = await ref.read(workshopAccessProvider.notifier).authorize();
     _requireCurrent(context);
     if (!identical(authorization.session, context.session)) workshopInvalid('workshop_cancelled');
-    if (authorization.requestScope == null || authorization.forumUserId == null) {
+    if (authorization.requestScope == null || authorization.accountId == null) {
       workshopInvalid('workshop_profile_required');
     }
     final scope = _digest([authorization.client.origin.toString(),
-      authorization.credential.forum.toString(), authorization.forumUserId]);
+      authorization.credential.account.toString(), authorization.accountId]);
     if (context.scope != null && context.scope != scope) workshopInvalid('workshop_cancelled');
     context.scope = scope;
     context.account = (worker: authorization.client.origin,
-      forum: authorization.credential.forum, userId: authorization.forumUserId!);
+      account: authorization.credential.account, userId: authorization.accountId!);
     return authorization;
   }
 
@@ -452,7 +452,7 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
   void _checkSubmission(WorkshopSubmission result, _PublishIntent intent, WorkshopAuthorization authorization) {
     if (intent.submissionId != null && result.id != intent.submissionId ||
         !_sameMetadata(result.metadata, intent.pending.metadata) ||
-        result.ownerOrigin != authorization.credential.forum || result.ownerId != authorization.forumUserId) {
+        result.ownerOrigin != authorization.credential.account || result.ownerId != authorization.accountId) {
       throw const WorkshopException('workshop_bad_response', resultUnknown: true);
     }
     // A request id is the client's idempotency token, not a submission id.
@@ -584,6 +584,8 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
           pendingKnownUnsent: context.intent != null && !context.intent!.mayHaveDispatched,
           preferenceError: mapped.code == 'workshop_preferences' ? mapped : null,
           phase: WorkshopPublishPhase.failed);
+        // The journal keeps the request id, so signing in again resumes it.
+        workshopForgetRefusedAccount(ref, mapped);
       }
     } finally {
       lease.borrowers--;
@@ -614,7 +616,7 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
       final snapshot = await store.pendingRecovery(context.scope!);
       _requireCurrent(context);
       final offer = WorkshopPendingAbandonOffer._(range: snapshot.range,
-        worker: account.worker, forum: account.forum, forumUserId: account.userId);
+        worker: account.worker, account: account.account, accountId: account.userId);
       context.abandonment = (store: store, snapshot: snapshot);
       state = state.copyWith(abandonOffer: offer, clearRecoveryError: true);
     } on Object catch (error) {

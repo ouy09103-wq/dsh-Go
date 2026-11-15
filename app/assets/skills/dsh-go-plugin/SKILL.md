@@ -54,7 +54,8 @@ whenToUse: The user wants to add something of their own to the dsh-go phone app 
    ```sh
    node "${DSH_HOME:-$HOME/.dsh}/skills/dsh-go-plugin/kit/bin/check.mjs" "$P" --load
    ```
-   `--load` 会在隔离环境里加载你的代码：查处理函数在不在、视图函数画出来的视图 App 能不能画。`--json` 给机器读。
+   `--load` 会在隔离环境里加载你的代码：查处理函数在不在、视图函数画出来的视图 App 能不能画。
+   `--json` 给机器读；`--lang zh` 指定语言；`--budget toolCard|panel|strip` 按工具卡、面板或状态条检查视图预算；`--app <版本>` 按目标 App 版本判断 `minApp`（不写时按 999.0.0 判断，`minApp` 不会被拦截，检查目标版本时必须写出）；面板位置等较新字段不按版本检查。
 6. **安装**（装上即生效，不用重启）：
    ```sh
    dsh plugin --profile web add "$P"
@@ -95,12 +96,20 @@ whenToUse: The user wants to add something of their own to the dsh-go phone app 
 | `session.actions` | 2 | `label` 12 字 | `id` `label` `icon?` `effect?` `requires?` | 同胶囊 |
 | `turn.note` | 1 | 每段 16 字 | `id` | 不能点；`turnNote(id, (scope, emit) => …)` 里 `emit({ 回合序号: { text, tone? } })` |
 
+App 另有全局上限：输入框上方胶囊合计 8 个、加号面板工具合计 8 个、回合尾注同时 2 个、note feed 8 条；超过的不显示。面板按钮 pending 状态的 label 不超过 16 字。
+
 - `title`、`label`、`text` 写字符串或 `{ "zh": "…", "en": "…" }`；中英文都不能超上限。插件名 `title` ≤ 24 字。
 - `id`：字母数字开头，字母数字和 `_ . -`，≤ 40 字；**整个插件内不能重复**（跨插槽也算）。
 - `wants`：`clipboard`、`draft`（输入框文字）只给胶囊和 `composer.tools`；`message`（被长按的回复正文）只给菜单项。
-- `placement`：`session.tab`（对话详情页，scope 带 sessionId，缺省）、`features`（全部功能）、`chat.panel`（聊天页输入框上方「插件」胶囊打开的弹层，scope 带 sessionId）。
+- `placement`：`session.tab`（对话详情页，scope 带 sessionId，缺省）、`features`（全部功能）、`chat.panel`（聊天页输入框上方「插件」胶囊打开的弹层，scope 带 sessionId）、`plugin`（插件自己入口里的面板，较新 App）。可写一个字符串或数组；老 App 不认识的值会忽略，只放在 `plugin` 的面板退回 `session.tab`。
+- `presentation`：`page`（推整页，缺省）或 `sheet`（弹层）；较新 App 才认，老 App 忽略，仍按页打开。
+- 视图函数按 `caps.surfaces` 判断 App 能不能画（`hasSurface(caps, 'chat.panel')` 之类），判断不到时退回 `session.tab`。
 - 静态 `effect` 只能用 `insert` `command` `open` `link` `toast` `copy`。
 - `icon`：bolt star sparkle heart flag bookmark pin bell clock alarm calendar todo note document folder search code terminal globe chart lightbulb book puzzle robot chat mail translate image camera mic link summary wrench bug travel school home play refresh archive team wallet palette coin money speaker read copy quote share edit write save paste add remove delete clear fork regenerate reply select-text qr download downloads external info warning check done success error question pending running tip list table panel sidebar menu more expand collapse file folder-open workspace storage pdf zip slides article text diff gallery audio music video video-file play-video pause stop replay generate-image generate-video diagram plugin bot agent skill model tool workflow goal plan job automation command trajectory web web-search browser history time today timezone schedule repeat reminder user account group chats mention invite announcement reaction poll notification send community forum feedback wechat qq telegram discord phone computer cloud server power restart retry theme color text-size pet featured badge favorite settings
+
+不认识的图标会画成默认图标，不报错。不要用锁、钥匙、盾牌这类图标表达安全/私密：App 不保证这些语义，容易误导。
+- `minApp`：可选，最低 App 版本（如 `"1.0.16"`）。App 版本低于它时原生部分不显示，并提示用户更新 App。
+- `capabilities`：可选能力清单。`files` 表示要用系统选择器选文件/图片（见下文「选择文件与图片」）；旧 App、旧桥不协商时普通面板仍能打开。
 
 ## 处理（`ctx.dshGo`）
 
@@ -205,6 +214,17 @@ presentationMeta: (args, value) => {
   } catch { return {} }
 },
 ```
+
+## 选择文件与图片（NA v1.3，可选）
+
+插件可以在用户点按后打开系统选择器；选中的内容送到当前主机，插件通过一次性句柄读字节，不会拿到手机文件路径。
+
+- 清单加 `"capabilities": ["files"]`；触发选择的按钮加 `"requires": ["files"]`；面板里的选择按钮只在 `caps.features?.includes('files')` 时显示，否则显示普通说明文字。
+- 效果：`effects.pickFile('selected', { maxFiles: 2 })` 或 `effects.pickImage(...)`；不用 SDK 时返回 `{ type: 'pickFile', action: 'selected', maxFiles: 2 }`。`maxFiles` 默认 1，只收 1–4。
+- 回调在同一个面板的 `actions[action]`，或回落到 `ctx.dshGo.on(贡献 id, handler)`；`event.value` 是 `{ status: 'selected', files: [{ handle, name, bytes, mediaType, access }] }`、`cancelled` 或 `error`。
+- 在回调内用 `ctx.dshGo.readPickedFile(handle)` 取字节（独立副本）。句柄只在这一个待处理回调内有效：回调结束、超时、卸载或断线后就读不到；不要保存句柄，也不要拿 `name` 拼路径。
+- 旧 App、旧桥、DSH Remote 中转不协商此能力，面板照常打开。`dshGo.v` 仍是 `1`，不要填 `1.3`。
+- 发起选择的调用必须来自用户手势（`userGesture`），不能在后台自行触发。
 
 ## 声音与字幕（v1.2，可选）
 

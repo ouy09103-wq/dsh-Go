@@ -60,6 +60,7 @@ import java.util.IdentityHashMap
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * The out-of-app pet (docs/design/pets.md): a window the size of the pack's wide hit
@@ -482,7 +483,7 @@ internal object PetOverlay {
         val area = safeArea()
         // Full-body default, within both the readback cap and the existing dock margins.
         val geometry = CompanionFloatGeometry.fit(
-            v.context.dp(PetSize.fromName(machine.last?.size ?: "medium").dp * 4),
+            v.context.dp(PetSize.dpOf(machine.last?.size) * 4),
             area, edge(v.context),
         ) ?: return
         val epoch = ++companionEpoch
@@ -626,7 +627,7 @@ internal object PetOverlay {
         val request = ++loadRequest
         val density = app.resources.displayMetrics.density
         worker.execute {
-            val l = sprites.load(id, worker) { pack -> pack.screenScale(PetSize.fromName(size), density) }
+            val l = sprites.load(id, worker) { pack -> pack.screenScale(size, density) }
             l?.warmResident()
             main.post {
                 if (request != loadRequest || loadingKey != key || packKey(machine.last) != key) {
@@ -682,9 +683,14 @@ internal object PetOverlay {
         if (looping) restartLoop() else petView?.let { drawStill() }
     }
 
-    private fun react(kind: String, loop: Boolean) {
+    /**
+     * Plays [kind]'s reaction. A tap picks one at random among the pack's alternatives; the drag
+     * pose stays the one first named (the window is rebuilt around it, so it must not change).
+     */
+    private fun react(kind: String, loop: Boolean, random: Boolean = true) {
         if (petView?.companionGeometry != null) return
-        val a = loaded?.pack?.reaction(kind) ?: return
+        val pack = loaded?.pack ?: return
+        val a = (if (random) pack.reaction(kind, Random.Default) else pack.reaction(kind)) ?: return
         player.react(a, loop, SystemClock.uptimeMillis())
         restartLoop()
     }
@@ -1074,7 +1080,7 @@ internal object PetOverlay {
             dismissMenu()
             removeBubble()
             showTarget()
-            react("drag", loop = true)
+            react("drag", loop = true, random = false)
             startLoop()
         }
 

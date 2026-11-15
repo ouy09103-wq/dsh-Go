@@ -19,7 +19,9 @@ The dsh-go app can show a DSH plugin's content with native UI: tool results as c
 | What a tap can do | 8 effects, the 3 s window, deferred results | [Actions and effects](actions.md) |
 | Read aloud, stop on speech, live and floating captions | `capabilities` + `media` / `micro` / `overlays` (v1.2, optional) | [Sound and captions](voice.md) |
 | Which hosts, how to install | On-device / SSH / relay; install by path | [Hosts, install, fallbacks](hosts.md) |
+| Publish to npm, the index, the official market | Three layers and four independent states | [Publishing and listing](market.md) |
 | What you cannot customize, and why | Bounded styles, font files, dimensions, links | [Design rules](design-rules.md) |
+| What a plugin can and cannot do | One table: capabilities, the two overlays, fallbacks, future items | [Capability boundaries](capabilities.md) |
 | Old and new apps alike | `caps`, `adaptView` | [Compatibility](versions.md) |
 | Before you share it | Go through the list | [Checklist](checklist.md) |
 

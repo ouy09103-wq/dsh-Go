@@ -203,6 +203,26 @@ void main() {
     expect((a.frameWidth, a.frameHeight, a.cols, a.frames.single.i, a.frames.single.ms), (16, 16, 2, 0, 1));
   });
 
+  test('market normalization downgrades reaction arrays to numbered string keys', () {
+    final pack = packJson()..addAll({'source': 'original art'});
+    final animations = Map<String, Object?>.from(pack['animations'] as Map);
+    animations['look'] = {
+      ...Map<String, Object?>.from(animations['idle'] as Map),
+      'frames': [{'i': 1, 'ms': 200}],
+    };
+    pack['animations'] = animations;
+    pack['reactions'] = {
+      'tickle': ['look', 'idle'],
+    };
+    final checked = PetPackValidator.validateParts(pack, {'idle.png': png(32, 16)}, profile: PetValidationProfile.market);
+    // A shared pack must stay readable by older apps, which reject arrays.
+    expect(checked.json['reactions'], {'tickle': 'look', 'tickle2': 'idle'});
+    expect((checked.json['reactions']! as Map).values, everyElement(isA<String>()), reason: 'no array left in the normalized pack');
+    final back = PetPackValidator.validateParts(checked.json, checked.sheets);
+    expect(back.pack.reactions['tickle'], ['look', 'idle'], reason: 'the numbered keys merge back');
+    expect(back.json['reactions'], {'tickle': 'look', 'tickle2': 'idle'}, reason: 'a plain schema-1 import keeps them');
+  });
+
   test('market canonicalization and Float32 operands match Android', () {
     final pack = onePixelPack()..addAll({'author': 'A', 'license': 'CC0', 'source': 'original art', 'scale': 16777219});
     animation(pack).addAll({

@@ -30,8 +30,13 @@ abstract class VoiceCloud {
 /// DeepSeek's recognizer. Each recording asks who pays afresh and closes what
 /// it opened, so a call can use it turn after turn.
 class DeepSeekVoiceCloud implements VoiceCloud {
-  DeepSeekVoiceCloud(this._resolve);
+  DeepSeekVoiceCloud(this._resolve, {DeepSeekSpeechFailure Function()? gap}) : _gap = gap ?? _noCredential;
   final DeepSeekSpeechResolver _resolve;
+
+  /// What to say when nobody can pay ([deepSeekSpeechGapProvider]).
+  final DeepSeekSpeechFailure Function() _gap;
+
+  static DeepSeekSpeechFailure _noCredential() => DeepSeekSpeechFailure.noCredential;
 
   @override
   int get maxSeconds => deepSeekAsrMaxSeconds;
@@ -39,7 +44,7 @@ class DeepSeekVoiceCloud implements VoiceCloud {
   @override
   Future<String> transcribe(Uint8List wav) async {
     final speech = await _resolve();
-    if (speech == null) throw const DeepSeekSpeechError(DeepSeekSpeechFailure.noCredential);
+    if (speech == null) throw DeepSeekSpeechError(_gap());
     try {
       return await speech.transcribe(wav);
     } finally {
@@ -128,7 +133,7 @@ final voiceCloudProvider = Provider<VoiceCloudResolver>((ref) {
         final speech = await resolve();
         if (speech == null) return null;
         speech.close();
-        return DeepSeekVoiceCloud(resolve);
+        return DeepSeekVoiceCloud(resolve, gap: ref.read(deepSeekSpeechGapProvider));
       case VoiceMode.cloud:
         final settings = await ref.read(cloudAsrProvider.notifier).ready();
         return settings.configured ? OpenAiVoiceCloud(settings, ref.read(deepSeekSpeechHttpProvider)) : null;

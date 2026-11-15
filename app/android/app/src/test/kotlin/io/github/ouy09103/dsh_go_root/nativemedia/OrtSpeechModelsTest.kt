@@ -13,7 +13,7 @@ class OrtSpeechModelsTest {
         assumeTrue("Download speech models first", silero.isFile && smart.isFile)
         val vad = OrtSilero(silero.readBytes())
         val turn = OrtSmartTurn(smart.readBytes())
-        // CPU ORT 1.23.2, official exports, zero PCM. No sigmoid on smart-turn's output.
+        // CPU ORT 1.27.0, official exports, zero PCM. No sigmoid on smart-turn's output.
         // The last digits move between processors (ORT picks AVX2 / AVX-512 kernels).
         assertEquals(0f, vad.probability(ShortArray(320)), 0f)
         assertEquals(0.0016697943f, vad.probability(ShortArray(320)), 0.0001f)

@@ -111,6 +111,7 @@ Map<String, Object?> _directorSourceFromFacts(
       if (input.valueExists) 'value': input.value,
       'variables': saved['variables'],
       'issues': input.issues,
+      if (saved.containsKey('dshgoPackDefinitionConfigId')) 'definitionConfigId': saved['dshgoPackDefinitionConfigId'],
     },
     if (saved.containsKey(_storyRuntimeKey)) 'storyRuntime': saved[_storyRuntimeKey],
     if (saved.containsKey(_secretRuntimeKey)) 'secretRuntime': saved[_secretRuntimeKey],
@@ -120,8 +121,9 @@ Map<String, Object?> _directorSourceFromFacts(
 String _directorSourceFingerprint(
   Map<String, Object?> source,
   Map<String, Object?> card,
-  Map<String, Object?> persona,
-) => _directorHash({'source': source, 'card': card, 'persona': persona});
+  Map<String, Object?> persona, {
+  String? effectiveConfigId,
+}) => _directorHash({'source': source, 'card': card, 'persona': persona, 'effectiveConfigId': ?effectiveConfigId});
 
 String? _directorPathReason(TavernDirectorRun run, String? contextNodeId, List<String> path) =>
     run.sourceKind == 'empty'
@@ -136,8 +138,11 @@ String? _directorSourceReason(
   TavernDirectorRun run,
   Map<String, Object?> data,
   Map<String, Object?> persona,
-  Map<String, Object?> source,
-) => _directorSourceFingerprint(source, _directorCard(data), persona) == run.sourceFingerprint
+  Map<String, Object?> source, {
+  String? effectiveConfigId,
+}) =>
+    _directorSourceFingerprint(source, _directorCard(data), persona, effectiveConfigId: effectiveConfigId) ==
+        run.sourceFingerprint
     ? null
     : 'director_source_changed';
 
@@ -220,8 +225,17 @@ class _DirectorJob {
     this.card,
     this.secret = false,
     this.group,
+    this.gameplay,
+    this.gameplayAdmission,
   }) : id = 'director-${_newStateId()}',
-       requestKey = _directorHash({'source': source, 'settings': settings, 'persona': persona, 'secret': secret});
+       requestKey = _directorHash({
+         'source': source,
+         'settings': settings,
+         'persona': persona,
+         'secret': secret,
+         if (gameplayAdmission != null) 'gameplayAdmission': gameplayAdmission.identity,
+         if (gameplay != null) 'effectiveConfigId': gameplay.effectiveConfigId,
+       });
   final String id;
   final String chatId;
   final String characterId;
@@ -237,6 +251,8 @@ class _DirectorJob {
   final int cardRevision;
   final String requestKey;
   Map<String, Object?>? card;
+  _GameplayRuntime? gameplay;
+  _GameplayAdmission? gameplayAdmission;
   String fingerprint = '';
   final cancellation = ModelCancellation();
   final result = Completer<TavernDirectorRun>();
@@ -252,6 +268,53 @@ class _DirectorJob {
   String? finishReason;
   bool running = false;
   bool discarded = false;
+}
+
+/// Apply before constructing a request's existing ModelRequestContext, so
+/// native raw-usage observation still sees that outer context unchanged.
+ModelCancellation _gameplayRequestCancellation(
+  TavernEngine engine,
+  _GameplayAdmission? admission,
+  ModelCancellation original,
+) => admission == null
+    ? original
+    : _GameplayRequestCancellation(() => _gameplayAdmissionCurrent(engine, admission), original);
+
+ModelCancellation _gameplayResourceRequestCancellation(
+  TavernEngine engine,
+  _GameplayResourceCapture? capture,
+  ModelCancellation original,
+) => capture == null
+    ? original
+    : _GameplayRequestCancellation(() => _gameplayResourcesCurrent(engine, capture), original);
+
+/// Native transport checks after its key await and before each send. Source
+/// changes also revoke the rest of an admitted request through its real token.
+final class _GameplayRequestCancellation extends ModelCancellation {
+  _GameplayRequestCancellation(this.current, this.original);
+  final bool Function() current;
+  final ModelCancellation original;
+
+  @override
+  bool get isCancelled => original.isCancelled;
+  @override
+  Future<void> get whenCancelled => original.whenCancelled;
+  @override
+  void cancel() => original.cancel();
+  @override
+  Future<T> wait<T>(Future<T> operation) {
+    check();
+    return original.wait(operation);
+  }
+
+  @override
+  void check() {
+    original.check();
+    if (!current()) {
+      original.cancel();
+      original.check();
+    }
+  }
 }
 
 class _DirectorPrepared {
@@ -339,16 +402,22 @@ class _DirectorCoordinator {
     TavernModelConfig? config,
     bool secret = false,
     int? cardRevision,
+    _GameplayRuntime? gameplay,
+    _GameplayAdmission? gameplayAdmission,
   }) {
     final chat = engine._store.chat(chatId);
     final chosen = selection ?? engine._personas.resolve(personaId: chat.personaId);
     final options = settings ?? _personaSettings(engine._effectiveSettings(chat), chosen);
     final leaf = nodeId ?? chat.currentLeafId;
+    final source = _directorSource(engine, chatId, leaf);
+    final admission =
+        gameplayAdmission ??
+        _captureGameplayAdmission(engine, characterId: chat.characterId, chatId: chatId, settings: options);
     return _DirectorJob(
       chatId: chatId,
       characterId: chat.characterId,
       nodeId: leaf,
-      source: _directorSource(engine, chatId, leaf),
+      source: source,
       settings: _copy(options),
       persona: _directorPersona(chosen, options),
       originalConfig: config ?? engine._config,
@@ -358,6 +427,8 @@ class _DirectorCoordinator {
       cardRevision: cardRevision ?? _cardRevisions[chat.characterId] ?? 0,
       card: card == null ? null : _copy(card),
       group: engine._store.groupChat(chatId),
+      gameplay: gameplay,
+      gameplayAdmission: admission,
     );
   }
 
@@ -440,7 +511,9 @@ class _DirectorCoordinator {
       }
       final count = (old?['count'] as int? ?? 0) + 1;
       final own = _map(settings['director']);
-      final cardOptions = _map(_map(_map(turn.directorCard?['extensions'])['dshgo'])['director']);
+      final cardOptions = turn.gameplay == null
+          ? _map(_map(_map(turn.directorCard?['extensions'])['dshgo'])['director'])
+          : _map(_map(turn.gameplay!.effectiveDefinitions['effective'])['director']);
       final cadence = director_core.directorEvery(settings: own, card: cardOptions);
       final every = cadence.every;
       final tickId = 'director-tick-${_newStateId()}';
@@ -473,6 +546,8 @@ class _DirectorCoordinator {
         settings: settings,
         selection: selection,
         cardRevision: turn.secretCardRevision,
+        gameplay: turn.gameplay,
+        gameplayAdmission: turn.gameplayAdmission,
       );
       if (cadence.invalid) {
         job.issues.add(_directorIssue('invalid_director_every'));
@@ -490,9 +565,13 @@ class _DirectorCoordinator {
           selection: selection,
           secret: true,
           cardRevision: turn.secretCardRevision,
+          gameplay: turn.gameplay,
+          gameplayAdmission: turn.gameplayAdmission,
         );
         secret.secretCapability = _captureSecretCapability(secret);
-        if (secret.secretCapability?.slotIds.isNotEmpty == true) _admit(secret);
+        if (secret.secretCapability?.slotIds.isNotEmpty == true) {
+          _admit(secret);
+        }
       }
     } catch (_) {
       // The main response is already committed and terminal. Its success
@@ -535,8 +614,37 @@ class _DirectorCoordinator {
         job.card = _effectiveCard(record.card.data, job.settings);
       }
       job.cancellation.check();
+      final admission = job.gameplayAdmission!;
+      final forceGameplay = _map(job.source['state']).containsKey('definitionConfigId');
+      if (job.gameplay == null && (admission.hasActivePacks || forceGameplay)) {
+        job.gameplay = await job.cancellation.wait(
+          _prepareIO(
+            job,
+            _prepareGameplayRuntime(
+              engine,
+              admission,
+              hostData: job.card!,
+              settings: job.settings,
+              force: forceGameplay,
+            ),
+          ),
+        );
+        job.cancellation.check();
+      }
       final card = _directorCard(job.card!);
-      job.fingerprint = _directorSourceFingerprint(job.source, card, job.persona);
+      job.fingerprint = _directorSourceFingerprint(
+        job.source,
+        card,
+        job.persona,
+        effectiveConfigId: job.gameplay?.effectiveConfigId,
+      );
+      final resources = _resolveGameplayResources(
+        _GameplayResourceCapture.fromAdmission(admission),
+        job.settings,
+        actorId: job.characterId,
+        worldInfoCharacterIds: [job.characterId],
+        kinds: const {'lorebook'},
+      );
       final loaded = await job.cancellation.wait(
         _prepareIO(
           job,
@@ -544,6 +652,7 @@ class _DirectorCoordinator {
             job.characterId,
             job.card!,
             job.settings,
+            gameplayResources: resources,
             personaId: job.persona['id'] as String?,
             checkCancelled: job.cancellation.check,
           ),
@@ -577,7 +686,7 @@ class _DirectorCoordinator {
       // Read that changed definition before deciding whether the legacy frozen
       // input is still usable; a second edit during this read is unavailable.
       if ((_cardRevisions[job.characterId] ?? 0) != job.cardRevision &&
-          !_secretDefinition(job.card!).defined &&
+          !(job.gameplay?.secrets ?? _secretDefinition(job.card!)).defined &&
           !job.source.containsKey('secretRuntime')) {
         final revision = _cardRevisions[job.characterId] ?? 0;
         final current = await job.cancellation.wait(_prepareIO(job, engine._record(job.characterId)));
@@ -599,6 +708,7 @@ class _DirectorCoordinator {
         currentSettings,
         job.source,
         authorizationSource: currentSource,
+        gameplay: job.gameplay,
       );
       if (secretInput.policy != null && (_cardRevisions[job.characterId] ?? 0) != job.cardRevision) {
         throw const FormatException('Protected director card changed before the request.');
@@ -617,8 +727,11 @@ class _DirectorCoordinator {
           final priorPolicy = previous.result['secretPolicy'];
           // Unprotected ordinary notes keep their established inheritance.
           // Any protected side requires both provenance and current knowledge.
-          if ((priorPolicy == null && secretInput.policy == null) ||
-              (_eligibility(run, previous, job.card!, job.persona, job.nodeId) == null &&
+          if ((job.gameplay == null &&
+                  !previous.result.containsKey('effectiveConfigId') &&
+                  priorPolicy == null &&
+                  secretInput.policy == null) ||
+              (_eligibility(run, previous, job.card!, job.persona, job.nodeId, gameplay: job.gameplay) == null &&
                   _stateJsonEqual(priorPolicy, secretInput.policy))) {
             previousNotes = run.notes ?? '';
           } else {
@@ -633,9 +746,9 @@ class _DirectorCoordinator {
       if (summaries.length > 20) {
         job.issues.add(_directorIssue('summary_catalog_truncated'));
       }
-      final story = _storyDirectorContext(job.card!, job.source);
+      final story = _storyDirectorContext(job.card!, job.source, gameplay: job.gameplay);
       job.storyPhase = story.phase;
-      job.eventCapability = _cardEventCapability(job.card!, job.settings);
+      job.eventCapability = _cardEventCapability(job.card!, job.settings, gameplay: job.gameplay);
       final groupDirectory = job.group == null
           ? null
           : await job.cancellation.wait(_prepareIO(job, engine._groups.directory(job.group!)));
@@ -664,7 +777,7 @@ class _DirectorCoordinator {
         'stream': false,
         'max_tokens': 4096,
         if (config.deepseek) 'thinking': {'type': config.thinking ? 'enabled' : 'disabled'},
-        'tools': [director_core.directToolDefinition(strict: config.deepseek)],
+        'tools': [_gameplayDirectToolDefinition(job.eventCapability, strict: config.deepseek)],
         'tool_choice': config.deepseek && config.thinking
             ? 'auto'
             : {
@@ -747,9 +860,10 @@ class _DirectorCoordinator {
     );
     StreamSubscription<ModelDelta>? subscription;
     try {
-      job.cancellation.check();
+      final cancellation = _gameplayRequestCancellation(engine, job.gameplayAdmission, job.cancellation);
+      cancellation.check();
       subscription = engine._modelClient
-          .generate(config: config, body: _copy(body), cancellation: job.cancellation)
+          .generate(config: config, body: _copy(body), cancellation: cancellation)
           .listen(
             (delta) {
               if (complete.isCompleted || job.cancellation.isCancelled) {
@@ -786,7 +900,7 @@ class _DirectorCoordinator {
             },
           );
       await complete.future;
-      job.cancellation.check();
+      cancellation.check();
       if (finishes != 1 || badTerminal) {
         throw const FormatException('Invalid director terminal sequence.');
       }
@@ -827,6 +941,7 @@ class _DirectorCoordinator {
       if (job.storyPhase != null) 'storyPhase': job.storyPhase,
       if (job.eventCapability != null) 'eventCapability': job.eventCapability,
       if (job.secretPolicy != null) 'secretPolicy': job.secretPolicy,
+      if (job.gameplay != null) 'effectiveConfigId': job.gameplay!.effectiveConfigId,
     };
     var record = StoredAgentRun(
       id: job.id,
@@ -859,10 +974,18 @@ class _DirectorCoordinator {
           result: raw,
         );
         engine._store.transaction(() {
+          if (output != null && failure == null) {
+            final admission = job.gameplayAdmission;
+            if (admission != null && !_gameplayAdmissionCurrent(engine, admission)) {
+              _gameplayCaptureConflict();
+            }
+            _ensureGameplayConfig(engine, job.gameplay);
+          }
           engine._store.writeAgentRun(record);
           if (output != null) {
             final events = _stateRows(output['events']);
             for (var i = 0; i < events.length; i++) {
+              final eventTarget = _gameplayPersistedEventTarget(job.eventCapability, events[i]['name']! as String);
               engine._store.writeAgentRun(
                 StoredAgentRun(
                   id: '${job.id}:event:$i',
@@ -878,6 +1001,7 @@ class _DirectorCoordinator {
                     // host defines no executable card event rules.
                     if (job.eventCapability != null || job.group != null) 'outputIndex': i,
                     'name': events[i]['name'], 'data': events[i]['data'],
+                    'eventTarget': ?eventTarget,
                   },
                 ),
               );
@@ -1004,16 +1128,45 @@ class _DirectorCoordinator {
   }
 
   Future<TavernDirectorSnapshot> read(String chatId) async {
-    final before = engine._store.chat(chatId);
-    final record = await engine._record(before.characterId);
-    // A read may await IO while close has begun. Check the lifecycle before
-    // querying saved rows or publishing a new watcher snapshot.
-    engine._ensureOpen();
-    final chat = engine._store.chat(chatId);
+    var chat = engine._store.chat(chatId);
+    Map<String, Object?>? readSaved() {
+      try {
+        return engine._stateAt(chatId, chat.currentLeafId);
+      } on StateError {
+        // An unreadable ancestry is unknown history, never an empty carrier.
+        return null;
+      }
+    }
+
+    var observedState = readSaved();
+    var observedHistory = observedState == null ? null : _gameplayHistoricalConfig(engine, observedState);
+    StoredCharacter? record;
+    if (observedHistory?.referenced != true) {
+      record = await engine._record(chat.characterId);
+      // A read may await IO while close has begun. Re-read the actual
+      // selection; a newly adopted reference must not fall back to that card.
+      engine._ensureOpen();
+      chat = engine._store.chat(chatId);
+      observedState = readSaved();
+      observedHistory = observedState == null ? null : _gameplayHistoricalConfig(engine, observedState);
+    }
+    final saved = observedState;
+    final historical = observedHistory;
+    final currentData = historical != null && !historical.referenced ? record?.card.data : null;
     final selection = engine._personas.resolve(personaId: chat.personaId);
-    final issues = <Map<String, Object?>>[...?_transientIssues[chatId]];
+    final issues = <Map<String, Object?>>[
+      ...?_transientIssues[chatId],
+      ...?historical?.issues,
+      if (saved == null) ...[
+        _directorIssue('director_source_unavailable'),
+        _directorIssue('director_story_snapshot_unavailable'),
+        _directorIssue('director_event_snapshot_unavailable'),
+      ],
+    ];
     final groupSelection = engine._store.agentRunsByKind(chatId, const {'group.selection'}, limit: 1).firstOrNull;
-    if (groupSelection != null) issues.addAll(_stateRows(groupSelection.result['issues']));
+    if (groupSelection != null) {
+      issues.addAll(_stateRows(groupSelection.result['issues']));
+    }
     Map<String, Object?>? readSettings() {
       try {
         return _personaSettings(engine._effectiveSettings(chat), selection);
@@ -1047,19 +1200,23 @@ class _DirectorCoordinator {
     final attempt = _transient[chatId] ?? (storedAttempt?.id == storedSuccess?.id ? success : decode(storedAttempt));
     var stale = storedSuccess != null;
     if (success != null) {
-      final reason = record == null
+      // The saved definition contains no complete historical prose card.
+      // It can interpret the ledger, but cannot prove a helper's full input.
+      final reason = historical == null || historical.referenced
+          ? 'director_source_unavailable'
+          : currentData == null
           ? 'director_character_missing'
           : settings == null
           ? 'director_source_unavailable'
           : _eligibility(
               success,
               storedSuccess!,
-              _effectiveCard(record.card.data, settings),
+              _effectiveCard(currentData, settings),
               _directorPersona(selection, settings),
               chat.currentLeafId,
             );
       stale = reason != null;
-      if (reason != null) {
+      if (reason != null && saved != null) {
         issues.add(_directorIssue(reason, id: success.id));
       }
     }
@@ -1070,12 +1227,14 @@ class _DirectorCoordinator {
         if (job.chatId == chatId) job,
     };
     Map<String, Object?>? readSnapshot(String issue, Map<String, Object?>? Function(Map<String, Object?>) read) {
-      if (settings == null) {
+      if (settings == null && historical?.referenced != true) {
         issues.add(_directorIssue(issue));
         return null;
       }
       try {
-        return read(settings);
+        // A historical view can still expose its raw carrier and diagnostics.
+        // Missing current settings never grants automatic execution.
+        return read(settings ?? const {});
       } catch (_) {
         // An unavailable auxiliary view is not an empty or disabled ledger.
         // Keep the main source diagnosis and report this read failure apart.
@@ -1084,21 +1243,40 @@ class _DirectorCoordinator {
       }
     }
 
-    final story = record == null
+    final story = saved == null
+        ? null
+        : historical != null && historical.referenced
+        ? readSnapshot(
+            'director_story_snapshot_unavailable',
+            (settings) => _storySnapshot(engine, chat, const {}, settings),
+          )
+        : currentData == null
         ? null
         : readSnapshot(
             'director_story_snapshot_unavailable',
-            (settings) => _storySnapshot(engine, chat, _effectiveCard(record.card.data, settings), settings),
+            (settings) => _storySnapshot(engine, chat, _effectiveCard(currentData, settings), settings),
           );
-    final eventRules = record == null
+    final eventRules = saved == null
+        ? null
+        : historical != null && historical.referenced
+        ? readSnapshot('director_event_snapshot_unavailable', (settings) {
+            final config = historical.config;
+            if (config != null) {
+              return _cardEventSnapshot(engine, chat, const {}, settings, gameplay: config);
+            }
+            final leaf = chat.currentLeafId;
+            final own = leaf == null ? <String, Object?>{} : _map(engine._store.node(chat.id, leaf).extra['dshgo']);
+            return _unresolvedGameplayEventSnapshot(leaf, saved, own, historical.issues);
+          })
+        : currentData == null
         ? null
         : readSnapshot(
             'director_event_snapshot_unavailable',
-            (settings) => _cardEventSnapshot(engine, chat, _effectiveCard(record.card.data, settings), settings),
+            (settings) => _cardEventSnapshot(engine, chat, _effectiveCard(currentData, settings), settings),
           );
     return TavernDirectorSnapshot(
       chatId: chatId,
-      automaticEnabled: settings != null && _enabled(settings),
+      automaticEnabled: saved != null && settings != null && _enabled(settings),
       pendingJobs: owned.length,
       running: queue.any((job) => job.running),
       latestSuccess: success,
@@ -1115,8 +1293,9 @@ class _DirectorCoordinator {
     StoredAgentRun stored,
     Map<String, Object?> data,
     Map<String, Object?> persona,
-    String? contextNodeId,
-  ) {
+    String? contextNodeId, {
+    _GameplayRuntime? gameplay,
+  }) {
     try {
       // Do not fetch a source, settings, secret proof or story state before
       // the preceding gate: an unavailable later carrier is not an earlier
@@ -1127,7 +1306,13 @@ class _DirectorCoordinator {
         return pathReason;
       }
       final source = _directorSource(engine, run.chatId, run.sourceNodeId);
-      final sourceReason = _directorSourceReason(run, data, persona, source);
+      final sourceReason = _directorSourceReason(
+        run,
+        data,
+        persona,
+        source,
+        effectiveConfigId: gameplay?.effectiveConfigId,
+      );
       if (sourceReason != null) {
         return sourceReason;
       }
@@ -1137,8 +1322,9 @@ class _DirectorCoordinator {
         data,
         engine._effectiveSettings(engine._store.chat(run.chatId)),
         contextNodeId,
+        gameplay: gameplay,
       );
-      return secretReason ?? _storyDirectorEligibility(engine, stored, data, contextNodeId);
+      return secretReason ?? _storyDirectorEligibility(engine, stored, data, contextNodeId, gameplay: gameplay);
     } catch (_) {
       return 'director_source_unavailable';
     }
@@ -1156,7 +1342,14 @@ class _DirectorCoordinator {
       // saved empty-chat variables that an empty-source director captured.
       final reason = run.sourceKind == 'empty' && turn.kind == _TurnKind.regenerate
           ? 'director_source_not_on_path'
-          : _eligibility(run, stored, data, _directorPersona(turn.personaSelection, turn.settings), parent);
+          : _eligibility(
+              run,
+              stored,
+              data,
+              _directorPersona(turn.personaSelection, turn.settings),
+              parent,
+              gameplay: turn.gameplay,
+            );
       return _directorPreparation(stored, run, reason);
     } catch (_) {
       return _DirectorPrepared(stored, null, false, [

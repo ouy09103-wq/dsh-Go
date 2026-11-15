@@ -29,7 +29,7 @@ Future<WorkshopPublishSample> publishIdleBeforePendingCheck() async {
 }
 
 Future<WorkshopPublishSample> publishLoggedOut() async {
-  final harness = PublishHarness(initial: const ForumAuthState(phase: ForumAuthPhase.signedOut));
+  final harness = PublishHarness(initial: authSignedOut);
   try { await authReady(harness.container); return _readPublish(harness); }
   finally { await harness.close(); }
 }
@@ -292,7 +292,7 @@ Future<WorkshopPublishSample> _publishRecovered({bool knownResult = false,
       // No real file is created or deliberately corrupted by a page sample.
       current.client.uploading = (_) async => throw const WorkshopException('workshop_storage');
     } else if (uploadsDisabled) {
-      current.client.value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false));
+      current.client.value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false));
       current.client.creating = (_) async => throw const WorkshopException('workshop_upload_disabled');
     }
     await current.start();
@@ -326,8 +326,8 @@ Future<WorkshopPublishSample> _publishKnownLocalRetry({bool captureStarting = fa
     await _prepareSample(harness);
     await harness.controller.submit();
     harness.controller.setInput(harness.state.input.copyWith(rightsConfirmed: false));
-    final credentials = harness.container.read(forumAuthProvider).credentials;
-    harness.forum.emit(authSignedIn(credentials: credentials, userId: null));
+    final credentials = harness.container.read(workshopAccountProvider).credential;
+    harness.account.emit(authSignedIn(credential: credentials, userId: null));
     await authReady(harness.container);
     harness.preferences.clearing = null;
     final creates = harness.client.creates.length, uploads = harness.client.uploads.length;
@@ -385,8 +385,8 @@ Future<WorkshopPublishSample> publishWaitingForPreviousSession() async {
     final settled = stateSettled(pending);
     try {
       await stateSignal(gate.entered, pending);
-      harness.forum.emit(authSignedIn(credentials:
-        const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      harness.account.emit(authSignedIn(credential:
+        const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       await authReady(harness.container);
       return _readPublish(harness);
     } finally { gate.release(); await settled; }

@@ -83,6 +83,7 @@ class _ScriptGenerationCapture {
     this.groupView,
     this.promptPreset,
     this.capturedChatState = false,
+    this.gameplayCapture,
   });
   final String generationId;
   final _ScriptContextState context;
@@ -100,6 +101,7 @@ class _ScriptGenerationCapture {
   final _ScriptGenerationObservation observation;
   final List<_ScriptInjectionCandidate> injectionCandidates;
   final bool capturedChatState;
+  final _GameplayResourceCapture? gameplayCapture;
   TavernScriptGenerationOrigin get origin => TavernScriptGenerationOrigin(
     contextId: context.value.id,
     instanceId: context.value.instanceId,
@@ -123,6 +125,7 @@ class _ScriptPreparedGeneration {
     this.stChatIdHash,
     this.hasHashUpdate = false,
     List<TavernScriptIssue> hookIssues = const [],
+    this.packWorldInfo,
   }) : body = _captureScriptObject(body),
        stateUpdates = _runtimeCopy(stateUpdates),
        hookIssues = List.unmodifiable(hookIssues);
@@ -131,12 +134,14 @@ class _ScriptPreparedGeneration {
   final String budgetSource;
   final _ScriptInjectionUseSet injectionUses;
   final Map<String, Object?> stateUpdates;
+  final state_core.StatePackWorldInfoDelta? packWorldInfo;
   final num? stChatIdHash;
   final bool hasHashUpdate;
   final List<TavernScriptIssue> hookIssues;
   Set<String> get chatTargets => {
     if (capture.local.hasIntents) 'local',
     ...stateUpdates.keys,
+    if (packWorldInfo?.isEmpty == false) 'dshgoPackWorldInfo',
     if (hasHashUpdate) 'stChatIdHash',
   };
 }

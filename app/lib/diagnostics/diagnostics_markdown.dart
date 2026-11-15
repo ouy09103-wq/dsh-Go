@@ -116,7 +116,6 @@ void _environment(StringBuffer b, DiagnosticsSnapshot s) {
       '${st.launchFailureReason == null ? '' : ' · 最近失败 ${st.launchFailureReason}'}'
       '${st.directEngineFallbackReason == null ? '' : ' · 回退 ${st.directEngineFallbackReason}'}',
     )
-    ..writeln('- 引擎身份：${_engineIdentity(st.currentExecutionMode)}')
     ..writeln('- 引擎地址：${st.baseUrl ?? '—'}（token 不回传）');
   if (st.error case final error? when error.isNotEmpty) b.writeln('- 最近错误：$error');
   if (st.networkBlocked) b.writeln('- 系统限制联网：${_time(st.networkBlockedAt ?? s.at)} 起');
@@ -134,17 +133,6 @@ void _environment(StringBuffer b, DiagnosticsSnapshot s) {
     )
     ..writeln();
 }
-
-/// The engine's real identity, judged by its launch method rather than by `id`: a proot guest
-/// answers `id` with its faked uid 0, so repeating `id` here would read as a root claim. Never
-/// write the row without a launch mode: an unobserved engine is not a root engine.
-String _engineIdentity(String? mode) => switch (mode) {
-  'root' => 'uid 0（su 启动，真实 root）',
-  'direct' => 'App 用户（direct 启动，非 root）',
-  'tawcroot' => 'App 用户（tawcroot 启动，非 root）',
-  'proot' => 'App 用户（proot 模拟 uid 0，不是 root）',
-  _ => '未观测',
-};
 
 void _connection(StringBuffer b, DiagnosticsSnapshot s) {
   b.writeln('## 连接');
@@ -191,67 +179,7 @@ void _phone(StringBuffer b, DiagnosticsSnapshot s) {
       ..writeln('- 手机操控开关：${phone.enabled} · 桥接监听：${phone.bridgeListening}')
       ..writeln('- 无障碍开关：${phone.a11y.enabled} · 服务已连接：${phone.a11y.serviceConnected}');
   }
-  _backgroundInputProbe(b, s.native.device['backgroundInputProbe']);
   b.writeln();
-}
-
-/// Last accepted native probe facts, not a fresh test or current connectivity.
-/// Keep this allowlist aligned with native InputProbeDiagnostics; never print a raw map.
-void _backgroundInputProbe(StringBuffer b, Object? raw) {
-  const label = '- 最近接受的后台输入探针事实（不是实时自检）';
-  if (raw is! Map || raw['v'] is! int || raw['v'] != 1 || raw['observed'] is! bool) {
-    b.writeln('$label：不可用或版本未知');
-    return;
-  }
-  final result = raw['result'];
-  final outcome = raw['observed'] == false
-      ? '未运行或无保留观察'
-      : result == 'success'
-      ? '通过'
-      : result == 'failure'
-      ? '失败'
-      : '结果未知';
-  b.writeln('$label：$outcome');
-  final connectionFailure = raw['connectionFailure'];
-  if (connectionFailure is bool) {
-    b.writeln('- 保留连接失败事实：$connectionFailure（不表示当前连接状态）');
-  }
-  if (raw['observed'] != true || result != 'failure') return;
-  const stages = {
-    'precondition',
-    'ui_dispatch',
-    'presentation_create',
-    'presentation_configure',
-    'presentation_show',
-    'activity_start',
-    'activity_ready_wait',
-    'view_layout_wait',
-    'frame_commit_wait',
-    'target_validate',
-    'input_send',
-    'receipt_wait',
-    'cleanup',
-  };
-  const types = {
-    'none',
-    'SecurityException',
-    'IllegalStateException',
-    'IllegalArgumentException',
-    'InvalidDisplayException',
-    'BadTokenException',
-    'TimeoutException',
-    'InterruptedException',
-    'OtherException',
-  };
-  final stage = raw['stage'];
-  final type = raw['exceptionType'];
-  final elapsed = raw['elapsedMs'];
-  final details = <String>[
-    if (stage is String && stages.contains(stage)) 'stage=$stage',
-    if (type is String && types.contains(type)) 'type=$type',
-    if (elapsed is int && elapsed >= 0 && elapsed <= 60000) 'elapsedMs=$elapsed',
-  ];
-  if (details.isNotEmpty) b.writeln('- 后台输入探针失败细节：${details.join(' · ')}');
 }
 
 void _performance(StringBuffer b, DiagnosticsSnapshot s) {

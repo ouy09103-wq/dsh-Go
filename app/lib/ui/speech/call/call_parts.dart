@@ -341,51 +341,107 @@ class _CallTimerState extends State<CallTimer> with SingleTickerProviderStateMix
   }
 }
 
-/// What the person said last: a soft glass pill, rising in when it changes.
+/// What the person said: up to [lines] lines, larger while they are still
+/// speaking ([speaking]) and stepping back once she answers.
 class HeardLine extends StatelessWidget {
-  const HeardLine({super.key, required this.text});
+  const HeardLine({super.key, required this.text, this.speaking = false, this.lines = 3});
 
   final String text;
+  final bool speaking;
+  final int lines;
 
   @override
-  Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: AppMotion.of(context, AppMotion.emphasized),
-    switchInCurve: AppMotion.enter,
-    switchOutCurve: AppMotion.exit,
-    transitionBuilder: (child, animation) => FadeTransition(
-      opacity: animation,
-      child: SlideTransition(
-        position: Tween(begin: const Offset(0, 0.6), end: Offset.zero).animate(animation),
-        child: child,
+  Widget build(BuildContext context) {
+    final ink = CallInk.of(context);
+    final base = Theme.of(context).textTheme.bodyLarge!;
+    final style = speaking
+        ? base.copyWith(color: ink.fg.withValues(alpha: 0.92), fontSize: 17, height: 1.55)
+        : base.copyWith(color: ink.dim, fontSize: 15, height: 1.5);
+    return AnimatedSwitcher(
+      duration: AppMotion.of(context, AppMotion.emphasized),
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      layoutBuilder: (current, previous) => Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(animation),
+          child: child,
+        ),
       ),
-    ),
-    child: text.isEmpty
-        ? const SizedBox(key: ValueKey(''), height: 34)
-        : Container(
-            key: ValueKey(text),
-            constraints: const BoxConstraints(maxWidth: 320),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              color: CallInk.of(context).glass,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: CallInk.of(context).glassBorder),
-            ),
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CallInk.of(context).dim),
-            ),
+      // A new thing said comes in; words added to the same one just grow.
+      child: KeyedSubtree(
+        key: ValueKey(text.isEmpty ? '' : text.substring(0, math.min(4, text.length))),
+        child: text.isEmpty
+            ? const SizedBox(width: double.infinity)
+            : AnimatedDefaultTextStyle(
+                style: style,
+                duration: AppMotion.of(context, AppMotion.standard),
+                curve: AppMotion.std,
+                child: Builder(
+                  builder: (context) => CaptionWindow(
+                    span: TextSpan(text: text, style: DefaultTextStyle.of(context).style),
+                    lines: lines,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// [span] centred in as many lines as it needs, at most [lines]: longer text
+/// keeps its end in view, the top line fading out.
+class CaptionWindow extends StatelessWidget {
+  const CaptionWindow({super.key, required this.span, required this.lines});
+
+  final InlineSpan span;
+  final int lines;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final scaler = MediaQuery.textScalerOf(context);
+      final painter = TextPainter(
+        text: span,
+        textAlign: TextAlign.center,
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+      )..layout(maxWidth: box.maxWidth);
+      final count = painter.computeLineMetrics().length;
+      final height = painter.height;
+      painter.dispose();
+      final text = Text.rich(span, textAlign: TextAlign.center, textScaler: scaler);
+      if (count <= lines) return SizedBox(width: double.infinity, child: text);
+      return SizedBox(
+        width: double.infinity,
+        height: height / count * lines,
+        child: ShaderMask(
+          shaderCallback: (rect) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [Colors.transparent, Colors.white],
+            stops: [0, 0.9 / lines],
+          ).createShader(rect),
+          blendMode: BlendMode.dstIn,
+          child: ClipRect(
+            child: OverflowBox(alignment: Alignment.bottomCenter, maxHeight: double.infinity, child: text),
           ),
+        ),
+      );
+    },
   );
 }
 
-/// Her words as they arrive: the newest characters fade in one after another,
-/// the oldest lines fade out at the top.
+/// Her words as they arrive: the newest characters fade in one after another;
+/// past [lines] lines the oldest fade out at the top.
 class RevealText extends StatefulWidget {
-  const RevealText({super.key, required this.text, this.style, this.lines = 3, this.window = 160});
+  const RevealText({super.key, required this.text, this.style, this.lines = 5, this.window = 220, this.done = false});
 
   final String text;
+
+  /// No more is coming: the last characters settle in.
+  final bool done;
   final TextStyle? style;
   final int lines;
 
@@ -404,11 +460,18 @@ class _RevealTextState extends State<RevealText> with SingleTickerProviderStateM
   /// How many characters fade in together.
   static const _tail = 8;
 
+  /// Where the reveal is headed: the end, its newest characters still coming
+  /// in; once [RevealText.done], past it, so they come in whole.
+  double get _target => widget.text.length + (widget.done ? _tail.toDouble() : 0.0);
+
   @override
   void didUpdateWidget(RevealText old) {
     super.didUpdateWidget(old);
-    if (!widget.text.startsWith(old.text.substring(0, math.min(old.text.length, _shown.floor())))) _shown = 0;
-    if (_shown < widget.text.length && !_ticker.isActive) {
+    if (widget.text.isEmpty ||
+        !widget.text.startsWith(old.text.substring(0, math.min(old.text.length, _shown.floor())))) {
+      _shown = 0;
+    }
+    if (_shown < _target && !_ticker.isActive) {
       _last = Duration.zero;
       _ticker.start();
     }
@@ -423,7 +486,7 @@ class _RevealTextState extends State<RevealText> with SingleTickerProviderStateM
   void _onTick(Duration elapsed) {
     final dt = _last == Duration.zero ? 0.016 : (elapsed - _last).inMicroseconds / 1e6;
     _last = elapsed;
-    final target = widget.text.length.toDouble();
+    final target = _target;
     // Catch up faster the further behind: never more than a second late.
     final rate = math.max(26.0, (target - _shown) * 2.2);
     setState(() => _shown = math.min(target, _shown + rate * dt));
@@ -439,7 +502,7 @@ class _RevealTextState extends State<RevealText> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final text = widget.text;
-    final shown = AppMotion.reduced(context) ? text.length.toDouble() : _shown;
+    final shown = AppMotion.reduced(context) ? text.length + _tail.toDouble() : _shown;
     final end = shown.ceil().clamp(0, text.length);
     final start = math.max(0, end - widget.window);
     final base = widget.style ?? DefaultTextStyle.of(context).style;
@@ -457,26 +520,11 @@ class _RevealTextState extends State<RevealText> with SingleTickerProviderStateM
         ),
       );
     }
-    final lineHeight = (base.fontSize ?? 16) * (base.height ?? 1.4) * MediaQuery.textScalerOf(context).scale(1);
-    // The newest lines in view: the text grows upward out of a fixed window.
-    return SizedBox(
-      height: lineHeight * widget.lines,
-      child: ShaderMask(
-        shaderCallback: (rect) => const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.transparent, Colors.white, Colors.white],
-          stops: [0, 0.34, 1],
-        ).createShader(rect),
-        blendMode: BlendMode.dstIn,
-        child: ClipRect(
-          child: OverflowBox(
-            alignment: Alignment.bottomCenter,
-            maxHeight: double.infinity,
-            child: Text.rich(TextSpan(children: spans), textAlign: TextAlign.center),
-          ),
-        ),
-      ),
+    if (spans.isEmpty) return const SizedBox(width: double.infinity);
+    // The newest lines in view: the words grow upward, as tall as they need.
+    return CaptionWindow(
+      span: TextSpan(children: spans),
+      lines: widget.lines,
     );
   }
 }

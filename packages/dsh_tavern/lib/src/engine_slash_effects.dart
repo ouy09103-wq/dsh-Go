@@ -15,6 +15,8 @@ class _ScriptEffectPlan {
     Map<String, Object?> stateUpdates = const {},
     this.stChatIdHash,
     this.hasHashUpdate = false,
+    this.gameplayCapture,
+    this.packWorldInfo,
   }) : stateUpdates = _runtimeCopy(stateUpdates);
   final _ScriptContextState context;
   final String operation;
@@ -24,9 +26,12 @@ class _ScriptEffectPlan {
   final bool capturedChatState, hasHashUpdate;
   final Map<String, Object?> stateUpdates;
   final num? stChatIdHash;
+  final _GameplayResourceCapture? gameplayCapture;
+  final state_core.StatePackWorldInfoDelta? packWorldInfo;
   Set<String> get chatTargets => {
     if (local.hasIntents) 'local',
     ...stateUpdates.keys,
+    if (packWorldInfo?.isEmpty == false) 'dshgoPackWorldInfo',
     if (hasHashUpdate) 'stChatIdHash',
   };
   Set<String> get carriers => {if (global.hasIntents) 'global', if (chatTargets.isNotEmpty) 'chat'};
@@ -75,6 +80,7 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
         'The captured context instance is no longer active.',
       );
     }
+    _checkScriptGameplayResources(engine, plan.gameplayCapture, plan.operation);
     if (global && plan.global.hasIntents) {
       final committed = _variableVersion(
         const TavernVariableTarget(scope: TavernVariableScope.global),
@@ -99,7 +105,7 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
       throw _scriptError(TavernScriptErrorCode.revisionConflict, plan.operation, 'The captured selection changed.');
     }
     for (final target in plan.chatTargets) {
-      if (!const {'local', 'timedWorldInfo', 'decoratorState', 'stChatIdHash'}.contains(target)) {
+      if (!const {'local', 'timedWorldInfo', 'decoratorState', 'stChatIdHash', 'dshgoPackWorldInfo'}.contains(target)) {
         throw _scriptError(
           TavernScriptErrorCode.reservedField,
           plan.operation,
@@ -189,7 +195,18 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
           state[entry.key] = _copy({'value': entry.value})['value'];
         }
         if (plan.hasHashUpdate) state['stChatIdHash'] = plan.stChatIdHash;
-        _persistScriptEffectChat(chat, plan.anchor, state, local, plan.chatTargets, signals, permit);
+        _persistScriptEffectChat(
+          chat,
+          plan.anchor,
+          state,
+          local,
+          plan.chatTargets,
+          signals,
+          permit,
+          gameplayCapture: plan.gameplayCapture,
+          packWorldInfo: plan.packWorldInfo,
+          operation: plan.operation,
+        );
         signals.onFinished('chat');
       });
     }
@@ -243,8 +260,11 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
     Map<String, Object?> local,
     Set<String> targets,
     _ScriptCarrierSignals signals,
-    _ToolPreparationPermit? permit,
-  ) {
+    _ToolPreparationPermit? permit, {
+    _GameplayResourceCapture? gameplayCapture,
+    state_core.StatePackWorldInfoDelta? packWorldInfo,
+    String operation = 'generate',
+  }) {
     final chatId = chat.id;
     final group = engine._store.groupChat(chatId);
     final adopted = (leaf: anchor, values: _runtimeCopy(local));
@@ -254,6 +274,38 @@ extension _ScriptEffectCarriers on _ScriptCoordinator {
       engine,
       permit,
       () {
+        _checkScriptGameplayResources(engine, gameplayCapture, operation);
+        if (packWorldInfo != null && !packWorldInfo.isEmpty) {
+          final metadata = engine._chatCodec.metadataForNode(engine._store, chatId);
+          final latest = anchor == null && group == null ? _emptyChatState(metadata) : engine._stateAt(chatId, anchor);
+          final merged = state_core.mergeStatePackWorldInfo(
+            exists: latest.containsKey('dshgoPackRuntime'),
+            raw: latest['dshgoPackRuntime'],
+            delta: packWorldInfo,
+          );
+          if (merged.issues.isNotEmpty) {
+            throw TavernScriptException(
+              code: TavernScriptErrorCode.shapeMismatch,
+              operation: operation,
+              message: 'The gameplay world-info runtime cannot be adopted.',
+              issues: [
+                for (final issue in merged.issues)
+                  TavernScriptIssue(
+                    code: 'gameplay_world_info_runtime',
+                    message: 'The saved gameplay runtime does not match this captured source.',
+                    committed: false,
+                    stage: 'worldInfo',
+                    details: issue,
+                  ),
+              ],
+            );
+          }
+          if (merged.exists) {
+            state['dshgoPackRuntime'] = merged.raw;
+          } else {
+            state.remove('dshgoPackRuntime');
+          }
+        }
         if (anchor != null) {
           engine._store.writeNodeState(chatId, anchor, state);
           engine._writeNodeState(chatId, anchor, state);
@@ -629,17 +681,23 @@ class _ScriptMacroCapture extends _MacroEffectCapture {
     required super.state,
     super.chatId,
     super.anchor,
+    this.gameplayCapture,
   });
   final _ScriptEffectScope scope;
   final _MacroEffectDependencies dependencies;
   final num? initialHash;
   final String? actorId;
   final String characterName;
+  final _GameplayResourceCapture? gameplayCapture;
   bool commitEntered = false;
   @override
   bool get hasHashUpdate => chatId != null && environment.chatIdHash != initialHash;
   @override
-  void checkDependencies() => dependencies.check();
+  void checkDependencies() {
+    dependencies.check();
+    _checkScriptGameplayResources(scope.coordinator.engine, gameplayCapture, 'substituteMacros');
+  }
+
   @override
   String requireCharacterName() {
     if (actorId == null) {
@@ -779,11 +837,13 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
     late final Map<String, Object?> settings, card, regexPreset;
     late final ChatPreset promptPreset;
     String? actorId;
+    _GameplayResourceCapture? gameplayCapture;
     List<String>? groupNames, groupNotMuted;
     if (frozen != null) {
       settings = _runtimeCopy(frozen.settings);
       card = _runtimeCopy(frozen.card);
       actorId = frozen.actorId;
+      gameplayCapture = frozen.gameplayCapture;
       final selected = frozen.promptPreset;
       final raw = _map(settings['preset']);
       promptPreset = selected != null
@@ -801,6 +861,12 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       promptPreset = raw.isEmpty ? ChatPreset.stDefault() : ChatPreset(raw);
       regexPreset = _runtimeCopy(promptPreset.settings);
       actorId = context.value.characterId ?? (group == null ? chat?.characterId : null);
+      gameplayCapture = _captureGameplayResources(
+        engine,
+        characterId: actorId,
+        chatId: chatId,
+        deferResourceErrors: true,
+      );
       StoredCharacter? actor;
       if (actorId != null) {
         actor = await scope.drain(engine._record(actorId));
@@ -823,6 +889,7 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       }
     }
     scope.checkAlive();
+    _checkScriptGameplayResources(engine, gameplayCapture, 'substituteMacros');
     final dependencies = _MacroEffectDependencies(scope);
     final initialHash = _finiteNumber(metadata['chat_id_hash']);
     void characterDependency(String field) {
@@ -862,6 +929,7 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       groupNotMuted: groupNotMuted,
       preset: promptPreset,
       regexPresetSettings: regexPreset,
+      gameplayCapture: gameplayCapture,
       macroHistory: chat == null ? _MacroEffectHistoryUnavailable(dependencies) : null,
       onCharacterDependency: actorId == null ? characterDependency : null,
       prepareCharacterFieldsOnDemand: prepareCharacterFieldsOnDemand,
@@ -881,6 +949,7 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       state: _runtimeCopy(state),
       chatId: chatId,
       anchor: anchor,
+      gameplayCapture: gameplayCapture,
     );
   }
 
@@ -1243,6 +1312,7 @@ extension _ScriptEffectAccounting on _ScriptCoordinator {
         capturedChatState: capture.chatId != null,
         stChatIdHash: capture.environment.chatIdHash,
         hasHashUpdate: capture.hasHashUpdate,
+        gameplayCapture: capture.gameplayCapture,
       );
       final current = _MacroEffectReceipt(operation, stage, _macroEffectTargets(plan));
       receipt = current;

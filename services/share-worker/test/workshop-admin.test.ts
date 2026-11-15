@@ -9,12 +9,12 @@ import { BASE_META, companion, metaFor, pet, petManifest, png, zip } from './wor
 import { jpeg, losslessWebp } from './workshop-image-fixtures';
 
 const API = '/api/workshop/v1', ADMIN = API + '/admin';
-beforeEach(() => vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ current_user: { id: 42, username: 'Synthetic reviewer fixture' } }))));
+beforeEach(() => vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: 42, login: 'Synthetic reviewer fixture' }))));
 afterEach(() => vi.restoreAllMocks());
 function setup() {
   const bucket = new PetBucket(), bindings = makeEnv({ BUCKET: bucket as unknown as R2Bucket }); let serial = 0;
   const call = (path: string, method = 'GET', body?: object | Uint8Array, authenticated = true, extra = {}) => worker.fetch(new Request('https://example.org' + path, {
-    method, headers: { 'User-Api-Key': 'synthetic-forum-key', 'X-Workshop-Forum-Origin': 'https://forum.dshtui.com',
+    method, headers: { Authorization: 'Bearer synthetic_github_token', 'X-Workshop-Account-Origin': 'https://github.com',
       ...(authenticated ? { 'X-Admin-Key': bindings.env.ADMIN_KEY! } : {}),
       ...(body ? { 'Content-Type': body instanceof Uint8Array ? 'application/zip' : 'application/json' } : {}), ...extra },
     ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
@@ -63,7 +63,7 @@ it('routes the admin page through the Worker before a same-path static asset', a
   expect(response.status).toBe(200); expect(await response.text()).toBe(WORKSHOP_ADMIN_HTML); expect(asset).not.toHaveBeenCalled();
   expect(response.headers.get('Content-Security-Policy')).toContain('script-src');
 });
-it('authenticates every moderation data path before state, archive, or forum access', async () => {
+it('authenticates every moderation data path before state, archive, or account access', async () => {
   const f = setup(), id = '1'.repeat(32);
   for (const [path, method] of [
     ['/submissions', 'GET'], [`/submissions/${id}`, 'GET'], [`/submissions/${id}/preview?file=0`, 'GET'],
@@ -197,7 +197,7 @@ it('keeps administrator rejection, withdrawal and report handling available whil
   expect((await f.call(`${ADMIN}/reports/${rid}/resolve`, 'POST', { decision: 'handled', reason: 'Handled during pause' })).status).toBe(200);
   expect((await f.call(`${ADMIN}/submissions/${published.sid}/withdraw`, 'POST', { reason: 'Withdraw during pause' })).status).toBe(200);
 });
-it('paginates read-only audit records with explicit shared-admin and forum-owner identities', async () => {
+it('paginates read-only audit records with explicit shared-admin and GitHub-owner identities', async () => {
   const f = setup(); await f.publish(); const rid = await f.report(); await f.call(`${ADMIN}/reports/${rid}/resolve`, 'POST', { decision: 'dismissed', reason: 'Read-only audit fixture' });
   const expected = f.state().audit.map((event: any) => event.eventId).sort(), actual: string[] = []; let cursor: string | null = null;
   do {
@@ -206,7 +206,7 @@ it('paginates read-only audit records with explicit shared-admin and forum-owner
   } while (cursor);
   expect(actual).toEqual(expected); expect(new Set(actual).size).toBe(expected.length);
   expect(f.state().audit.some((event: any) => event.actor === 'admin')).toBe(true);
-  expect(f.state().audit.some((event: any) => event.actor?.forumUserId === 42)).toBe(true);
+  expect(f.state().audit.some((event: any) => event.actor?.accountId === 42)).toBe(true);
   expect(JSON.stringify(f.state())).not.toContain(f.env.ADMIN_KEY!);
 });
 it('bounds repeated inspection before reading the archive and rejects missing storage privately', async () => {

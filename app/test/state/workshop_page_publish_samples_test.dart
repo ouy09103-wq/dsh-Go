@@ -19,12 +19,12 @@ void _access(WorkshopAccessState state) {
   }
   if (state.canSubmit('companion')) {
     expect(state.canAuthenticate, isTrue);
-    expect(state.forumUserId, isNotNull);
+    expect(state.accountId, isNotNull);
     expect(state.uploadsEnabled && state.companionEnabled, isTrue);
   }
   if (state.disclosure != null) {
     expect(state.disclosure!.worker, state.worker);
-    expect(state.disclosure!.forum, state.forum);
+    expect(state.disclosure!.account, state.account);
   }
 }
 
@@ -139,16 +139,16 @@ void main() {
     expect(state.capabilities, isNull);
     expect(state.uploadsEnabled, isFalse); // Unknown, not a known disabled response.
   });
-  _sample('accessForumRestoring', accessForumRestoring, (state) {
+  _sample('accessAccountRestoring', accessAccountRestoring, (state) {
     _access(state);
-    expect(state.forumRestoring, isTrue);
+    expect(state.accountRestoring, isTrue);
     expect(state.signedIn, isFalse);
     expect(state.canAuthenticate, isFalse);
   });
   _sample('accessSignedOut', accessSignedOut, (state) {
     _access(state);
     expect(state.signedIn, isFalse);
-    expect(state.forumRestoring, isFalse);
+    expect(state.accountRestoring, isFalse);
     expect(state.disclosure, isNull);
   });
   _sample('accessDisclosureRequired', accessDisclosureRequired, (state) {
@@ -160,7 +160,7 @@ void main() {
   });
   _sample('accessProfilePending', accessProfilePending, (state) {
     _access(state);
-    expect(state.forumUserId, isNull);
+    expect(state.accountId, isNull);
     expect(state.canAuthenticate, isTrue);
     expect(state.canSubmit('pet'), isFalse);
   });
@@ -177,7 +177,7 @@ void main() {
     expect(state.canSubmit('companion'), isFalse);
   });
   for (final (name, factory, code) in <(String, Future<WorkshopAccessState> Function(), String)>[
-    ('accessForumMismatch', accessForumMismatch, 'workshop_forum_origin'),
+    ('accessAccountMismatch', accessAccountMismatch, 'workshop_account_origin'),
     ('accessNetworkFailed', accessNetworkFailed, 'workshop_network'),
     ('accessUnconfigured', accessUnconfigured, 'workshop_unconfigured'),
     ('accessStaleDisclosure', accessStaleDisclosure, 'workshop_confirmation_stale'),
@@ -269,7 +269,7 @@ void main() {
     expect(sample.publish.preferenceError!.code, 'workshop_preferences');
   });
   _sample('publishProfileRequired', publishProfileRequired, (sample) {
-    _publisher(sample); expect(sample.access.forumUserId, isNull);
+    _publisher(sample); expect(sample.access.accountId, isNull);
     expect(sample.publish.error!.code, 'workshop_profile_required'); expect(sample.publish.pendingChecked, isFalse);
   });
   _sample('publishPreparing', publishPreparing, (sample) {
@@ -397,13 +397,13 @@ void main() {
     _publisher(sample); expect(sample.publish.phase, WorkshopPublishPhase.creating);
     expect(sample.publish.result!.status, WorkshopSubmissionStatus.pending); expect(sample.publish.busy, isTrue);
     expect(sample.publish.input.rightsConfirmed, isFalse);
-    expect(sample.access.forumUserId, isNull); expect(sample.access.canSubmit('pet'), isFalse);
+    expect(sample.access.accountId, isNull); expect(sample.access.canSubmit('pet'), isFalse);
   });
   _sample('publishKnownResultLocalRetryComplete', publishKnownResultLocalRetryComplete, (sample) {
     _publisher(sample); expect(sample.publish.phase, WorkshopPublishPhase.complete);
     expect(sample.publish.hasPending, isFalse); expect(sample.publish.preferenceError, isNull);
     expect(sample.publish.input.rightsConfirmed, isFalse);
-    expect(sample.access.forumUserId, isNull); expect(sample.access.canSubmit('pet'), isFalse);
+    expect(sample.access.accountId, isNull); expect(sample.access.canSubmit('pet'), isFalse);
   });
   for (final (name, factory, status) in <(String, Future<WorkshopPublishSample> Function(), WorkshopSubmissionStatus)>[
     ('publishCompleteApproved', publishCompleteApproved, WorkshopSubmissionStatus.approved),
@@ -426,7 +426,7 @@ void main() {
     });
   }
   _sample('publishWaitingForPreviousSession', publishWaitingForPreviousSession, (sample) {
-    _publisher(sample); expect(sample.access.forumUserId, 43);
+    _publisher(sample); expect(sample.access.accountId, 43);
     expect(sample.publish.waitingForPreviousOperation, isTrue); expect(sample.publish.busy, isFalse);
     expect(sample.publish.canEditMetadata, isFalse); expect(sample.publish.source, isNull);
     expect(sample.publish.result, isNull); expect(sample.publish.preparedMetadata, isNull);

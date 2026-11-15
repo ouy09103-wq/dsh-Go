@@ -1,6 +1,6 @@
-// Subagents and agent teams of the active host, the native counterpart of
-// DSH Web's `dsh-client-ui-subagent` lineage and the experimental Agent Teams
-// panel. See packages/dsh_client/lib/src/agents_api.dart for the wire side.
+// Subagents and agent teams of the active host, the native implementation of
+// the subagent and Agent Teams panels.
+// See packages/dsh_client/lib/src/agents_api.dart for the wire side.
 //
 // The lineage is built from the session list the app already keeps
 // (`session/list` lists subagent children with their parent and carries the

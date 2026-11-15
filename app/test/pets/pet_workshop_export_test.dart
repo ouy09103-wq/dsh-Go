@@ -51,6 +51,39 @@ void main() {
     expect(File('${(await other.folder('user-cat')).path}/idle.png').readAsBytesSync(), members['idle.png']);
   });
 
+  test('reactions export as numbered keys: an array becomes tickle, tickle2, tickle3', () async {
+    final json = workshopPet();
+    final animations = json['animations'] as Map;
+    animations['idle-look'] = <String, Object>{
+      ...animations['idle'] as Map<String, Object>,
+      'frames': [{'i': 1, 'ms': 200}],
+    };
+    animations['idle-spout'] = <String, Object>{
+      ...animations['idle'] as Map<String, Object>,
+      'frames': [{'i': 0, 'ms': 200}],
+    };
+    json['reactions'] = {
+      'tickle': ['idle-look', 'idle', 'idle-spout'],
+      'tapLeft': 'idle',
+    };
+    await library.install(workshopZip(temp, {'pack.json': utf8.encode(jsonEncode(json)), 'idle.png': workshopPng()}));
+    final exported = await library.exportZip('user-cat', File('${temp.path}/out.zip'));
+    final manifest = jsonDecode(utf8.decode(workshopUnzip(exported)['pack.json']!)) as Map<String, Object?>;
+    expect(manifest['reactions'], {
+      'tapLeft': 'idle',
+      'tickle': 'idle-look',
+      'tickle2': 'idle',
+      'tickle3': 'idle-spout',
+    });
+    expect(
+      (manifest['reactions']! as Map).values,
+      everyElement(isA<String>()),
+      reason: 'older apps reject a list: the export keeps the plain-string form',
+    );
+    final checked = PetPackValidator.validateArchive(exported.readAsBytesSync());
+    expect(checked.pack.reactions['tickle'], ['idle-look', 'idle', 'idle-spout'], reason: 'the numbered keys merge back');
+  });
+
   test('source receipt is installed with the directory but never exported', () async {
     await library.install(input(), workshop: receipt());
     expect((await library.workshopReceipt('user-cat'))!.same(receipt()), isTrue);

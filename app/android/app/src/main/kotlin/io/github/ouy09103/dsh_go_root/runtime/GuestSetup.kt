@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: the `show_view` description and prompt rule (`ds-bot/src/host/tools.js`, `prompt.js`)
 // rewritten as Chinese instructions for a ```dsh-ui fenced block in a phone chat.
 package io.github.ouy09103.dsh_go_root.runtime
@@ -45,8 +47,7 @@ object GuestSetup {
 
     /**
      * Appended while 「可视化回复」 is on (default): how to answer with a ```dsh-ui view. The
-     * component list and the rules are adapted from DS Bot's `show_view` description and prompt
-     * rule (`ds-bot/src/host/tools.js`, `prompt.js`), rewritten for a fenced block in a phone chat.
+     * component list and the rules are written for a fenced block in a phone chat.
      */
     // l10n:keep agent prompt
     private val DSH_UI_SECTION = ("""

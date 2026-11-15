@@ -384,6 +384,9 @@ abstract final class AppIcons {
   /// 语音通话: hang up.
   static const hangUp = DshGlyphs.phoneDisconnect;
 
+  /// 语音通话: the call's captions in full (as 回放's 全文).
+  static const callTranscript = DshGlyphs.article;
+
   /// 语音通话: the microphone is muted.
   static const micMuted = DshGlyphs.microphoneSlash;
 

@@ -129,6 +129,9 @@ void main() {
       200,
       scrollable: find.descendant(of: find.byKey(const ValueKey('tavern-stage')), matching: find.byType(Scrollable)),
     );
+    // The drag's fling can carry it past the edge again.
+    await tester.ensureVisible(find.byKey(const ValueKey('tavern-character-details')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('tavern-character-details')));
     await tester.pumpAndSettle();
     expect(find.byType(TavernCharacterPage), findsOneWidget);

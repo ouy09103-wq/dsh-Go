@@ -19,11 +19,11 @@ WorkshopClient _client(FakeWorkshopHttp http) => WorkshopClient(
   origin: authWorker, cacheFile: File('unused-mutation-preflight-cache.json'), http: http);
 
 WorkshopCredential _credential() => WorkshopCredential.forConsentedWorker(
-  worker: authWorker, forum: authForum, userApiKey: 'TEST_ONLY_PREFLIGHT_KEY', disclosureAccepted: true);
+  worker: authWorker, account: authAccount, token: 'TEST_ONLY_PREFLIGHT_KEY', disclosureAccepted: true);
 
 AuthHarness _harness(WorkshopClient client) {
   final preferences = AuthPreferences();
-  preferences.accepted.add(preferences.pair(authWorker, authForum));
+  preferences.accepted.add(preferences.pair(authWorker, authAccount));
   return AuthHarness(preferences: preferences, loadClient: (_) async => client);
 }
 
@@ -88,8 +88,8 @@ void main() {
   });
 
   for (final scenario in <({String name, String code, bool unknown, UpdateHttpResponse Function() respond})>[
-    (name: 'known rejection', code: 'workshop_forum_origin', unknown: false,
-      respond: () => workshopJsonResponse({'error': 'workshop_forum_origin'}, status: 409)),
+    (name: 'known rejection', code: 'workshop_account_origin', unknown: false,
+      respond: () => workshopJsonResponse({'error': 'workshop_account_origin'}, status: 409)),
     (name: 'malformed success', code: 'workshop_bad_response', unknown: true, respond: _malformedJson),
     (name: 'timeout', code: 'workshop_timeout', unknown: true,
       respond: () => throw TimeoutException('Synthetic POST timeout')),
@@ -215,7 +215,7 @@ void main() {
         id: inconsistency == 'id' ? personalSecondId : personalFirstId,
         status: inconsistency == 'status' ? 'pending' : 'withdrawn');
       if (inconsistency == 'account') {
-        submission['owner'] = {'forumOrigin': authForum.toString(), 'forumUserId': 43, 'username': 'other-author'};
+        submission['owner'] = {'accountOrigin': authAccount.toString(), 'accountId': 43, 'username': 'other-author'};
       }
       final http = FakeWorkshopHttp((method, url, headers, body) =>
         method == 'GET' ? workshopJsonResponse(workshopCaps()) : workshopJsonResponse({'submission': submission}));

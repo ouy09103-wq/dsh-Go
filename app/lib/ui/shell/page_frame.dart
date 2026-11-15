@@ -13,9 +13,9 @@ import '../theme/theme.dart';
 
 /// Frame for every secondary page (settings, engine, remote, diagnostics…).
 ///
-/// Claude-style: no app bar slab. A floating glass back button sits top-left, the
+/// No app bar slab. A floating glass back button sits top-left, the
 /// page title is a large headline at the top of the content (or a [hero] header
-/// on detail pages). Scrolling is continuous, Apple style: the headline fades as
+/// on detail pages). Scrolling is continuous, system style: the headline fades as
 /// it slides under the bar while a compact title rises into the bar. A soft fade
 /// at the top keeps scrolled text from running naked under the status bar.
 ///

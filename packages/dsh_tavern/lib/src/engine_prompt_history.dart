@@ -43,6 +43,7 @@ _PromptHistoryWindow? _plainPromptHistory(
       turn.scriptInjectionUses?.used.isNotEmpty == true ||
       _map(turn.settings['reasoning'])['add_to_prompts'] == true ||
       _hasWorldTimers(turn.state['timedWorldInfo']) ||
+      _hasGameplayWorldTimers(turn.state, turn.gameplayResources) ||
       worldSettings.minActivations > 0 ||
       !_literalPromptName(data['name']) ||
       !_literalPromptName(data['nickname']) ||
@@ -51,7 +52,7 @@ _PromptHistoryWindow? _plainPromptHistory(
       !_plainPromptData(data) ||
       !_plainPromptData(turn.settings) ||
       !_plainPromptData(settings) ||
-      _hasTurnHistoryRules(data, turn.settings, settings, turn.actorId)) {
+      _hasTurnHistoryRules(data, turn.settings, settings, turn.actorId, packRegex: turn.gameplayResources.regex)) {
     return null;
   }
   final budget =
@@ -158,10 +159,13 @@ bool _hasTurnHistoryRules(
   Map<String, Object?> data,
   Map<String, Object?> settings,
   Map<String, Object?> preset,
-  String characterId,
-) {
+  String characterId, {
+  List<TavernScriptRegex> packRegex = const [],
+}) {
   if (settings['regexEnabled'] == false) return false;
   final scripts = [
+    for (final rule in packRegex)
+      if (rule.effective) rule.execution,
     ...RegexEngine.readScripts(settings['globalRegexScripts'] ?? settings['regex']),
     ...RegexEngine.readScripts(settings['managedRegexScripts']),
     if (settings['presetRegexEnabled'] != false)
@@ -228,3 +232,33 @@ final _promptNameMacro = RegExp(
   r'{{\s*(user|char|charIfNotGroup|group|groupNotMuted|notChar)\s*}}',
   caseSensitive: false,
 );
+
+bool _hasGameplayWorldTimers(Map<String, Object?> state, _GameplayResources resources) {
+  final snapshot = _gameplayWorldInfoSnapshot(state, resources);
+  if (snapshot == null) {
+    return false;
+  }
+  for (final source in resources.packSources.values.map((entry) => entry.source).toSet()) {
+    final saved = snapshot.read(source);
+    if (saved.issues.isNotEmpty) {
+      return true;
+    }
+    final raw = saved.raw;
+    if (!saved.exists || raw is! Map<String, Object?>) {
+      continue;
+    }
+    final entries = raw['entries'];
+    if (entries is Map<String, Object?>) {
+      for (final resource in entries.values) {
+        if (resource is Map<String, Object?> &&
+            resource.values.any(
+              (entry) =>
+                  entry is Map<String, Object?> && (entry.containsKey('sticky') || entry.containsKey('cooldown')),
+            )) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}

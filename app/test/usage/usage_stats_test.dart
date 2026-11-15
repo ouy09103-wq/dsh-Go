@@ -4,6 +4,7 @@
 // install id every 90 days; 3 quiet tries a day; a body with exactly the
 // contract's fields; and the counts coming from where they happen.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dsh_app/phone/phone_channel.dart';
@@ -66,6 +67,28 @@ extension on ProviderContainer {
   Future<void> comeBack() async {
     resume!();
     await settle();
+  }
+}
+
+/// Answers the first request, then the network is gone.
+class _RefusedThenOffline extends FakeUsageHttp {
+  @override
+  Future<int> post(Uri url, String json, {Duration timeout = const Duration(seconds: 10)}) {
+    offline = requests.isNotEmpty;
+    return super.post(url, json, timeout: timeout);
+  }
+}
+
+/// Keeps the first answer until the test gives it.
+class _FirstHeld extends FakeUsageHttp {
+  final first = Completer<int>();
+
+  @override
+  Future<int> post(Uri url, String json, {Duration timeout = const Duration(seconds: 10)}) {
+    if (requests.isNotEmpty) return super.post(url, json, timeout: timeout);
+    urls.add(url);
+    requests.add(jsonDecode(json) as Map<String, Object?>);
+    return first.future;
   }
 }
 
@@ -311,16 +334,39 @@ void main() {
     }
   });
 
-  test('v2 with the model and system; a host that refuses it gets v1, for the rest of the run', () async {
-    const phone = UsageDevice(
-      app: '0.9.9',
-      build: 10301000,
-      sdk: 34,
-      abi: 'arm64-v8a',
-      maker: 'vivo',
-      model: 'v2405a',
-      rom: 'originos 5.0',
-    );
+  const phone = UsageDevice(
+    app: '0.9.9',
+    build: 10301000,
+    sdk: 34,
+    abi: 'arm64-v8a',
+    maker: 'vivo',
+    model: 'v2405a',
+    rom: 'originos 5.0',
+  );
+
+  test(
+    'v3 with the model, system and its counts; a host that refuses it gets v2, then v1, for the rest of the run',
+    () async {
+      http = FakeUsageHttp()..replies.addAll([400, 400]);
+      final ledger = UsageLedger()
+        ..touch(DateTime(2026, 10, 26, 9))
+        ..touch(DateTime(2026, 10, 27, 9));
+      await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+      expect(
+        [for (final r in http.requests) '${r['day']} v${r['v']}'],
+        ['2026-10-26 v3', '2026-10-26 v2', '2026-10-26 v1', '2026-10-27 v1'],
+      );
+      expect(http.requests.first.keys.toSet(), usagePayloadKeysV2);
+      expect((http.requests.first['counts']! as Map).keys.toSet(), usageCountKeysV3);
+      expect([http.requests.first['model'], http.requests.first['rom']], ['v2405a', 'originos 5.0']);
+      expect((http.requests[1]['counts']! as Map).keys.toSet(), usageCountKeys);
+      expect(http.requests[2].keys.toSet(), usagePayloadKeys);
+      final left = UsageLedger.decode((await stored())[UsageStatsController.daysKey] as String?);
+      expect(left.days.keys, ['2026-10-28'], reason: 'both days went out');
+    },
+  );
+
+  test('a host from before v3 takes v2 for the rest of the run', () async {
     http = FakeUsageHttp()..replies.add(400);
     final ledger = UsageLedger()
       ..touch(DateTime(2026, 10, 26, 9))
@@ -328,13 +374,52 @@ void main() {
     await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
     expect(
       [for (final r in http.requests) '${r['day']} v${r['v']}'],
-      ['2026-10-26 v2', '2026-10-26 v1', '2026-10-27 v1'],
+      ['2026-10-26 v3', '2026-10-26 v2', '2026-10-27 v2'],
     );
-    expect(http.requests.first.keys.toSet(), usagePayloadKeysV2);
-    expect([http.requests.first['model'], http.requests.first['rom']], ['v2405a', 'originos 5.0']);
-    expect(http.requests[1].keys.toSet(), usagePayloadKeys);
+  });
+
+  test('off and on again while a v3 send waits: its 400 sends nothing from before again', () async {
+    final held = _FirstHeld();
+    http = held;
+    final ledger = UsageLedger()..touch(DateTime(2026, 10, 26, 9));
+    final c = await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+    expect(held.requests, hasLength(1));
+    await c.usage.setEnabled(false);
+    await c.usage.setEnabled(true);
+    await settle();
+    held.first.complete(400);
+    await settle();
+    expect(held.requests, hasLength(1), reason: 'the old id and day are gone');
+  });
+
+  test('no answer to the lower contract is a failed send, not a refusal', () async {
+    http = _RefusedThenOffline()..replies.add(400);
+    final ledger = UsageLedger()..touch(DateTime(2026, 10, 26, 9));
+    await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+    expect([for (final r in http.requests) '${r['day']} v${r['v']}'], ['2026-10-26 v3', '2026-10-26 v2']);
     final left = UsageLedger.decode((await stored())[UsageStatsController.daysKey] as String?);
-    expect(left.days.keys, ['2026-10-28'], reason: 'both days went out');
+    expect(left.days['2026-10-26']?.tries, 1, reason: 'kept for another try');
+  });
+
+  test('the tavern, the room, calls and tokens go out in v3', () async {
+    final c = await start(prefs: noticed, phoneFacts: phone);
+    await c.count(UsageCount.tavern, 3);
+    await c.count(UsageCount.room);
+    await c.count(UsageCount.call, 2);
+    c.usage
+      ..tokens(1500, 200)
+      ..tokens(500, 50);
+    await settle();
+    now = DateTime(2026, 10, 29, 9);
+    await c.comeBack();
+    final counts = http.requests.single['counts']! as Map<String, Object?>;
+    expect(http.requests.single['v'], 3);
+    expect(
+      {
+        for (final key in ['tavern', 'room', 'call', 'tok_in', 'tok_out']) key: counts[key],
+      },
+      {'tavern': 3, 'room': 1, 'call': 2, 'tok_in': 2000, 'tok_out': 250},
+    );
   });
 
   test('the request: the endpoint, and nothing but the contract\'s fields', () async {

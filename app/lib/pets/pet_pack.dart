@@ -153,8 +153,9 @@ class PetPack {
   /// Animation name → how long a one-off play lasts, ms.
   final Map<String, int> playMs;
 
-  /// tapLeft / tapRight / tickle / drag → animation.
-  final Map<String, String> reactions;
+  /// Reaction name (tapLeft / tapRight / tickle / drag / annoyed / …) → its
+  /// animations: one plays as written, several are picked one per play.
+  final Map<String, List<String>> reactions;
 
   final String? roamAnim;
 
@@ -221,7 +222,15 @@ class PetPack {
     for (final name in (states[state.name] ?? const <String>[]).skip(1)) animations[name]!,
   ];
 
-  PetAnimation? reaction(String key) => animations[reactions[key]];
+  /// [key]'s fixed animation: the first variant (drag, a lone tap reaction).
+  PetAnimation? reaction(String key) => animations[reactions[key]?.firstOrNull];
+
+  /// [key]'s animation for this play: one of its variants, picked with [random].
+  PetAnimation? reactionOutOf(String key, math.Random random) {
+    final names = reactions[key];
+    if (names == null || names.isEmpty) return null;
+    return animations[names.length == 1 ? names.first : names[random.nextInt(names.length)]];
+  }
 
   PetAnimation get roam => animations[roamAnim] ?? animFor(PetStateName.idle);
 
@@ -299,6 +308,29 @@ class PetPack {
       throw FormatException('pack.json: $where → $name');
     }
 
+    /// Reaction name → its animations. `tickle2`, `tickle3`… (a number after
+    /// a plain name this map already has) are further alternatives: older apps
+    /// read only the plain name and ignore the rest, so a shared pack still
+    /// works there while this one picks among all of them.
+    Map<String, List<String>> reactionMap(Object? raw) {
+      final map = <String, List<String>>{};
+      for (final MapEntry(:key, :value) in _map(raw).entries) {
+        final names = [
+          for (final name in value is List ? value : [value]) known(name, 'reactions.$key'),
+        ];
+        if (names.isNotEmpty) map[key] = names;
+      }
+      for (final key in map.keys.toList()) {
+        final match = RegExp(r'^(.*?)(\d+)$').firstMatch(key);
+        final base = match?.group(1);
+        // From 2 on: `tickle` is the first, `tickle2` the second.
+        if (base == null || !map.containsKey(base) || int.parse(match!.group(2)!) < 2) continue;
+        final extra = map.remove(key)!;
+        map.update(base, (names) => [...names, ...extra]);
+      }
+      return map;
+    }
+
     final states = <String, List<String>>{
       for (final MapEntry(:key, :value) in _map(json['states']).entries)
         key: [for (final name in _list(value)) known(name, 'states.$key')],
@@ -367,9 +399,7 @@ class PetPack {
       minDisplay: ms(timings['minDisplay']),
       autoReturn: ms(timings['autoReturn']),
       playMs: ms(timings['playMs']),
-      reactions: {
-        for (final MapEntry(:key, :value) in _map(json['reactions']).entries) key: known(value, 'reactions.$key'),
-      },
+      reactions: reactionMap(json['reactions']),
       roamAnim: roam['anim'] == null ? null : known(roam['anim'], 'roam'),
       // An explicit `flip: false` keeps front-facing art unmirrored.
       roamFacing: roam['flip'] == false ? PetFacing.front : PetFacing.values.asNameMap()[faces] ?? PetFacing.front,

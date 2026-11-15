@@ -2,11 +2,11 @@
 
 2026-11-12。**未在真机上验证**，也尚未部署。实现说明见 [workshop-worker.md](../../../docs/design/workshop-worker.md)，App 一侧见 [workshop-app.md](../../../docs/design/workshop-app.md)。
 
-时间戳均由服务器生成，为 UTC ISO-8601。投稿者的 `User-Api-Key` 仅随本次请求发送，不出现在响应或持久记录里。管理员沿用 `X-Admin-Key`。
+时间戳均由服务器生成，为 UTC ISO-8601。投稿者以 GitHub 账号为身份：App 自己走 GitHub 设备授权（device flow）取得令牌，每次作者请求带 `Authorization: Bearer <令牌>`。令牌只能是 1..255 位 ASCII 字母、数字或 `_`，缺失或不合形状返回 `401 / workshop_account_auth_required`。令牌仅随本次请求发送，Worker 用它向 GitHub 查一次身份，不出现在响应、日志或持久记录里。管理员沿用 `X-Admin-Key`。
 
-创建、上传、本人列表 / 查看、撤回和举报还必须携带 `X-Workshop-Forum-Origin`，值为该账号来源的规范化 HTTPS origin。Worker 只将它与本次请求的配置 origin 严格等值比较，缺失、空值或不等均返回 `409 / workshop_forum_origin`；没有省略断言的兼容回退。出站地址仍只取配置，断言不选择上游，也不转发给论坛。公共接口及管理员的独立身份门不要求此头。
+创建、上传、本人列表 / 查看、撤回和举报还必须携带 `X-Workshop-Account-Origin: https://github.com`，说明令牌属于哪个账号体系。Worker 严格等值比较，缺失、空值或不等均返回 `409 / workshop_account_origin`，此时还没有向 GitHub 发出请求；没有省略断言的兼容回退。公共接口及管理员的独立身份门不要求此头。
 
-App 在确认账号与 Worker 目标后发送断言；不能因为已读取 capabilities 就省略它，也不能自动用服务器新来源替换账号来源。普通 IPv6 的规范形式采用最短小写十六进制段和最长连续零段压缩（至少两段，并列取左侧）；默认 HTTPS 端口和根路径省略。配置变更导致断言冲突时，重新核对来源与凭据转交；历史身份和版本绑定不自动迁移。
+Worker 校验令牌时只请求 `GET https://api.github.com/user`（15 秒超时、不跟随跳转），带 `Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: dshgo-workshop`。可选变量 `WORKSHOP_GITHUB_API_URL` 只供测试和本地演练换成本机的 HTTPS 替身（只接受不带路径的 HTTPS origin），生产不设置；它只来自部署配置，任何请求都不能指定。GitHub 回 401 时返回 `401 / workshop_account_auth_invalid`，App 应清掉本地令牌重新登录；回 200 且正文是不超过 64KiB 的 JSON、`id` 为正整数、`login` 为不超过 256 码点的文本时，得到作者身份 `Owner = {accountOrigin: "https://github.com", accountId: <GitHub 用户 id>, username: <login>}`。其余情况（403 限流、5xx、网络失败、跳转、正文不合形状）都返回 `503 / workshop_account_unavailable`，稍后重试即可，不代表令牌失效。身份以 `accountId` 为准，GitHub 改名只改变 `username` 的显示。
 
 管理员配置须满足 `ADMIN_KEY.length >= 32`；缺失或过短时返回 `503 / workshop_admin_unavailable`。令 `provided` 为请求头 `X-Admin-Key` 的值；配置通过后，该值须非空、满足 `provided.length <= 4096` 且匹配配置，否则返回 `401 / workshop_admin_auth_required`。
 
@@ -15,8 +15,10 @@ App 在确认账号与 Worker 目标后发送断言；不能因为已读取 capa
 `GET /api/workshop/v1/capabilities`：
 
 ```json
-{"schema":1,"features":{"uploads":true,"companion":true},"kinds":["pet","companion"],"licenses":["CC0-1.0","CC-BY-4.0","CC-BY-SA-4.0","MIT","Apache-2.0","BSD-2-Clause","BSD-3-Clause","LicenseRef-Author-Permission"],"forumOrigin":"https://forum.dshtui.com","maxMocVersion":6,"preview":{"schema":1,"sources":["pet-idle","companion-preview"],"format":"png","maxWidth":512,"maxHeight":512,"maxPixels":262144,"maxBytes":2097152},"limits":{"archiveBytes":20971520,"expandedBytes":67108864,"companionMemberBytes":16777216,"companionEntries":1000,"petEntries":256}}
+{"schema":1,"features":{"uploads":true,"companion":true},"kinds":["pet","companion"],"licenses":["CC0-1.0","CC-BY-4.0","CC-BY-SA-4.0","MIT","Apache-2.0","BSD-2-Clause","BSD-3-Clause","LicenseRef-Author-Permission"],"account":{"origin":"https://github.com","clientId":"Iv23liExample"},"maxMocVersion":6,"preview":{"schema":1,"sources":["pet-idle","companion-preview"],"format":"png","maxWidth":512,"maxHeight":512,"maxPixels":262144,"maxBytes":2097152},"limits":{"archiveBytes":52428800,"expandedBytes":134217728,"companionMemberBytes":16777216,"companionEntries":1000,"petEntries":256}}
 ```
+
+`account.origin` 固定为 `https://github.com`。`account.clientId` 是 App 发起 GitHub 设备授权所用 OAuth App 的公开 client id，取自 Worker 变量 `WORKSHOP_GITHUB_CLIENT_ID`；只有匹配 `^[A-Za-z0-9._-]{1,64}$` 时才公布，未配置或格式不对时为 `null`，此时 App 无从发起登录，作者请求也就无法进行。Worker 自己不提供任何登录端点。
 
 `GET|HEAD /market/workshop.json`：
 
@@ -24,7 +26,9 @@ App 在确认账号与 Worker 目标后发送断言；不能因为已读取 capa
 {"schema":1,"generatedAt":"2026-11-11T00:00:00.000Z","features":{"uploads":true,"companion":true},"entries":[{"kind":"pet","id":"sample","version":"1.0.0","minApp":"1.0.13","title":{"zh":"示例","en":"Sample"},"author":"作者","license":"CC0-1.0","source":"https://example.org/sample","url":"/market/workshop/pet/sample/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.zip","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":1234,"blockedVersions":[]}],"withdrawn":[{"kind":"pet","id":"old-sample","version":"1.0.0","reason":"作者撤回","at":"2026-11-11T00:00:00.000Z"}]}
 ```
 
-`/market/companions.json` 是同一状态的 companion 过滤投影，字段仍为 `entries`，没有独立的发布存储。companion 关闭时，投影及其下载返回 503；主目录仍能浏览 pet，并保留所有种类的 `withdrawn`，以便本地处理已安装内容的撤回。目录支持条件 ETag；安装 / 更新前必须向服务器重新验证目录，不使用失效缓存绕过关闭 / 撤回。
+大于 20 MiB 的条目不在 `entries` 里，而在可选的 `largeEntries`（结构相同，没有这类条目时省略）：2026-11-15 之前的 App 见到超过 20 MiB 的条目会整份目录判为无效，它们不读这个字段。客户端须把两者合起来，作品身份在两者之间也不能重复。
+
+`/market/companions.json` 是同一状态的 companion 过滤投影，字段仍为 `entries`，没有独立的发布存储。companion 关闭时，投影及其下载返回 503；主目录仍能浏览 pet，并保留所有种类的 `withdrawn`，以便本地处理已安装内容的撤回。目录支持条件 ETag；安装 / 更新前必须向服务器重新验证目录，不能凭失效缓存安装已关闭或已撤回的内容。
 
 `GET|HEAD /market/workshop/<kind>/<id>/<version>/<sha>.zip` 必须匹配当前公开条目、不可变绑定、未撤回；支持 Range / If-Range。仅知道 SHA，或持有 draft / pending / rejected 投稿记录，不会新增公开授权。若另一投稿已使同一 kind / id / version、同一 SHA / size 的资源成为当前条目，后来的待审或拒绝记录不撤销该既有授权。接口不跳转裸桶。
 
@@ -71,7 +75,7 @@ App 在确认账号与 Worker 目标后发送断言；不能因为已读取 capa
 所有投稿成功响应为 `{submission: 记录}`。记录形状：
 
 ```json
-{"submissionId":"0123456789abcdef0123456789abcdef","owner":{"forumOrigin":"https://forum.dshtui.com","forumUserId":42,"username":"sample"},"metadata":{},"status":"draft","createdAt":"2026-11-11T00:00:00.000Z","updatedAt":"2026-11-11T00:00:00.000Z"}
+{"submissionId":"0123456789abcdef0123456789abcdef","owner":{"accountOrigin":"https://github.com","accountId":42,"username":"sample"},"metadata":{},"status":"draft","createdAt":"2026-11-11T00:00:00.000Z","updatedAt":"2026-11-11T00:00:00.000Z"}
 ```
 
 `metadata` 是上面的完整对象。`status` 枚举为 draft / pending / approved / rejected / withdrawn。
@@ -108,7 +112,7 @@ withdrawn 投稿记录不能恢复。撤回尚未获批准的 draft / pending / 
 
 review 重复相同终态决策不重验、不改变当前公开行或原 review 信息，也不新增审计；对相反终态决策或已撤回记录返回 409。要重新发布未撤回的旧版，须使用新的 requestId，以原 SHA / size 创建新投稿、进入 pending 后再批准；对旧 approved 原 sid 重发 approve 只返回历史记录，不会重新上架。已进入版本撤回账本的 release 不能通过新投稿恢复。
 
-公开查询无需身份。创建、上传、本人列表 / 查看、撤回、举报都需要论坛 User API key。外层 UI 先核对 `forumOrigin` 并明确确认将凭据交给这个 Worker；数据层不隐式授权。
+公开查询无需身份。创建、上传、本人列表 / 查看、撤回、举报都需要 GitHub 令牌。外层 UI 先让用户明确确认用 GitHub 账号登录并把令牌交给这个 Worker；数据层不隐式授权。
 
 ### 本人投稿的顺序与游标
 
@@ -175,7 +179,7 @@ JPEG / WebP 结构门不等于完整图像解码；浏览器仍可能拒绝图�
 
 处理是终态。同一决策的重试返回首次理由、时间和结果，不再写审计；改为另一决策返回 `409 / workshop_report_state`。处理和 `resolve_report` 审计在同一个状态 CAS 中提交；冲突返回 `workshop_state_conflict`，应先 GET 核对获胜结果。若响应丢失，记录可能已经提交；GET 后再决定是否显式重试同一决策。
 
-审计行是 `{eventId, at, action, actor, submissionId?, releaseId?, reportId?, reason?}`。action 为 create / submit / approve / reject / withdraw / report / resolve_report；`actor="admin"` 仅代表共享管理密钥，其余 actor 是论坛 `Owner`。相关 ID 给出目标，不从密钥或密钥摘要捏造操作者姓名。审计按 eventId 分页，至少保留 186 天；只在之后一次状态写入中清理更早事件。举报处理记录、永久版本绑定和撤回记录不随这项审计清理删除。
+审计行是 `{eventId, at, action, actor, submissionId?, releaseId?, reportId?, reason?}`。action 为 create / submit / approve / reject / withdraw / report / resolve_report；`actor="admin"` 仅代表共享管理密钥，其余 actor 是 GitHub 作者 `Owner`。相关 ID 给出目标，不从密钥或密钥摘要捏造操作者姓名。审计按 eventId 分页，至少保留 186 天；只在之后一次状态写入中清理更早事件。举报处理记录、永久版本绑定和撤回记录不随这项审计清理删除。
 
 ### 状态容量与部署前提
 
@@ -192,7 +196,7 @@ JPEG / WebP 结构门不等于完整图像解码；浏览器仍可能拒绝图�
 
 ## 失败
 
-失败响应固定为 JSON `{error: "workshop_<code>"}`，不含底层异常、论坛正文或凭据。论坛响应过大、格式不符、身份不明时失败关闭。
+失败响应固定为 JSON `{error: "workshop_<code>"}`，不含底层异常、GitHub 响应正文或凭据。GitHub 响应过大、格式不符、身份不明时失败关闭。
 
 | HTTP | code（统一加 `workshop_` 前缀） | 含义 |
 | --- | --- | --- |
@@ -200,16 +204,16 @@ JPEG / WebP 结构门不等于完整图像解码；浏览器仍可能拒绝图�
 | 400 | `archive_*` / `json_*` / `pack_*` / `sheet_*` / `png_*` / `inflate_*` / `zlib_*` / `pet_extra_file` / `companion_*` | 包验证失败；本次操作未完成上传 / 批准，已有投稿状态以重新查询为准 |
 | 400 | `preview_size` / `preview_dimensions` / `preview_format` / `preview_unsupported` / `preview_animated` | 该图片不能预览；详情会在对应文件行给出具体 code 和说明，仍可继续人工审查 |
 | 400 | `preview_missing` / `preview_size` / `preview_dimensions` | 已声明公开预览但缺少固定 PNG、超过字节或尺寸门；本次上传不完成新登记，不会静默改成无图，已有投稿状态以重新查询为准。PNG 内容错误沿既有 `png_*` / `inflate_*` / `zlib_*` 码 |
-| 401 | `forum_auth_required` / `forum_auth_invalid` / `admin_auth_required` | 身份失败 |
+| 401 | `account_auth_required` / `account_auth_invalid` / `admin_auth_required` | 身份失败：缺少或不合形状的令牌 / GitHub 拒绝令牌 / 管理密钥不对 |
 | 404 | `not_found` | 无记录 / 非本人 / 非公开资源 |
 | 405 | `method_not_allowed` | 方法不支持 |
-| 409 | `forum_origin` | 作者请求缺少期望论坛断言，或断言与本次请求的配置 origin 不等；尚未向论坛请求身份 |
+| 409 | `account_origin` | 作者请求缺少 `X-Workshop-Account-Origin`，或它不是 `https://github.com`；尚未向 GitHub 请求身份 |
 | 409 | `request_id_reused` / `state_conflict` / `submission_state` / `report_state` / `version_rewritten` / `owner_conflict` / `version_withdrawn` | 并发、处理终态或不可变冲突，GET 重新核对 |
 | 413 | `body_too_large` | 大小超限 |
 | 415 | `content_type` | 需要 `application/json` 或 `application/zip` |
 | 422 | `size_mismatch` / `sha_mismatch` | 字节与 metadata 不同 |
 | 429 | `rate_limited` | 限流，带 `Retry-After` |
 | 503 | `upload_disabled` / `companion_disabled` | 紧急开关关闭 |
-| 503 | `forum_unavailable` / `forum_configuration` / `admin_unavailable` / `storage_unavailable` / `state_invalid` / `capacity` / `moc_policy_unavailable` / `inspection_page_size` | 服务或维护错误 |
+| 503 | `account_unavailable` / `admin_unavailable` / `storage_unavailable` / `state_invalid` / `capacity` / `moc_policy_unavailable` / `inspection_page_size` | 服务或维护错误 |
 
 提交超时不能证明未写入：用同一 `requestId` 重试创建，并 GET 原 submissionId 核对状态。CAS 冲突返回 409，孤立的私有 blob 不会成为已批准。分页是实时视图，不承诺并发写入时的快照一致性。moc 上限 6 依据仓库 `tooling/companion/fixtures/live2d-core-sources-v1.json` 保存的历史测量，不证明 Core 一致性、当前 runtime 身份或 GPU / 真机表现。

@@ -174,7 +174,7 @@ void main() {
       client = WorkshopClient(origin: workshopTestOrigin,
         cacheFile: File('${temporary.path}/catalog.json'), http: http);
       credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin,
-        forum: workshopTestForum, userApiKey: 'synthetic-preview-key', disclosureAccepted: true);
+        account: workshopTestAccount, token: 'synthetic_preview_token', disclosureAccepted: true);
     });
     tearDown(() => temporary.deleteSync(recursive: true));
 

@@ -2,6 +2,8 @@ package io.github.ouy09103.dsh_go_root.phone.a11y
 
 import io.github.ouy09103.dsh_go_root.phone.SensitiveWords
 
+import io.github.ouy09103.dsh_go_root.phone.SensitiveWords
+
 // A plain copy of the accessibility tree: what ScreenFormat needs and nothing
 // Android-typed, so the formatting rules run in a JVM test. TreeCapture
 // fills it from AccessibilityNodeInfo; tests build it by hand.

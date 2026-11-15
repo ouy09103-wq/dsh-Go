@@ -4,7 +4,7 @@
 // A form page (docs/design/page-design.md §1 D) that is a different step
 // depending on what the state layer says, in this order:
 //
-//   the workshop is not taking submissions → sign in to the forum →
+//   the workshop is not taking submissions → sign in with GitHub →
 //   the credential disclosure → is there an unfinished submission? →
 //   pick a source → fill in the form → look at what was packed, tick the
 //   rights box → sending → the result
@@ -24,7 +24,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../forum/forum_auth.dart';
 import '../../l10n/l10n.dart';
 import '../../state/attachments.dart' show formatBytes;
 import '../../state/workshop_auth_state.dart';
@@ -37,7 +36,6 @@ import '../common/brief_notice.dart';
 import '../common/discard_guard.dart';
 import '../common/empty_view.dart';
 import '../common/list_page_row.dart';
-import '../forum/forum_account_sheet.dart' show showForumAccountSheet;
 import '../settings/settings_widgets.dart' show SettingsSection;
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -46,6 +44,7 @@ import 'workshop_publish_form.dart';
 import 'workshop_publish_preview.dart';
 import 'workshop_publish_recovery.dart';
 import 'workshop_publish_text.dart';
+import 'workshop_sign_in.dart';
 import 'workshop_text.dart';
 import 'workshop_widgets.dart';
 
@@ -128,7 +127,7 @@ class _WorkshopPublishPageState extends ConsumerState<WorkshopPublishPage> {
       access.capabilities != null &&
       access.signedIn &&
       access.disclosureAccepted &&
-      access.forumUserId != null;
+      access.accountId != null;
 
   // Outside the provider's own notification: the check changes its state.
   void _scheduleRestore() => scheduleMicrotask(() {
@@ -171,18 +170,18 @@ class _WorkshopPublishPageState extends ConsumerState<WorkshopPublishPage> {
       _cover != null && identical(publish.source?.preview, _cover!.input) ? _cover : null;
 
   _Step _stepOf(WorkshopAccessState access, WorkshopPublishState publish) {
-    if (access.forumRestoring || access.loading && access.capabilities == null) return _Step.loading;
+    if (access.accountRestoring || access.loading && access.capabilities == null) return _Step.loading;
     final stale = access.error?.code == 'workshop_confirmation_stale';
     final reoffer = stale && access.disclosure != null && !access.disclosureAccepted;
     if (access.error != null && !reoffer) return _Step.unreachable;
     if (access.capabilities == null) return _Step.loading;
-    final known = access.signedIn && access.disclosureAccepted && access.forumUserId != null;
+    final known = access.signedIn && access.disclosureAccepted && access.accountId != null;
     // With uploads off there is no reason to sign in or consent; an account
     // already through both may still have something unfinished to look at.
     if (!access.uploadsEnabled && !known) return _Step.closed;
     if (!access.signedIn) return _Step.signIn;
     if (!access.disclosureAccepted) return access.disclosure == null ? _Step.loading : _Step.disclosure;
-    if (access.forumUserId == null) return _Step.profile;
+    if (access.accountId == null) return _Step.profile;
     if (!publish.pendingChecked) {
       final asked = identical(_restoreAsked, publish.session);
       return publish.working || !asked || access.loading ? _Step.loading : _Step.checkFailed;
@@ -362,12 +361,12 @@ class _WorkshopPublishPageState extends ConsumerState<WorkshopPublishPage> {
         );
       case _Step.signIn:
         return _Statement(
-          icon: AppIcons.forum,
+          icon: AppIcons.profile,
           title: l10n.workshopPublishSignInTitle,
           message: l10n.workshopPublishSignInMessage,
-          actionLabel: l10n.remoteForumSignIn,
-          // The forum's own sign-in; this page only waits for its outcome.
-          onAction: () => unawaited(showForumAccountSheet(context)),
+          actionLabel: l10n.workshopSignInTitle,
+          // The sign-in sheet's own flow; this page only waits for its outcome.
+          onAction: () => unawaited(showWorkshopSignInSheet(context)),
         );
       case _Step.disclosure:
         return WorkshopPublishFrame(
@@ -386,7 +385,7 @@ class _WorkshopPublishPageState extends ConsumerState<WorkshopPublishPage> {
           title: l10n.workshopPublishProfileTitle,
           message: l10n.workshopPublishProfileMessage,
           actionLabel: l10n.commonRetry,
-          onAction: () => unawaited(ref.read(forumAuthProvider.notifier).refreshUser()),
+          onAction: () => unawaited(ref.read(workshopAccessProvider.notifier).refresh()),
         );
       case _Step.checkFailed:
         final error = publish.error;

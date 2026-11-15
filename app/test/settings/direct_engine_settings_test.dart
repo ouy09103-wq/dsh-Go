@@ -36,10 +36,6 @@ class _Bridge extends RuntimeBridge {
   final tawcChanges = <bool>[];
   @override
   Future<void> setTawcEngine(bool enabled) async => tawcChanges.add(enabled);
-
-  final rootChanges = <bool>[];
-  @override
-  Future<void> setRootEngine(bool enabled) async => rootChanges.add(enabled);
 }
 
 void main() {
@@ -288,9 +284,7 @@ void main() {
   });
 
   SettingsSwitchTile tawcTile(WidgetTester tester) =>
-      tester.widget<SettingsSwitchTile>(find.byKey(const ValueKey('tawc-engine-switch')));
-  SettingsSwitchTile rootTile(WidgetTester tester) =>
-      tester.widget<SettingsSwitchTile>(find.byKey(const ValueKey('root-engine-switch')));
+      tester.widget<SettingsSwitchTile>(find.byType(SettingsSwitchTile).last);
 
   testWidgets('tawcroot switch is off by default and turns on through the bridge', (tester) async {
     final bridge = _Bridge();
@@ -298,10 +292,7 @@ void main() {
     final l10n = lookupL10n(AppLocale.zhCN);
     expect(tawcTile(tester).value, isFalse);
     expect(tawcTile(tester).subtitle, l10n.phoneTawcHint);
-    await tester.tap(find.descendant(
-      of: find.byKey(const ValueKey('tawc-engine-switch')),
-      matching: find.byType(Switch),
-    ));
+    await tester.tap(find.byType(Switch).last);
     await tester.pumpAndSettle();
     expect(bridge.tawcChanges, [true]);
     expect(bridge.changes, isEmpty);
@@ -323,49 +314,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(tawcTile(tester).subtitle, l10n.phoneTawcFailedHint);
     expect(tawcTile(tester).onChanged, isNotNull);
-  });
-
-  testWidgets('root switch is off by default, explains a device without su, then turns on', (tester) async {
-    final bridge = _Bridge();
-    final runtime = _Runtime(const RuntimeStatus(phase: RuntimePhase.installed));
-    await show(tester, runtime, bridge);
-    expect(rootTile(tester).value, isFalse);
-    expect(rootTile(tester).subtitle, contains('su'));
-    expect(rootTile(tester).onChanged, isNull);
-    runtime.update(const RuntimeStatus(phase: RuntimePhase.installed, rootEngineAvailable: true));
-    await tester.pumpAndSettle();
-    expect(rootTile(tester).onChanged, isNotNull);
-    await tester.tap(find.descendant(
-      of: find.byKey(const ValueKey('root-engine-switch')),
-      matching: find.byType(Switch),
-    ));
-    await tester.pumpAndSettle();
-    expect(bridge.rootChanges, [true]);
-    expect(bridge.changes, isEmpty);
-    expect(bridge.tawcChanges, isEmpty);
-  });
-
-  testWidgets('a root failure explains the root switch, not the direct one', (tester) async {
-    await show(
-      tester,
-      _Runtime(
-        const RuntimeStatus(
-          phase: RuntimePhase.installed,
-          directEngineAvailable: true,
-          tawcEngineAvailable: true,
-          rootEngineAvailable: true,
-          launchSelectedMode: 'proot',
-          launchSpawned: true,
-          directEngineFallbackReason: 'rootWrongDomain',
-        ),
-      ),
-      _Bridge(),
-    );
-    // Direct keeps its own hint: the reason belongs to the root switch.
-    expect(tile(tester).subtitle, lookupL10n(AppLocale.zhCN).phoneDirectHint);
-    expect(rootTile(tester).value, isFalse);
-    expect(rootTile(tester).onChanged, isNotNull);
-    expect(rootTile(tester).subtitle, contains('SELinux'));
   });
 
   for (final locale in AppLocale.supported) {

@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // What the WebRTC transport needs from a platform WebRTC stack, plus the
 // selected-path classification of upstream packages/webrtc/src/
 // rtc-data-channel.ts (inspectSelectedPath) and rtc-adapter.ts.

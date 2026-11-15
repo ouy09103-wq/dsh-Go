@@ -159,31 +159,51 @@ class _GroupCoordinator {
     if (ids.toSet().length != ids.length || ids.any((id) => id.isEmpty) || (hostCharacterId == null && ids.isEmpty)) {
       throw TavernGroupException(TavernGroupError.invalidMembers);
     }
-    final host = await _card(hostCharacterId ?? ids.first);
+    final hostId = hostCharacterId ?? ids.first;
+    final gameplayAdmission = _captureGameplayAdmission(
+      engine,
+      characterId: hostId,
+      newGroupCharacterIds: ids,
+      settings: const {},
+    );
+    final host = await _card(hostId);
     final resolvedTitle = title ?? host.card.name;
     _title(resolvedTitle);
     final cards = <String, StoredCharacter>{};
     for (final id in ids) {
       cards[id] = id == host.id ? host : await _card(id);
     }
-    // A deletion can be admitted while an earlier member read awaits I/O.
-    // The library queue keeps the files intact, and this final admission
-    // check keeps a half-created group out of that deletion's path.
+    final selection = engine._personas.resolve();
+    final settings = _personaSettings(engine._effectiveSettings(), selection);
+    final gameplay = gameplayAdmission.hasActivePacks
+        ? await _prepareGameplayRuntime(
+            engine,
+            gameplayAdmission,
+            hostData: host.card.data,
+            settings: settings,
+            capturedCards: {
+              host.id: host.card.data,
+              for (final entry in cards.entries) entry.key: entry.value.card.data,
+            },
+          )
+        : null;
+    // Keep the original resource gates after the final asynchronous preparation.
     if (engine._deletingCharacters.contains(host.id) || ids.any(engine._deletingCharacters.contains)) {
       throw TavernGroupException(TavernGroupError.characterNotFound);
     }
-    final selection = engine._personas.resolve();
     if (engine._deletingPersonas.contains(selection.persona?.id) ||
         engine._globalPresetUpdate ||
         engine._deletingPresets.contains(engine._resolvePreset().selection.effectivePresetId)) {
       throw StateError('Group creation resources are changing.');
     }
-    final settings = _personaSettings(engine._effectiveSettings(), selection);
     final variables = <String, Object?>{};
     final beforeGlobals = engine._globalVariables.revision;
     late final String id;
     try {
       id = engine._store.transaction(() {
+        if (!_gameplayAdmissionCurrent(engine, gameplayAdmission)) {
+          _gameplayCaptureConflict();
+        }
         final id = engine._store.createChat(characterId: host.id, title: resolvedTitle);
         final group = TavernGroupChat(
           chatId: id,
@@ -210,7 +230,15 @@ class _GroupCoordinator {
           'decoratorState': <String, Object?>{},
           'stChatId': id,
         };
-        _initializeDshState(_stateDefinition(host.card.data), state, settings['stateEnabled'] != false);
+        _initializeDshState(
+          gameplay?.state ?? _stateDefinition(host.card.data),
+          state,
+          settings['stateEnabled'] != false,
+          gameplay: gameplay,
+        );
+        if (gameplay != null && state['dshgoPackDefinitionConfigId'] == gameplay.effectiveConfigId) {
+          _ensureGameplayConfig(engine, gameplay);
+        }
         engine._store.setGroupInitialState(id, state);
         final history = <StoredNode>[];
         if (addGreetings) {
@@ -227,6 +255,12 @@ class _GroupCoordinator {
             }
             greeting = trimJsWhitespace(greeting);
             if (greeting.isEmpty) continue;
+            final gameplayResources = _resolveGameplayResources(
+              _GameplayResourceCapture.fromAdmission(gameplayAdmission),
+              settings,
+              actorId: member.characterId,
+              kinds: const {'regex'},
+            );
             final environment = _MacroEnvironment(
               data,
               settings,
@@ -242,6 +276,7 @@ class _GroupCoordinator {
               characterId: member.characterId,
               groupNames: view.names,
               groupNotMuted: view.enabledNames,
+              packRegex: gameplayResources.regex,
             );
             final text = environment
                 .expand(
@@ -416,19 +451,29 @@ class _GroupCoordinator {
           }
           if (speakerCharacterId != null) _member(group, speakerCharacterId);
           final metadata = engine._chatCodec.metadataForNode(engine._store, chatId);
+          final at = engine._clock();
+          final config = engine._config;
+          final settings = _personaSettings(engine._effectiveSettings(chat, metadata), persona);
+          final gameplayAdmission = _captureGameplayAdmission(
+            engine,
+            characterId: group.hostCharacterId,
+            chatId: chatId,
+            settings: settings,
+          );
           final round = _GroupRound(
             group,
             input,
             speakerCharacterId,
-            engine._clock(),
-            engine._config,
-            _personaSettings(engine._effectiveSettings(chat, metadata), persona),
+            at,
+            config,
+            settings,
             persona,
             preset.effectivePresetId,
             engine._directors.latestSuccess(chatId),
             engine._store.agentRunsByKind(chatId, const {'director.secret_proposal'}, limit: 1).firstOrNull,
             engine._directors._cardRevisions[group.hostCharacterId] ?? 0,
             _toolScope(engine, chat),
+            gameplayAdmission,
           );
           admitted = round;
           round.observers.add(controller);
@@ -513,6 +558,23 @@ class _GroupCoordinator {
       // Finish actual local reads before releasing a cancelled batch.
       round.view = await capture(round.group, checkCancelled: round.cancellation.check);
       round.cancellation.check();
+      final view = round.view!;
+      final saved = engine._stateAt(round.group.chatId, engine._store.chat(round.group.chatId).currentLeafId);
+      final referenced = saved.containsKey('dshgoPackDefinitionConfigId');
+      round.gameplay = round.gameplayAdmission.hasActivePacks || referenced
+          ? await _prepareGameplayRuntime(
+              engine,
+              round.gameplayAdmission,
+              hostData: view.host.card.data,
+              settings: round.settings,
+              force: referenced,
+              capturedCards: {
+                view.host.id: view.host.card.data,
+                for (final member in view.group.members) member.characterId: view.cards[member.characterId]?.card.data,
+              },
+            )
+          : null;
+      round.cancellation.check();
       final history = engine._historyTo(round.group.chatId, engine._store.chat(round.group.chatId).currentLeafId);
       round.planned.addAll(_select(round, history));
       round.remaining.addAll(round.planned);
@@ -549,6 +611,8 @@ class _GroupCoordinator {
           settingsOverride: round.settings,
           configOverride: config,
           cancellation: round.cancellation,
+          gameplayAdmission: round.gameplayAdmission,
+          gameplayOverride: round.gameplay,
         );
         round.userNodeId = message.nodeId;
         round.sent = engine._scripts.captureSent(round.group.chatId, message.nodeId);
@@ -586,6 +650,8 @@ class _GroupCoordinator {
           actorId: actorId,
           groupView: round.view,
           groupRound: round,
+          gameplayAdmission: round.gameplayAdmission,
+          gameplay: round.gameplay,
         );
         child.directorCaptured = round.directorCaptured;
         child.secretCaptured = _secretsEnabled(round.settings) ? round.secretCaptured : null;
@@ -632,6 +698,14 @@ class _GroupCoordinator {
         // Only a complete batch advances the chapter and automatic helper tick.
         last.state = engine._stateAt(last.chat.id, last.reply!.nodeId);
         last.variables = _runtimeCopy(_map(last.state['variables']));
+        last.gameplayPreviousConfig = _gameplayHistoricalConfig(engine, last.state).config;
+        final gameplayIssues = _gameplayValueIssues(
+          last.gameplay,
+          last.currentState,
+          previousConfig: last.gameplayPreviousConfig,
+        );
+        last.gameplayValueEligible = gameplayIssues.isEmpty;
+        last.statePreparationIssues.addAll(gameplayIssues);
         final story = _settleStoryTurn(engine, last, last.currentState);
         last.storyAttempt = story;
         if (story != null) engine._commitGroupStory(last, story);
@@ -797,6 +871,7 @@ class _GroupCoordinator {
         _effectiveCard(round.view!.host.card.data, round.settings),
         _directorPersona(round.persona, round.settings),
         history.lastOrNull?.message.nodeId,
+        gameplay: round.gameplay,
       );
       if (reason != null) {
         round.issues.add(_directorIssue(reason, id: saved.id));
@@ -916,6 +991,7 @@ class _GroupRound {
     this.secretCaptured,
     this.hostRevision,
     this.toolPolicyScope,
+    this.gameplayAdmission,
   );
   final TavernGroupChat group;
   final String input;
@@ -929,6 +1005,8 @@ class _GroupRound {
   final StoredAgentRun? secretCaptured;
   final int hostRevision;
   final TavernToolPolicySnapshot toolPolicyScope;
+  final _GameplayAdmission gameplayAdmission;
+  _GameplayRuntime? gameplay;
   final String id = 'group-${_newStateId()}';
   final cancellation = ModelCancellation();
   final done = Completer<void>();

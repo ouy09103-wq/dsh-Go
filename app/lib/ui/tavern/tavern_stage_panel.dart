@@ -38,6 +38,7 @@ import 'tavern_chat_files.dart';
 import 'tavern_inspector_page.dart';
 import 'tavern_lorebooks_page.dart';
 import 'tavern_message_edit_page.dart';
+import 'tavern_pack_bindings_page.dart';
 import 'tavern_model_rows.dart';
 import 'tavern_personas.dart';
 import 'tavern_presets_page.dart';
@@ -272,6 +273,19 @@ class _Session extends ConsumerWidget {
               sheetTitle: l10n.tavernLorebookForChat,
               note: l10n.tavernLorebookChatNote,
               enabled: !busy,
+            ),
+            SettingsTile(
+              key: const ValueKey('tavern-chat-packs'),
+              icon: AppIcons.zip,
+              tinted: false,
+              title: l10n.tavernPacks,
+              onTap: () => open(
+                TavernPackBindingsPage.route(
+                  (kind: TavernGameplayScope.chat, targetId: chatId),
+                  characterId: characterId,
+                  chatId: chatId,
+                ),
+              ),
             ),
           ],
         ),

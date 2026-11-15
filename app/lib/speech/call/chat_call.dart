@@ -9,6 +9,8 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/chat_state.dart';
+import '../../state/hosts_state.dart';
+import '../../state/notify_state.dart';
 import 'voice_call.dart';
 
 class ChatCallConversation implements CallConversation {
@@ -20,6 +22,7 @@ class ChatCallConversation implements CallConversation {
   final _replies = StreamController<CallReply>.broadcast();
   ProviderSubscription<ChatState>? _sub;
   String? _id;
+  bool _disposed = false;
 
   /// The assistant steps already there before the last send.
   Set<String> _before = const {};
@@ -47,16 +50,21 @@ class ChatCallConversation implements CallConversation {
     _sub?.close();
     _id = id;
     _sub = _container.listen<ChatState>(chatProvider(id), (_, next) => _changed(next));
+    // Its replies are heard here: no banner for them while the call is up.
+    _container.read(callChatProvider.notifier).set((host: _container.read(activeHostProvider), sessionId: id));
   }
 
   @override
   Future<bool> send(String text) async {
     final id = await _session();
-    if (id == null) return false;
+    // The call ended while its conversation was made: nothing to follow.
+    if (id == null || _disposed) return false;
     _follow(id);
     final chat = _container.read(chatProvider(id).notifier);
     var state = _container.read(chatProvider(id));
     if (!state.controlReady && !await chat.waitForSync()) return false;
+    // Hung up while the conversation caught up: it is not sent.
+    if (_disposed) return false;
     state = _container.read(chatProvider(id));
     _before = {
       for (final item in state.items)
@@ -75,6 +83,7 @@ class ChatCallConversation implements CallConversation {
       _tracking = false;
       return false;
     }
+    if (_disposed) return true;
     // A turn that never starts (sent while another one wraps up): give up waiting after a while.
     _idle?.cancel();
     _idle = Timer(const Duration(seconds: 90), () {
@@ -116,6 +125,7 @@ class ChatCallConversation implements CallConversation {
 
   @override
   void dispose() {
+    _disposed = true;
     _idle?.cancel();
     _sub?.close();
     _sub = null;

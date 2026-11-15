@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Client Control transport: the Server Control WebSocket, plus the
 // assigned Relay node data WebSocket when the Server offers one. With
 // `offerDirect` it also negotiates WebRTC and carries its signaling

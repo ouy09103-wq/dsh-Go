@@ -26,6 +26,14 @@
     <string name="overlay_list_separator">", "</string>
     <!-- The ball's screen-reader action that stops the task. -->
     <item type="id" name="overlay_action_stop" />
+    <!-- The capsule's screen-reader actions: where it rests (it can't be dragged by touch exploration), and folding. -->
+    <item type="id" name="overlay_action_left" />
+    <item type="id" name="overlay_action_centre" />
+    <item type="id" name="overlay_action_right" />
+    <item type="id" name="overlay_action_fold" />
+    <string name="overlay_move_left">Move to the left</string>
+    <string name="overlay_move_centre">Move to the middle</string>
+    <string name="overlay_move_right">Move to the right</string>
     <string name="overlay_preview_readonly">Background screen preview. View only.</string>
     <string name="overlay_preview_waiting">Waiting for the background screen…</string>
     <string name="overlay_preview_protected">Protected screen. Preview is hidden.</string>

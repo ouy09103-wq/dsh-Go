@@ -127,6 +127,7 @@ def rename_pass() -> list[str]:
     """全量把旧包名换成新包名：先挪路径，再改内容。"""
     files = [f.decode() for f in git("ls-files", "-z").stdout.split(b"\0") if f]
     moved = 0
+    merged_collisions = 0
     collisions: list[str] = []
     for f in files:
         if OLD_DIR not in f:
@@ -141,12 +142,38 @@ def rename_pass() -> list[str]:
                 git("rm", "-q", "-f", f)
                 moved += 1
                 continue
+            # 撞名：旧路径这份是上游/合并结果里的版本，target 是我们改名后的版本。
+            # 直接用三方合并把上游改动吃进 target，然后删掉旧路径这份 —— 两份都留会让
+            # 同名类出现重复声明，Kotlin 直接编译不过。
+            base = base_blob(f)
+            if base is None:
+                # 两边都是新增（上游在 merge-base 之后才加的文件）：取上游，与 resolve()
+                # 里 add/add 的处置一致。
+                with open(target, "wb") as fh:
+                    fh.write(norm(old))
+                git("add", "--", target)
+                git("rm", "-q", "-f", f)
+                merged_collisions += 1
+                print("  撞名 add/add 取上游:", f)
+                continue
+            clean, merged = merge_file(existing, norm(base), norm(old))
+            if clean:
+                with open(target, "wb") as fh:
+                    fh.write(merged)
+                git("add", "--", target)
+                git("rm", "-q", "-f", f)
+                merged_collisions += 1
+                print("  撞名已三方合并:", f)
+                continue
             collisions.append(f)
             continue
         os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
         git("mv", "-f", f, target)
         moved += 1
-    print(f"rename pass: 移动 {moved} 个路径，撞名 {len(collisions)} 个")
+    print(
+        f"rename pass: 移动 {moved} 个路径，撞名已合并 {merged_collisions} 个，"
+        f"仍撞名 {len(collisions)} 个"
+    )
     for f in collisions:
         print("  撞名:", f)
     touched = 0

@@ -43,6 +43,7 @@ import '../../pets/pet_state.dart';
 import '../../speech/speech_settings.dart';
 import '../../speech/voice_cloud.dart';
 import '../../state/app_mode_state.dart';
+import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
@@ -51,6 +52,7 @@ import '../../state/settings_state.dart';
 import '../../state/voice_model_state.dart';
 import '../../state/voice_settings.dart';
 import '../../state/voice_state.dart';
+import '../../usage/usage_stats.dart';
 import '../chat/voice/voice_controller.dart';
 import '../common/app_dialog.dart';
 import '../common/app_sheet.dart';
@@ -299,6 +301,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   @override
   void initState() {
     super.initState();
+    // Anonymous usage statistics: the room was opened once more.
+    ref.read(usageStatsProvider.notifier).count(UsageCount.room);
     _initiative = ref.read(companionInitiativeProvider);
     // How often she may speak up: the person's pick, followed as it changes.
     _initiative.pace = ref.read(companionInitiativePaceProvider);
@@ -1018,6 +1022,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         probe: probe,
         note: note,
         current: probe.adapted ? await companionAdapterRead(store.pack) : null,
+        onUsage: (input, output) {
+          if (mounted) ref.read(usageStatsProvider.notifier).tokens(input, output);
+        },
       );
       await companionAdapterWrite(store.pack, probe, adapter);
       if (!mounted) return;
@@ -1763,7 +1770,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (capability == null && !firstInline) _contextUnsupported();
       final profile = _contextProfile();
       final sent = await chat.send(
-        firstInline ? '（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}\n$raw' : raw,
+        firstInline ? '${appNote('（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}')}\n$raw' : raw,
         verbatim: true,
         beforeDeliver: capability == null || client == null
             ? null
@@ -2151,6 +2158,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
           system: companionLightSystem(memories, persona: _persona()),
           lines: history.context(),
           context: turnContext,
+          onUsage: (input, output) {
+            if (mounted) ref.read(usageStatsProvider.notifier).tokens(input, output);
+          },
         ).listen(
           (delta) {
             if (!mounted || turn != _lightTurn) return;

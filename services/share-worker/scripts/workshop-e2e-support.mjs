@@ -12,6 +12,9 @@ export const KEEP_ID = 'workshop-local-keep';
 export const COMPANION_ID = 'workshop-local-companion';
 export const DART_TEST = 'local Worker catalog installs and uninstalls through the real Dart stack';
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+export const ACCOUNT_ORIGIN = 'https://github.com';
+// Synthetic OAuth App id: shows the configured var reaching capabilities; no GitHub app exists.
+export const REHEARSAL_CLIENT_ID = 'Iv1.local_rehearsal';
 export const REHEARSAL_PREVIEW = { schema: 1, sources: ['pet-idle', 'companion-preview'], format: 'png',
   maxWidth: 512, maxHeight: 512, maxPixels: 262144, maxBytes: 2097152 };
 
@@ -56,8 +59,8 @@ export function parseJsonc(source) {
     .replace(/,(\s*[}\]])/g, '$1'));
 }
 
-export function localConfig(worker, original, forum, { uploads = true, companion = true, port }) {
-  loopbackOrigin(forum);
+export function localConfig(worker, original, githubApi, { uploads = true, companion = true, port }) {
+  loopbackOrigin(githubApi);
   // Copy only bindings used by the real entry point. No account, route,
   // cron, remote resource, analytics destination, or production URL is copied.
   return {
@@ -71,7 +74,7 @@ export function localConfig(worker, original, forum, { uploads = true, companion
     // The production burst is 5/minute. This protocol rehearsal is not a
     // rate-limit test; the unchanged per-owner create quota still applies.
     ratelimits: original.ratelimits.map(limit => ({ ...limit, simple: { ...limit.simple, limit: 1000 } })),
-    vars: { PET_MARKET_ENABLED: '0', WORKSHOP_FORUM_URL: forum,
+    vars: { PET_MARKET_ENABLED: '0', WORKSHOP_GITHUB_API_URL: githubApi, WORKSHOP_GITHUB_CLIENT_ID: REHEARSAL_CLIENT_ID,
       WORKSHOP_UPLOAD_ENABLED: uploads ? '1' : '0', WORKSHOP_COMPANION_ENABLED: companion ? '1' : '0',
       MAX_BYTES: '20971520', UPLOADS_PER_HOUR: '20', DOWNLOAD_ACCESS: 'public', DL_BASE_URL: '', CN_BASE_URL: '' },
     dev: { ip: '127.0.0.1', port, inspector_port: 0, local_protocol: 'https', enable_containers: false },
@@ -83,7 +86,7 @@ export function localEnvironment(parent, extra = {}) {
   const result = { ...parent };
   for (const key of Object.keys(result)) {
     if (/^(?:CLOUDFLARE_|CF_|WRANGLER_|DSH_WORKSHOP_E2E_)/i.test(key) ||
-      /^(?:ADMIN_KEY|USER_API_KEY|FORUM_API_KEY|GITHUB_TOKEN|GH_TOKEN|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|NODE_OPTIONS|NODE_TLS_REJECT_UNAUTHORIZED)$/i.test(key)) delete result[key];
+      /^(?:ADMIN_KEY|USER_API_KEY|GITHUB_TOKEN|GH_TOKEN|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|NODE_OPTIONS|NODE_TLS_REJECT_UNAUTHORIZED)$/i.test(key)) delete result[key];
   }
   return { ...result, CI: 'true', NO_COLOR: '1', DO_NOT_TRACK: '1',
     WRANGLER_SEND_METRICS: 'false', WRANGLER_HIDE_BANNER: 'true', WRANGLER_WRITE_LOGS: 'false',

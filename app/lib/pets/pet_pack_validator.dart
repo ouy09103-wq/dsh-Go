@@ -179,6 +179,15 @@ Map<String, Object?> _marketManifest(Map<String, Object?> input, PetPack pack) {
   _require(pack.scale > 0 && pack.scale <= 2147483647, 'market-scale');
   json['scale'] = pack.scale;
   json['pixelArt'] = pack.pixelArt;
+  if (pack.reactions.isNotEmpty) {
+    // Numbered names keep the normalized pack readable by older apps, which
+    // read only the plain first name of a reaction.
+    json['reactions'] = {
+      for (final entry in pack.reactions.entries)
+        for (final (index, name) in entry.value.indexed)
+          (index == 0 ? entry.key : '${entry.key}${index + 1}'): name,
+    };
+  }
   final canvas = json['canvas'] as Map<String, Object?>;
   for (final axis in ['w', 'h']) {
     final value = canvas[axis] as num;

@@ -17,20 +17,12 @@
     <string name="background_adb_not_paired">尚未完成无线调试配对</string>
     <string name="background_adb_disconnected">未连接本机 adbd，请在无线调试开启后重连</string>
     <string name="background_adb_invalid_port">请输入 1 到 65535 之间的端口</string>
-    <string name="background_unsupported">此系统不支持所需的受信虚拟屏（可能是 Android 15 QPR2）</string>
     <string name="background_off">未开启不打扰模式</string>
     <string name="background_requires_android">不打扰模式需要 Android 14 或更高版本</string>
     <string name="background_unknown_mode">未知模式</string>
     <string name="background_not_ready">特权通道未就绪</string>
     <string name="background_provider_mismatch">当前选择的是 %1$s 通道，但接口实际由 %2$s 提供。请改选 %2$s 并重新开启，或先恢复 %1$s 的服务。</string>
     <string name="background_no_response">特权通道未响应</string>
-    <string name="background_injection_denied">未能确认后台屏输入结果，请检查通道授权和设备支持情况</string>
-    <string name="background_input_window_not_ready">输入测试窗口未就绪，未发送测试点击</string>
-    <string name="background_input_unconfirmed">输入测试未在时限内收到完整的按下和抬起事件</string>
-    <string name="background_input_cancelled">输入测试已取消</string>
-    <string name="background_input_cleanup_failed">未能确认输入测试已清理，请重新连接特权通道后再试</string>
-    <string name="background_input_api_unavailable">这个系统没有可用的后台输入接口，请更新 App，或反馈机型和系统版本</string>
-    <string name="background_input_permission_denied">系统拒绝了后台输入，请检查通道授权；小米 / 红米需打开「USB 调试(安全设置)」</string>
     <!-- notify -->
     <string name="notify_decline">拒绝</string>
     <string name="notify_allow_once">允许本次</string>

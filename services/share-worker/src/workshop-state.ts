@@ -4,7 +4,7 @@ import type { Env } from './env';
 import { record } from './pet-catalog';
 import { readBounded } from './pet-market-io';
 import { strictJson } from './workshop-archive';
-import { assetUrl, encoder, hash, id, identity, kind, releaseId, requireWorkshop as need, sha256, validVersion, text, validMeta, validPreview, whole,
+import { assetUrl, encoder, EXPANDED_CAP, LEGACY_UPLOAD_CAP, UPLOAD_CAP, hash, id, identity, kind, releaseId, requireWorkshop as need, sha256, validVersion, text, validMeta, validPreview, whole,
   WorkshopError, type PublicPreview, type SubmissionMeta, type WorkshopKind } from './workshop-common';
 import type { PackSummary } from './workshop-pack';
 
@@ -13,7 +13,9 @@ export const STATE_CAP = 8 * 1024 * 1024;
 export const AUDIT_RETENTION_MS = 186 * 24 * 60 * 60 * 1000;
 export const STATUSES = ['draft', 'pending', 'approved', 'rejected', 'withdrawn'] as const;
 export type Status = typeof STATUSES[number];
-export interface Owner { forumOrigin: string; forumUserId: number; username: string }
+/// Authors are GitHub accounts; the origin is kept so a stored identity names its account system.
+export const ACCOUNT_ORIGIN = 'https://github.com';
+export interface Owner { accountOrigin: string; accountId: number; username: string }
 export interface Submission {
   submissionId: string; owner: Owner; metadata: SubmissionMeta; status: Status; createdAt: string; updatedAt: string;
   submittedAt?: string; validation?: PackSummary; preview?: PublicPreview;
@@ -37,13 +39,12 @@ export interface State {
 export interface Snapshot { etag: string | null; state: State }
 const timestamp = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const token = (v: unknown): v is string => typeof v === 'string' && v.length === 32 && /^[a-f0-9]{32}$/.test(v);
-export const sameOwner = (a: Owner, b: Owner) => a.forumOrigin === b.forumOrigin && a.forumUserId === b.forumUserId;
+export const sameOwner = (a: Owner, b: Owner) => a.accountOrigin === b.accountOrigin && a.accountId === b.accountId;
 function validOwner(v: unknown): v is Owner {
-  if (!record(v) || !whole(v.forumUserId, 1, Number.MAX_SAFE_INTEGER) || !text(v.username, 256) || !text(v.forumOrigin, 2048)) return false;
-  try { const url = new URL(v.forumOrigin); return url.protocol === 'https:' && url.origin === v.forumOrigin && !url.username && !url.password; } catch { return false; }
+  return record(v) && v.accountOrigin === ACCOUNT_ORIGIN && whole(v.accountId, 1, Number.MAX_SAFE_INTEGER) && text(v.username, 256);
 }
 function validSummary(v: unknown): v is PackSummary {
-  return record(v) && text(v.validator, 256) && whole(v.files, 1, 1000) && whole(v.expandedBytes, 1, 64 * 1024 * 1024) &&
+  return record(v) && text(v.validator, 256) && whole(v.files, 1, 1000) && whole(v.expandedBytes, 1, EXPANDED_CAP) &&
     (v.sheets === undefined || whole(v.sheets, 1, 64)) && (v.mocVersions === undefined || Array.isArray(v.mocVersions) && v.mocVersions.length > 0 && v.mocVersions.every(n => whole(n, 1, 6)));
 }
 function validSubmission(v: unknown): v is Submission {
@@ -72,7 +73,7 @@ function validateState(v: unknown): asserts v is State {
   const submissions = new Map<string, Submission>(), releases = new Map<string, Release>(), owners = new Map<string, Owner>(), withdrawn = new Set<string>();
   for (const s of v.submissions) { need(validSubmission(s) && !submissions.has(s.submissionId), 'state_invalid', 503); submissions.set(s.submissionId, s); }
   for (const r of v.releases) {
-    need(record(r) && kind(r.kind) && id(r.id) && validVersion(r.version) && hash(r.sha256) && whole(r.size, 1, 20 * 1024 * 1024) && validOwner(r.owner) && timestamp(r.approvedAt), 'state_invalid', 503);
+    need(record(r) && kind(r.kind) && id(r.id) && validVersion(r.version) && hash(r.sha256) && whole(r.size, 1, UPLOAD_CAP) && validOwner(r.owner) && timestamp(r.approvedAt), 'state_invalid', 503);
     const release = r as unknown as Release, key = releaseId(release), who = owners.get(identity(release));
     need(!releases.has(key) && (!who || sameOwner(who, release.owner)), 'state_invalid', 503); releases.set(key, release); owners.set(identity(release), release.owner);
   }
@@ -208,5 +209,8 @@ export function catalog(state: State, features: { uploads: boolean; companion: b
       const { rightsConfirmed: _, ...meta } = s.metadata;
       return { ...meta, ...(s.preview ? { preview: { ...s.preview } } : {}), url: assetUrl(s.metadata), blockedVersions: state.withdrawn.filter(w => identity(w) === identity(meta)).map(w => w.version).sort() };
     }).sort((a, b) => identity(a).localeCompare(identity(b)));
-  return { schema: 1, generatedAt: state.updatedAt, features, entries, withdrawn: state.withdrawn.filter(w => !onlyCompanions || w.kind === 'companion') };
+  // Over the old cap: in largeEntries, which apps from before it never read.
+  const large = entries.filter(e => e.size > LEGACY_UPLOAD_CAP);
+  return { schema: 1, generatedAt: state.updatedAt, features, entries: entries.filter(e => e.size <= LEGACY_UPLOAD_CAP),
+    ...(large.length ? { largeEntries: large } : {}), withdrawn: state.withdrawn.filter(w => !onlyCompanions || w.kind === 'companion') };
 }

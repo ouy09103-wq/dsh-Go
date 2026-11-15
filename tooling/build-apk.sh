@@ -104,8 +104,12 @@ if ((want_beta)) && [[ ! -s $beta_file ]]; then
   die "--beta needs a token file ($beta_file)"
 fi
 if ((want_beta)) && [[ $mode == release && -n $beta_file && -s $beta_file ]]; then
-  bits=$(stat -c %a "$beta_file")
-  [[ $bits == 600 || $bits == 400 ]] || die "$beta_file is mode $bits; chmod 600 it"
+  # Same rule as beta-keys.sh: Git Bash (MSYS) makes the mode up, so it is only checked elsewhere.
+  case "$(uname -s)" in
+    MINGW*|MSYS*) ;;
+    *) bits=$(stat -c %a "$beta_file")
+       [[ $bits == 600 || $bits == 400 ]] || die "$beta_file is mode $bits; chmod 600 it" ;;
+  esac
   beta=1
 fi
 
@@ -174,6 +178,10 @@ for i in "${!flavors[@]}"; do
   (cd "$APP" && eval "${commands[$i]}")
   apk="$OUT/app-$f-$mode.apk"
   [[ -f $apk ]] || die "$f: no APK at $apk"
+  # R8 renaming what ONNX Runtime's JNI looks up by name aborts the app when a call starts.
+  if [[ $mode == release ]]; then
+    python3 -I "$ROOT/tooling/check_apk_jni.py" "$apk" || die "$f: see proguard-rules.pro"
+  fi
   if [[ -n $aapt2 ]]; then
     badge=$("$aapt2" dump badging "$apk" 2>/dev/null | sed -n '/^package:/p' || true)
     [[ $badge == *"versionCode='$code'"* && $badge == *"versionName='$name'"* ]] ||

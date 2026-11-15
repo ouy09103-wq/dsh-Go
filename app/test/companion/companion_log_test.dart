@@ -1,6 +1,7 @@
 import 'package:dsh_app/companion/companion_light.dart';
 import 'package:dsh_app/companion/companion_reply.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
+import 'package:dsh_app/state/app_notes.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
 import 'package:dsh_app/ui/companion/companion_log.dart';
 import 'package:dsh_app/ui/theme/app_theme.dart';
@@ -43,6 +44,19 @@ void main() {
     expect(log[1].text, '我看一下。');
     expect(log[2].text, contains('cat today.md'));
     expect(log[2].code, isTrue);
+  });
+
+  test('her persona, sent inline to a host without her preset, is not a line of theirs', () {
+    final log = companionLogFromChat([
+      UserChatItem(
+        seq: 1,
+        time: DateTime(2026, 11, 14),
+        text: '${appNote('（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n你是小鲸。')}\n你好呀',
+        images: const [],
+        files: const [],
+      ),
+    ]);
+    expect(log, const [CompanionLogEntry.you('你好呀')]);
   });
 
   testWidgets('the log: names where the speaker changes, closed by its button', (tester) async {

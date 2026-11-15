@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: rewritten around a centre-anchored CustomScrollView (see
 // [ChatList]); the jump-to-bottom control is a chrome-glass circle.
 
@@ -16,6 +18,7 @@ import '../../l10n/l10n.dart';
 import '../../pets/pet_signals.dart' show petHeadroomProvider;
 import '../../plugins/native/native_surface.dart' show nativeTurnNoteProvider;
 import '../../state/agents_state.dart' show hostSessionsProvider, selectConversation;
+import '../../state/app_notes.dart';
 import '../../state/artifacts.dart';
 import '../../state/attachments.dart' show DraftAttachment;
 import '../../state/chat_reveal.dart';
@@ -1115,7 +1118,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     };
     final canAct = prompt.inboxId != null;
     return UserBubble(
-      text: prompt.text,
+      text: withoutAppNotes(prompt.text),
       attachments: prompt.attachments.isEmpty ? null : SentAttachments.pending(prompt.attachments),
       pendingLabel: prompt.failed ? appL10n.chatFailedSubmission : label,
       pendingIcon: prompt.failed ? AppIcons.error : icon,
@@ -1139,7 +1142,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     final connection = ref.listenManual(activeConnectionProvider.select((c) => c.value?.client), (_, next) {
       if (!identical(next, client)) retired = true;
     });
-    var text = prompt.text;
+    var text = withoutAppNotes(prompt.text);
     try {
       final edited = await showAppDialog<String>(
         context: context,
@@ -1151,7 +1154,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextFormField(
-                  initialValue: prompt.text,
+                  initialValue: text,
                   onChanged: (value) => text = value,
                   autofocus: true,
                   minLines: 2,
@@ -1176,7 +1179,9 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
           client?.mux.lastReadyGenerationNumber != readyNumber) {
         return;
       }
-      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, edited);
+      // Emptied: as before, nothing to send (the notes alone are not a message).
+      final retry = edited.trim().isEmpty ? edited : withAppNotesOf(prompt.text, edited);
+      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, retry);
     } finally {
       connection.close();
     }
@@ -1303,7 +1308,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     if (outcome == null || !mounted) return;
     final attached = item.images.isNotEmpty || item.files.isNotEmpty;
     _openFork(outcome, messenger, attached ? appL10n.chatOpenedInNewChatReattach : appL10n.chatOpenedInNewChat);
-    compose?.call(item.text);
+    compose?.call(withoutAppNotes(item.text));
   }
 
   /// Switches to the fork; the toast offers the way back.
@@ -1399,7 +1404,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     return switch (row) {
       UserRow(:final item) when dshUiReplyChip(item.text) != null => DshUiReplyChip(label: dshUiReplyChip(item.text)!),
       UserRow(:final item) => UserBubble(
-        text: item.text,
+        text: withoutAppNotes(item.text),
         attachments: item.images.isEmpty && item.files.isEmpty
             ? null
             : SentAttachments.echoed(sessionId: widget.sessionId, images: item.images, files: item.files),

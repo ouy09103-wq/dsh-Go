@@ -11,11 +11,6 @@ class ShizukuCapabilityRefreshTest : AndroidTestCase() {
         putInt(Proto.RELEASE_RECEIPT, 1)
         putInt(Proto.OWNER_SCOPE_VERSION, 1); putInt(Proto.SCOPE_LIMIT, 3)
         putInt(Proto.TARGET_IDENTITY_VERSION, 1)
-        putInt(Proto.RESOURCE_RECOVERY_VERSION, 1)
-        putString(Proto.RECOVERY_PEER, "10000000-0000-0000-0000-000000000001")
-        putString(Proto.RECOVERY_BOOT, "20000000-0000-0000-0000-000000000001")
-        putInt(Proto.RECOVERY_PID, 42); putInt(Proto.RECOVERY_UID, 2000)
-        putLong(Proto.RECOVERY_PID_NS_DEV, 7L); putLong(Proto.RECOVERY_PID_NS_INO, 9L)
     }
 
     private class Remote(var reply: Bundle, private val peer: String?) : IPrivilegedDisplay.Stub() {

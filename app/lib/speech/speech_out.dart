@@ -121,8 +121,13 @@ String speakable(String markdown) {
 final _sentenceEnd = RegExp(r'[。！？!?…~～；;\n]+|[.](?=\s)');
 final _pause = RegExp(r'[，,、：:）)」』]');
 
+/// Where the first piece may end before its sentence does: a comma or a colon
+/// (an ASCII one only before a space, so 1,000 and 3:30 stay whole).
+final _firstPause = RegExp(r'[，、：；]|[,:](?=\s)');
+
 /// Cuts text arriving in pieces into what can be spoken: whole sentences,
-/// the first one short (to start soon), later ones grouped up to [target].
+/// the first one short (to start soon: it may end at a comma once it has
+/// [first] characters), later ones grouped up to [target].
 class SpeechChunker {
   SpeechChunker({this.first = 8, this.target = 120, this.max = 300});
 
@@ -142,6 +147,11 @@ class SpeechChunker {
       final want = _given == 0 ? first : target;
       // The first sentence end once there is enough to say.
       int? cut = _sentenceEnd.allMatches(rest).where((m) => m.end >= want).firstOrNull?.end;
+      // The very first piece goes at a comma already: her voice starts sooner.
+      if (_given == 0) {
+        final pause = _firstPause.allMatches(rest).where((m) => m.end >= want).firstOrNull?.end;
+        if (pause != null && (cut == null || pause < cut)) cut = pause;
+      }
       if (cut != null && cut > max) cut = null;
       if (cut == null && rest.length >= max) {
         // Too long without an end: the last sentence end or pause before max, else max.
@@ -221,9 +231,21 @@ int _streams = 0;
 /// DeepSeek's voice, streamed into one native PCM stream. [call] plays it as
 /// the voice of a call; [levels] reports its loudness.
 class DeepSeekOut implements SpeechOut {
-  DeepSeekOut(this._resolve, this._audio, {this.voice = 'stella', this.call = false, this.levels = false}) {
+  DeepSeekOut(
+    this._resolve,
+    this._audio, {
+    this.voice = 'stella',
+    this.call = false,
+    this.levels = false,
+    DeepSeekSpeechFailure Function()? gap,
+  }) : _gap = gap ?? _noCredential {
     _sub = _audio.events.listen(_heard);
   }
+
+  /// What to say when nobody can pay ([deepSeekSpeechGapProvider]).
+  final DeepSeekSpeechFailure Function() _gap;
+
+  static DeepSeekSpeechFailure _noCredential() => DeepSeekSpeechFailure.noCredential;
 
   final DeepSeekSpeechResolver _resolve;
   final SpeechAudio _audio;
@@ -302,7 +324,7 @@ class DeepSeekOut implements SpeechOut {
     if (_stopped) return;
     if (speech == null) {
       piece
-        ..error = const DeepSeekSpeechError(DeepSeekSpeechFailure.noCredential)
+        ..error = DeepSeekSpeechError(_gap())
         ..done = true
         .._signal();
       return;
@@ -633,9 +655,10 @@ SpeechOut speechOutFor(
   required CompanionSpeaker speaker,
   bool call = false,
   bool levels = false,
+  DeepSeekSpeechFailure Function()? gap,
 }) {
   if (settings.source == CompanionVoiceSource.deepseek) {
-    return DeepSeekOut(deepseek, audio, voice: settings.deepseekVoice, call: call, levels: levels);
+    return DeepSeekOut(deepseek, audio, voice: settings.deepseekVoice, call: call, levels: levels, gap: gap);
   }
   speaker.settings = settings;
   return SpeakerOut(speaker, onPlaying: call ? (on) => unawaited(audio.playing(on)) : null);

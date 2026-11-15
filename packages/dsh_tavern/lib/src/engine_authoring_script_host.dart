@@ -16,6 +16,7 @@ final class _AuthoringScriptWorkspace {
     required this.groupInitial,
     required this.liveLocal,
     required this.rawHostData,
+    required this.prospectiveGameplay,
     required this.settingsForMetadata,
     required _AuthoringScriptNode Function(String)? readNode,
   }) : path = currentPath,
@@ -30,6 +31,7 @@ final class _AuthoringScriptWorkspace {
   Map<String, Object?> groupInitial;
   ({String? leaf, Map<String, Object?> values})? liveLocal;
   final Map<String, Object?> rawHostData;
+  final _GameplayRuntime? prospectiveGameplay;
   final Map<String, Object?> Function(StoredChat, Map<String, Object?>) settingsForMetadata;
   _AuthoringScriptNode Function(String)? _readNode;
   final nodes = <String, _AuthoringScriptNode>{};
@@ -232,13 +234,18 @@ final class _AuthoringScriptWorkspace {
       case TavernVariableScope.message:
         final id = target.messageRef!.nodeId;
         final old = node(id);
+        final gameplay = turn.gameplayAdmission!.hasActivePacks || old.state.containsKey('dshgoPackDefinitionConfigId')
+            ? prospectiveGameplay
+            : null;
         final context = _ScriptDataContext(
           chat.id,
           chat.characterId,
           0,
           rawHostData,
-          _stateDefinition(rawHostData),
+          gameplay?.state ?? _stateDefinition(rawHostData),
           settingsForMetadata(chat, metadataFor(chat.currentLeafId)),
+          gameplay: gameplay,
+          gameplayAdmission: turn.gameplayAdmission,
         );
         final prepared = _prepareScriptMessageData(
           context,

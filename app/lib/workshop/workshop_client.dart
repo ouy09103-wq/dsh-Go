@@ -12,16 +12,16 @@ import 'workshop_http.dart';
 import 'workshop_models.dart';
 
 /// This does not obtain consent. The UI constructs it only after explaining
-/// which Worker will receive this account's key and obtaining confirmation.
-/// Neither this class nor WorkshopClient serializes or stores the credential.
+/// which Worker will receive this account's GitHub token and obtaining
+/// confirmation. Neither this class nor WorkshopClient serializes or stores it.
 class WorkshopCredential {
-  WorkshopCredential.forConsentedWorker({required Uri worker, required Uri forum, required String userApiKey, required bool disclosureAccepted})
-    : worker = workshopOrigin(worker), forum = workshopOrigin(forum), _key = userApiKey {
+  WorkshopCredential.forConsentedWorker({required Uri worker, required Uri account, required String token, required bool disclosureAccepted})
+    : worker = workshopOrigin(worker), account = workshopOrigin(account), _token = token {
     if (!disclosureAccepted) workshopInvalid('workshop_consent_required');
-    if (!RegExp(r'^[!-~]{1,512}$').hasMatch(userApiKey)) workshopInvalid('workshop_forum_auth_required');
+    if (!RegExp(r'^[A-Za-z0-9_]{1,255}$').hasMatch(token)) workshopInvalid('workshop_account_auth_required');
   }
-  final Uri worker, forum;
-  final String _key;
+  final Uri worker, account;
+  final String _token;
   @override
   String toString() => 'WorkshopCredential(redacted)';
 }
@@ -201,8 +201,8 @@ class WorkshopClient {
   Future<Map<String, String>> _identity(WorkshopCredential credential, {WorkshopCapabilities? capabilities}) async {
     if (credential.worker != origin) workshopInvalid('workshop_consent_required');
     final caps = capabilities ?? await this.capabilities();
-    if (caps.forumOrigin != credential.forum) workshopInvalid('workshop_forum_origin');
-    return {'User-Api-Key': credential._key, 'X-Workshop-Forum-Origin': credential.forum.toString()};
+    if (caps.account.origin != credential.account) workshopInvalid('workshop_account_origin');
+    return {'Authorization': 'Bearer ${credential._token}', 'X-Workshop-Account-Origin': credential.account.toString()};
   }
 
   Future<Object?> _json(String method, String path, {Map<String, String> headers = const {}, Object? body,
@@ -224,7 +224,7 @@ class WorkshopClient {
 
   WorkshopSubmission _submission(Object? json, WorkshopCredential credential) {
     final result = WorkshopSubmission.fromJson(workshopMap(json)['submission']);
-    if (result.ownerOrigin != credential.forum) workshopInvalid();
+    if (result.ownerOrigin != credential.account) workshopInvalid();
     return result;
   }
 
@@ -277,7 +277,7 @@ class WorkshopClient {
     final rows = map['submissions'], next = map['nextCursor'];
     if (rows is! List || rows.length > limit || next != null && (next is! String || !RegExp(r'^[a-f0-9]{32}$').hasMatch(next))) workshopInvalid();
     final parsed = rows.map(WorkshopSubmission.fromJson).toList();
-    if (parsed.any((s) => s.ownerOrigin != credential.forum)) workshopInvalid();
+    if (parsed.any((s) => s.ownerOrigin != credential.account)) workshopInvalid();
     return WorkshopSubmissionPage(List.unmodifiable(parsed), next as String?);
   }
 

@@ -5,7 +5,7 @@ import { makeEnv } from './fakes';
 import { PetBucket } from './pet-market-fakes';
 import { metaFor, pet } from './workshop-fixtures';
 
-const now = '2026-11-12T00:00:00.000Z', owner = { forumOrigin: 'https://forum.dshtui.com', forumUserId: 42, username: 'Synthetic owner' };
+const now = '2026-11-12T00:00:00.000Z', owner = { accountOrigin: 'https://github.com', accountId: 42, username: 'Synthetic owner' };
 function context() { const bucket = new PetBucket(); return { bucket, env: makeEnv({ BUCKET: bucket as unknown as R2Bucket }).env }; }
 function published(state: State) {
   const submission = { submissionId: 'a'.repeat(32), owner, metadata: metaFor(pet()), status: 'pending' as const,

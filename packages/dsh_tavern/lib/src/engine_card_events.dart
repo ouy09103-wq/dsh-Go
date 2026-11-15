@@ -1,6 +1,7 @@
 part of 'engine.dart';
 
 const _cardEventRuntimeKey = 'dshgoDirectorEventRuntime';
+typedef _CardEventPrepared = ({_DirectorPrepared run, Map<String, state_core.StateEventTarget>? targets});
 
 state_core.CardEventDefinition _cardEventDefinition(Map<String, Object?> data) {
   final own = _map(_map(data['extensions'])['dshgo']);
@@ -12,9 +13,18 @@ state_core.CardEventDefinition _cardEventDefinition(Map<String, Object?> data) {
 
 /// This records the fixed card vocabulary seen by this helper. It does not
 /// enable automatic execution: the main turn must still pass its current gate.
-Map<String, Object?>? _cardEventCapability(Map<String, Object?> data, Map<String, Object?> settings) {
-  final definition = _cardEventDefinition(data);
-  if (!definition.executable) return null;
+Map<String, Object?>? _cardEventCapability(
+  Map<String, Object?> data,
+  Map<String, Object?> settings, {
+  _GameplayRuntime? gameplay,
+}) {
+  final definition = gameplay?.events ?? _cardEventDefinition(data);
+  if (!definition.executable) {
+    return null;
+  }
+  if (gameplay != null) {
+    return _gameplayEventCapability(gameplay, settings);
+  }
   final state = _stateDefinition(data);
   return {
     'version': 1,
@@ -30,16 +40,16 @@ Map<String, Object?>? _cardEventSnapshot(
   TavernEngine engine,
   StoredChat chat,
   Map<String, Object?> data,
-  Map<String, Object?> settings,
-) {
-  final definition = _cardEventDefinition(data);
+  Map<String, Object?> settings, {
+  _GameplayRuntime? gameplay,
+}) {
+  final definition = gameplay?.events ?? _cardEventDefinition(data);
   final leaf = chat.currentLeafId;
   final saved = leaf == null ? <String, Object?>{} : engine._stateAt(chat.id, leaf);
-  if (!definition.defined && !saved.containsKey(_cardEventRuntimeKey)) return null;
-  final snapshot = definition.inspect(
-    runtimeExists: saved.containsKey(_cardEventRuntimeKey),
-    runtime: saved[_cardEventRuntimeKey],
-  );
+  if (!definition.defined && !saved.containsKey(_cardEventRuntimeKey) && !_hasGameplayEventRuntime(saved, gameplay)) {
+    return null;
+  }
+  final snapshot = _inspectGameplayEvents(definition, saved, gameplay);
   final own = leaf == null ? <String, Object?>{} : _map(engine._store.node(chat.id, leaf).extra['dshgo']);
   return {
     ...snapshot.toJson(),
@@ -48,6 +58,15 @@ Map<String, Object?>? _cardEventSnapshot(
     'receipts': _stateRows(own['directorEventReceipts']),
     'effects': _stateRows(own['directorEventEffects']),
     'pendingConsumed': _strings(own['directorEventPendingConsumed']),
+    if (gameplay != null) ...{
+      'effectiveConfigId': gameplay.effectiveConfigId,
+      'packPendingConsumed': _stateRows(own['directorEventPackPendingConsumed']),
+      'packPendingPrompts': [
+        if (snapshot.valid)
+          for (final row in _gameplayPendingEventPrompts(snapshot.packRuntime, gameplay))
+            {..._gameplayEventPromptRefJson(row.ref), 'prompt': row.prompt},
+      ],
+    },
     'issues': [...snapshot.issues, ..._stateRows(own['directorEventIssues'])],
   };
 }
@@ -57,11 +76,11 @@ void _prepareCardEventTurn(TavernEngine engine, _Turn turn, Map<String, Object?>
   if (prepared == null) {
     return;
   }
-  final events = prepared.output!.events;
+  final events = prepared.run.output!.events;
   for (var index = 0; index < events.length; index++) {
-    final id = '${prepared.stored.id}:event:$index';
+    final id = '${prepared.run.stored.id}:event:$index';
     final proposal = engine._store.agentRunById(turn.chat.id, id);
-    _prepareCardEventProposal(turn, prepared.stored, index, events[index], proposal);
+    _prepareCardEventProposal(turn, prepared.run.stored, index, events[index], proposal, targets: prepared.targets);
   }
 }
 
@@ -70,31 +89,32 @@ void _prepareCardEventTurnFromFacts(_Turn turn, Map<String, Object?> data, Map<S
   if (prepared == null) {
     return;
   }
-  final events = prepared.output!.events;
+  final events = prepared.run.output!.events;
   for (var index = 0; index < events.length; index++) {
     _prepareCardEventProposal(
       turn,
-      prepared.stored,
+      prepared.run.stored,
       index,
       events[index],
-      proposals['${prepared.stored.id}:event:$index'],
+      proposals['${prepared.run.stored.id}:event:$index'],
+      targets: prepared.targets,
     );
   }
 }
 
-_DirectorPrepared? _prepareCardEventCapability(_Turn turn, Map<String, Object?> data) {
+_CardEventPrepared? _prepareCardEventCapability(_Turn turn, Map<String, Object?> data) {
   if (turn.kind == _TurnKind.impersonate) {
     return null;
   }
-  final definition = _cardEventDefinition(data);
-  if (!definition.defined && !turn.state.containsKey(_cardEventRuntimeKey)) {
+  final gameplay = turn.gameplay;
+  final definition = gameplay?.events ?? _cardEventDefinition(data);
+  if (!definition.defined &&
+      !turn.state.containsKey(_cardEventRuntimeKey) &&
+      !_hasGameplayEventRuntime(turn.state, gameplay)) {
     return null;
   }
   turn.cardEventDefinition = definition;
-  final snapshot = definition.inspect(
-    runtimeExists: turn.state.containsKey(_cardEventRuntimeKey),
-    runtime: turn.state[_cardEventRuntimeKey],
-  );
+  final snapshot = _inspectGameplayEvents(definition, turn.state, gameplay);
   turn.cardEventPreparationIssues.addAll(snapshot.issues);
   final prepared = turn.directorPrepared;
   if (prepared == null || !prepared.eligible || prepared.output == null) {
@@ -102,19 +122,26 @@ _DirectorPrepared? _prepareCardEventCapability(_Turn turn, Map<String, Object?> 
   }
   final stored = prepared.stored;
   final capability = stored.result['eventCapability'];
-  final state = _stateDefinition(data);
+  final state = gameplay?.state ?? _stateDefinition(data);
+  final targets = gameplay == null ? null : _gameplayEventWireTargets(gameplay);
   if (capability is! Map<String, Object?> ||
-      capability['version'] != 1 ||
-      capability['mode'] != 'literal' ||
       !definition.executable ||
-      capability['registryFingerprint'] != definition.fingerprint ||
-      !capability.containsKey('stateDefinitionFingerprint') ||
-      capability['stateDefinitionFingerprint'] != (state.hasSchema ? state.fingerprint : null) ||
-      !_stateJsonEqual(capability['handlerIds'], definition.handlerIds)) {
+      (gameplay == null
+          ? capability['version'] != 1 ||
+                capability['mode'] != 'literal' ||
+                capability['registryFingerprint'] != definition.fingerprint ||
+                !capability.containsKey('stateDefinitionFingerprint') ||
+                capability['stateDefinitionFingerprint'] != (state.hasSchema ? state.fingerprint : null) ||
+                !_stateJsonEqual(capability['handlerIds'], definition.handlerIds)
+          : !_gameplayEventCapabilityMatches(capability, gameplay, targets!))) {
     turn.cardEventPreparationIssues.add(_directorIssue('director_event_capability_unavailable', id: stored.id));
     return null;
   }
-  turn.cardEventAuthorizedHandlers.addAll(definition.handlerIds);
+  if (gameplay == null) {
+    turn.cardEventAuthorizedHandlers.addAll(definition.handlerIds);
+  } else {
+    turn.cardEventAuthorizedHandlerRefs.addAll(definition.handlerRefs);
+  }
   turn.cardEventSource = {
     'runId': stored.id,
     'sourceKind': stored.result['sourceKind'],
@@ -122,7 +149,7 @@ _DirectorPrepared? _prepareCardEventCapability(_Turn turn, Map<String, Object?> 
     'sourceFingerprint': stored.result['sourceFingerprint'],
     'capability': _copy(capability),
   };
-  return prepared;
+  return (run: prepared, targets: targets);
 }
 
 void _prepareCardEventProposal(
@@ -130,8 +157,9 @@ void _prepareCardEventProposal(
   StoredAgentRun stored,
   int index,
   Map<String, Object?> event,
-  StoredAgentRun? proposal,
-) {
+  StoredAgentRun? proposal, {
+  Map<String, state_core.StateEventTarget>? targets,
+}) {
   final id = '${stored.id}:event:$index';
   final raw = proposal?.result;
   final decoded = proposal == null ? null : _directorEvent(proposal);
@@ -153,8 +181,26 @@ void _prepareCardEventProposal(
     turn.cardEventPreparationIssues.add(_directorIssue('director_event_proposal_unavailable', id: id));
     return;
   }
+  var target = (source: const state_core.StateExecutionSource.legacy(), name: decoded.name!);
+  if (targets != null) {
+    final expected = _gameplayPersistedEventTarget(
+      stored.result['eventCapability']! as Map<String, Object?>,
+      decoded.name!,
+    );
+    if (!_stateJsonEqual(raw['eventTarget'], expected)) {
+      turn.cardEventPreparationIssues.add(_directorIssue('director_event_proposal_unavailable', id: id));
+      return;
+    }
+    target = targets[decoded.name] ?? target;
+  }
   turn.cardEventProposals.add(
-    state_core.CardEventProposal(eventId: id, runId: stored.id, name: decoded.name!, data: decoded.data!),
+    state_core.CardEventProposal(
+      eventId: id,
+      runId: stored.id,
+      source: target.source,
+      name: target.name,
+      data: decoded.data!,
+    ),
   );
 }
 
@@ -163,12 +209,11 @@ List<PromptInjection> _cardEventTurnInjections(_Turn turn) {
   if (definition == null || _map(turn.settings['director'])['enabled'] != true || turn.kind == _TurnKind.impersonate) {
     return [];
   }
-  final snapshot = definition.inspect(
-    runtimeExists: turn.state.containsKey(_cardEventRuntimeKey),
-    runtime: turn.state[_cardEventRuntimeKey],
-  );
+  final snapshot = _inspectGameplayEvents(definition, turn.state, turn.gameplay);
   // Validate the entire ledger, not just plausible-looking prompt rows.
-  if (!snapshot.valid) return [];
+  if (!snapshot.valid) {
+    return [];
+  }
   final injections = <PromptInjection>[];
   for (final prompt in snapshot.pendingPrompts) {
     final id = prompt['id']! as String;
@@ -187,18 +232,42 @@ List<PromptInjection> _cardEventTurnInjections(_Turn turn) {
       ),
     );
   }
+  for (final row in _gameplayPendingEventPrompts(snapshot.packRuntime, turn.gameplay)) {
+    final sourceId = 'dshgo.gameplay.event.prompt:${_directorHash(_gameplayEventPromptRefJson(row.ref))}';
+    turn.cardEventOfferedPackPrompts[sourceId] = row.ref;
+    injections.add(
+      PromptInjection(
+        fragment: PromptFragment(
+          row.prompt['text']! as String,
+          PromptSource('directorEventPrompt', sourceId, label: '事件提示'),
+          trimOnOverflow: true,
+          expandMacros: false,
+        ),
+        depth: 1,
+        order: 202,
+      ),
+    );
+  }
   return injections;
 }
 
 void _captureCardEventAssembly(_Turn turn, PromptAssembly assembly) {
-  if (turn.cardEventOfferedPrompts.isEmpty) return;
+  if (turn.cardEventOfferedPrompts.isEmpty && turn.cardEventOfferedPackPrompts.isEmpty) {
+    return;
+  }
   for (final segment in assembly.afterPostProcessing) {
     final content = segment.message['content'];
-    if (content is! String || content.trim().isEmpty) continue;
+    if (content is! String || content.trim().isEmpty) {
+      continue;
+    }
     for (final source in segment.sources) {
       final ledgerId = turn.cardEventOfferedPrompts[source.id];
       if (source.kind == 'directorEventPrompt' && ledgerId != null) {
         turn.cardEventSentPrompts.add(ledgerId);
+      }
+      final packRef = turn.cardEventOfferedPackPrompts[source.id];
+      if (source.kind == 'directorEventPrompt' && packRef != null) {
+        turn.cardEventSentPackPrompts.add(packRef);
       }
     }
   }
@@ -212,23 +281,53 @@ state_core.CardEventInvocation? _cardEventInvocation(
   required bool sharedSession,
 }) {
   final definition = turn.cardEventDefinition;
-  if (definition == null) return null;
+  if (definition == null) {
+    return null;
+  }
   final settings = engine._effectiveSettings(engine._store.chat(turn.chat.id));
   turn.cardEventTerminalEnabled = _map(settings['director'])['enabled'] == true;
   final secretReason = _secretDirectorTurnReason(engine, turn, before);
-  if (secretReason != null) turn.cardEventPreparationIssues.add(_directorIssue(secretReason));
+  if (secretReason != null) {
+    turn.cardEventPreparationIssues.add(_directorIssue(secretReason));
+  }
   final invocation = turn.cardEventInvocationId ??= turn.stateInvocationId ?? _newStateId();
+  if (turn.gameplay != null) {
+    return state_core.CardEventInvocation.composed(
+      definition: definition,
+      invocationId: invocation,
+      capabilityFingerprint: definition.fingerprint,
+      authorizedHandlers: normal && turn.cardEventTerminalEnabled && secretReason == null && turn.gameplayValueEligible
+          ? turn.cardEventAuthorizedHandlerRefs
+          : const [],
+      proposals: turn.cardEventProposals,
+      runtimeExists: before.containsKey(_cardEventRuntimeKey),
+      runtime: before[_cardEventRuntimeKey],
+      packRuntimeExists: before.containsKey(_gameplayEventRuntimeKey),
+      packRuntime: before[_gameplayEventRuntimeKey],
+      stateActionAllowed:
+          normal &&
+          turn.cardEventTerminalEnabled &&
+          sharedSession &&
+          turn.gameplayValueEligible &&
+          settings['stateEnabled'] != false,
+    );
+  }
   return state_core.CardEventInvocation(
     definition: definition,
     invocationId: invocation,
     capabilityFingerprint: definition.fingerprint,
-    authorizedHandlerIds: normal && turn.cardEventTerminalEnabled && secretReason == null
+    authorizedHandlerIds: normal && turn.cardEventTerminalEnabled && secretReason == null && turn.gameplayValueEligible
         ? turn.cardEventAuthorizedHandlers
         : const [],
     proposals: turn.cardEventProposals,
     runtimeExists: before.containsKey(_cardEventRuntimeKey),
     runtime: before[_cardEventRuntimeKey],
-    stateActionAllowed: normal && turn.cardEventTerminalEnabled && sharedSession && settings['stateEnabled'] != false,
+    stateActionAllowed:
+        normal &&
+        turn.cardEventTerminalEnabled &&
+        sharedSession &&
+        turn.gameplayValueEligible &&
+        settings['stateEnabled'] != false,
   );
 }
 
@@ -258,33 +357,44 @@ _CardEventSettlement? _finishCardEventTurn(
   List<Map<String, Object?>> effects, {
   required bool normal,
   required bool sharedStateAccepted,
+  bool sharedSession = false,
   List<Map<String, Object?>> conditionIssues = const [],
 }) {
   final definition = turn.cardEventDefinition;
-  if (definition == null) return null;
+  if (definition == null) {
+    return null;
+  }
   final invocation = turn.cardEventInvocationId ??= turn.stateInvocationId ?? _newStateId();
   final accepted = normal && sharedStateAccepted && candidate != null && candidate.valid ? candidate : null;
-  final snapshot = definition.inspect(
-    runtimeExists: before.containsKey(_cardEventRuntimeKey),
-    runtime: before[_cardEventRuntimeKey],
-  );
+  final snapshot = _inspectGameplayEvents(definition, before, turn.gameplay);
   final consumed = normal && snapshot.valid
       ? {
           for (final prompt in snapshot.pendingPrompts)
             if (turn.cardEventSentPrompts.contains(prompt['id'])) prompt['id']! as String,
         }
       : <String>{};
+  final packConsumed = normal && snapshot.valid
+      ? {
+          for (final row in _gameplayPendingEventPrompts(snapshot.packRuntime, turn.gameplay))
+            if (turn.cardEventSentPackPrompts.contains(row.ref)) row.ref,
+        }
+      : <_GameplayEventPromptRef>{};
   final eventEffects = accepted == null
       ? <Map<String, Object?>>[]
       : effects.where((effect) => effect['source'] == 'directorEvent').toList();
   final next = _copy(stateAfter);
+  if (turn.gameplay != null && accepted != null && accepted.packRuntimeExists) {
+    next[_gameplayEventRuntimeKey] = accepted.packRuntime;
+  }
   final acceptedRuntime = accepted != null && accepted.runtimeExists ? accepted.runtime : null;
   Map<String, Object?>? runtime = acceptedRuntime is Map<String, Object?>
       ? _copy(acceptedRuntime)
       : snapshot.valid && before[_cardEventRuntimeKey] is Map<String, Object?>
       ? _copy(before[_cardEventRuntimeKey]! as Map<String, Object?>)
       : null;
-  final prompts = eventEffects.where((effect) => effect['type'] == 'prompt').toList();
+  final prompts = eventEffects
+      .where((effect) => effect['type'] == 'prompt' && _gameplayEventEffectSource(effect) == null)
+      .toList();
   if (consumed.isNotEmpty || prompts.isNotEmpty) {
     runtime ??= {'version': 1};
     runtime['pendingPrompts'] = [
@@ -303,11 +413,18 @@ _CardEventSettlement? _finishCardEventTurn(
         },
     ];
   }
-  final changed =
+  final legacyChanged =
       runtime != null &&
       (!before.containsKey(_cardEventRuntimeKey) || !_stateJsonEqual(before[_cardEventRuntimeKey], runtime));
-  if (changed) next[_cardEventRuntimeKey] = runtime;
+  if (legacyChanged) {
+    next[_cardEventRuntimeKey] = runtime;
+  }
+  final packPromptChanged = _settleGameplayEventPrompts(next, packConsumed, eventEffects);
+  final changed = legacyChanged || packPromptChanged || (turn.gameplay != null && accepted?.changed == true);
   final committed = normal && (changed || eventEffects.isNotEmpty);
+  if (accepted != null && committed && !sharedSession && turn.gameplayValueEligible) {
+    _stampGameplayConfig(turn.gameplay, next);
+  }
   final receipts = candidate?.receipts ?? <Map<String, Object?>>[];
   final issues = <Map<String, Object?>>[
     ...turn.cardEventPreparationIssues,
@@ -323,6 +440,10 @@ _CardEventSettlement? _finishCardEventTurn(
     'automaticEnabled': turn.cardEventTerminalEnabled, 'generationType': turn.generationType,
     'finishReason': turn.finishReason, if (turn.cardEventSource != null) 'source': _copy(turn.cardEventSource!),
     'receipts': receipts, 'effects': eventEffects, 'pendingConsumed': consumed.toList(),
+    if (turn.gameplay != null) ...{
+      'effectiveConfigId': turn.gameplay!.effectiveConfigId,
+      'packPendingConsumed': [for (final ref in packConsumed) _gameplayEventPromptRefJson(ref)],
+    },
     'issues': issues,
     // The portable node owns the historical ledger. Audit only this batch,
     // rather than duplicating its growing runtime in every run and inspection.
@@ -332,6 +453,7 @@ _CardEventSettlement? _finishCardEventTurn(
         'runtimeExists': candidate.runtimeExists,
         'initialized': candidate.initialized,
         'changed': candidate.changed,
+        if (turn.gameplay != null) 'packRuntimeExists': candidate.packRuntimeExists,
       },
   };
   return _CardEventSettlement(
@@ -343,6 +465,12 @@ _CardEventSettlement? _finishCardEventTurn(
       'runId': runId,
       'pendingOffered': turn.cardEventOfferedPrompts.values.toList(),
       'pendingIncluded': turn.cardEventSentPrompts.toList(),
+      if (turn.gameplay != null) ...{
+        'packPendingOffered': [
+          for (final ref in turn.cardEventOfferedPackPrompts.values) _gameplayEventPromptRefJson(ref),
+        ],
+        'packPendingIncluded': [for (final ref in turn.cardEventSentPackPrompts) _gameplayEventPromptRefJson(ref)],
+      },
     },
     ownAudit: committed
         ? {
@@ -350,6 +478,8 @@ _CardEventSettlement? _finishCardEventTurn(
             'directorEventReceipts': receipts,
             'directorEventEffects': eventEffects,
             'directorEventPendingConsumed': consumed.toList(),
+            if (turn.gameplay != null)
+              'directorEventPackPendingConsumed': [for (final ref in packConsumed) _gameplayEventPromptRefJson(ref)],
             'directorEventIssues': issues,
           }
         : null,
@@ -361,7 +491,9 @@ _CardEventSettlement? _failedCardEventSettlement(
   _CardEventSettlement? attempt,
   TavernTurnInspection inspection,
 ) {
-  if (attempt == null) return null;
+  if (attempt == null) {
+    return null;
+  }
   final failed = <String, Object?>{
     ..._copy(attempt.result),
     'committed': false,
@@ -375,6 +507,7 @@ _CardEventSettlement? _failedCardEventSettlement(
     'receipts': <Object?>[],
     'effects': <Object?>[],
     'pendingConsumed': <Object?>[],
+    if (attempt.result.containsKey('packPendingConsumed')) 'packPendingConsumed': <Object?>[],
   };
   return _CardEventSettlement(
     state: turn.currentState,

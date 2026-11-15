@@ -20,6 +20,7 @@ String speechErrorText(L10n l10n, Object error, {bool listening = false}) => swi
   CallSendFailed() => l10n.speechCallSendFailed,
   DeepSeekSpeechError(:final failure) => switch (failure) {
     DeepSeekSpeechFailure.noCredential => l10n.speechNoCredential,
+    DeepSeekSpeechFailure.accountUnusable => l10n.speechAccountUnusable,
     DeepSeekSpeechFailure.signIn => l10n.speechSignIn,
     DeepSeekSpeechFailure.unauthorized => l10n.speechUnauthorized,
     DeepSeekSpeechFailure.insufficientBalance => l10n.speechBalance,

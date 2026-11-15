@@ -127,6 +127,82 @@ class DeferredTavern implements Tavern {
   Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
 
   @override
+  Future<TavernCastImportResult> importDshgoCastMember(
+    TavernCastSource source,
+    String localCastId, {
+    required String operationId,
+    String? domainId,
+  }) async => (await _ready).importDshgoCastMember(source, localCastId, operationId: operationId, domainId: domainId);
+
+  @override
+  Future<TavernCastImportResult?> readDshgoCastImport(String domainId, String operationId) async =>
+      (await _ready).readDshgoCastImport(domainId, operationId);
+
+  @override
+  Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request) async =>
+      (await _ready).previewGameplayExport(request);
+
+  @override
+  Future<Uint8List> exportCharacterWithPacks(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) async => (await _ready).exportCharacterWithPacks(request, expectedPreviewId: expectedPreviewId);
+
+  @override
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) async => (await _ready).exportGameplayPackFromDraft(request, expectedPreviewId: expectedPreviewId);
+
+  @override
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) async =>
+      (await _ready).readGameplayBindings(scope);
+
+  @override
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  }) async => (await _ready).updateGameplayBindings(scope, expected: expected, operationId: operationId, edits: edits);
+
+  @override
+  Future<TavernGameplayResolution> resolveGameplayConfig(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
+  }) async => (await _ready).resolveGameplayConfig(
+    context,
+    proposedScopes: proposedScopes,
+    validateCurrentState: validateCurrentState,
+  );
+
+  @override
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) async => (await _ready).importGameplayPack(bytes);
+
+  @override
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false}) async =>
+      (await _ready).listGameplayPacks(includeRemoved: includeRemoved);
+
+  @override
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref) async => (await _ready).readGameplayPack(ref);
+
+  @override
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId) async =>
+      (await _ready).readGameplayPackResource(ref, localId);
+
+  @override
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref) async =>
+      (await _ready).exportInstalledGameplayPack(ref);
+
+  @override
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  }) async => (await _ready).removeGameplayPackVersion(ref, expected: expected, operationId: operationId);
+
+  @override
   Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) async =>
       (await _ready).createAuthoringDraft(targets);
 

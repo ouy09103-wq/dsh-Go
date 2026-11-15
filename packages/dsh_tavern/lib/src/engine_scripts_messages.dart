@@ -514,7 +514,16 @@ extension _ScriptMessageOperations on _ScriptCoordinator {
     final needsData = patches.any(
       (patch) => patch.newIds.isNotEmpty || patch.fields.containsKey('data') || patch.fields.containsKey('swipesData'),
     );
-    final dataContext = needsData ? await _prepareDataContext(capture.chatId) : null;
+    final forceGameplay =
+        needsData &&
+        patches.any(
+          (patch) =>
+              patch.entryState?.containsKey('dshgoPackDefinitionConfigId') == true ||
+              patch.familyIds.any(
+                (id) => engine._stateAt(capture.chatId, id).containsKey('dshgoPackDefinitionConfigId'),
+              ),
+        );
+    final dataContext = needsData ? await _prepareDataContext(capture.chatId, forceGameplay: forceGameplay) : null;
     final speakers = await _messageSpeakers(capture, [
       for (final patch in patches)
         if (patch.fields['speakerCharacterId'] is String) patch.fields['speakerCharacterId']! as String,
@@ -592,7 +601,13 @@ extension _ScriptMessageOperations on _ScriptCoordinator {
     int insertion,
     TavernScriptWriteOptions options,
   ) async {
-    final dataContext = drafts.isEmpty ? null : await _prepareDataContext(capture.chatId);
+    final capturedParent = insertion == 0 ? null : capture.path[insertion - 1].message.nodeId;
+    final dataContext = drafts.isEmpty
+        ? null
+        : await _prepareDataContext(
+            capture.chatId,
+            forceGameplay: engine._stateAt(capture.chatId, capturedParent).containsKey('dshgoPackDefinitionConfigId'),
+          );
     final speakers = await _messageSpeakers(capture, [
       for (final draft in drafts) ?draft.speakerCharacterId,
     ], 'createChatMessages');
@@ -613,7 +628,11 @@ extension _ScriptMessageOperations on _ScriptCoordinator {
         final before = insertion < oldPath.length ? oldPath[insertion] : null;
         final oldFamily = before == null ? <String>[] : plan.children(plan.links[before]!.parentId, physical: true);
         String? parent = insertion == 0 ? null : oldPath[insertion - 1];
-        var baseline = parent == null ? _initialMessageState(context) : _copy(plan.page(parent).state);
+        final initial = parent == null ? _initialMessageState(context) : null;
+        var baseline = initial?.state ?? _copy(plan.page(parent!).state);
+        if (initial != null && initial.adoptedGameplay != null) {
+          plan.initialized[drafts.first.id] = initial;
+        }
         final chat = engine._store.chat(capture.chatId);
         final settings = _personaSettings(
           engine._effectiveSettings(chat, engine._chatCodec.metadataForNode(engine._store, capture.chatId)),
@@ -865,6 +884,7 @@ class _ScriptMessagePlan {
   final edited = <String>{};
   final updated = <String>{};
   final prepared = <({String id, _ScriptPreparedData value})>[];
+  final initialized = <String, _ScriptPreparedData>{};
   final swiped = <({String? before, String after})>[];
   late List<String> path;
   late int sequence;
@@ -1260,6 +1280,10 @@ class _ScriptMessagePlan {
         final parent = links[value.id]!.parentId;
         if (parent != null && !originalLinks.containsKey(parent) && !inserted.contains(parent)) {
           continue;
+        }
+        final initial = initialized[value.id];
+        if (initial != null) {
+          owner._ensurePreparedGameplay(initial);
         }
         engine._store.append(
           chatId,

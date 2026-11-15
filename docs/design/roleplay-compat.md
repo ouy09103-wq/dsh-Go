@@ -5,7 +5,7 @@
 ## 0. 结论
 
 - **目标**：同一张卡、同一个预设、同一段对话，我们发给 DeepSeek 的请求和 ST 发的逐字一致；同一条消息显示出来一样；酒馆助手和 MVU 的卡能玩。
-- **怎么做到**：ST 是 AGPL-3.0，和 dsh-Go 一样，组装、宏、正则、显示这几块直接移植 ST 的代码（保留版权和来源说明）。酒馆助手不能抄，照公开文档重写同名接口。MVU 是 MIT，而且它本身就是一段酒馆助手脚本，酒馆助手接口做对了它就能跑，不用重写。
+- **怎么做到**：ST 是 AGPL-3.0，和 dsh-Go 一样，组装、宏、正则、显示这几块复用 ST 的实现（版权与来源见 THIRD_PARTY_NOTICES.md）。酒馆助手按公开文档重写同名接口。MVU 是 MIT，引擎照它的源码原生实现变量协议（§5.3）。
 - **对拍**：让 ST 连一个只录请求的假接口，录下它发出去的东西，和我们的逐字比较（§10）。
 - **不弹授权。** ST 对卡和预设里的正则会问一次「允许吗」，我们默认就开（owner 定的）。
 - **只做对话补全（Chat Completion）。** ST 的文本补全和 instruct 模板不做：DeepSeek 和主流接口都是对话补全，中文社区的预设也都是对话补全的。
@@ -20,11 +20,11 @@
 | 宏 | 新旧两套引擎（§5.1） | R1 常用，R2 全量 |
 | ST 聊天记录 `.jsonl` | 双向转换（§7） | R1 |
 | 正则 | 语义一致（§6.1） | R2 |
-| 显示流水线 | 移植 ST（§6.2） | R2 |
+| 显示流水线 | 复用 ST 实现（§6.2） | R2 |
 | 作者注释、用户人设、经典群聊 | 照 ST | R2–R3 |
 | ST 主题（颜色、自定义 CSS） | ui §10 | R2 |
 | 酒馆助手：前端块、接口、嵌入脚本 | 照文档重写（§8） | R3 |
-| MVU | 跑它自己的脚本（§5.3） | R3 |
+| MVU | 引擎原生实现它的变量协议（§5.3） | R3 |
 | 斜杠命令、快速回复 | 常用子集（§8.4、§8.5） | R3 |
 | 提示词模板（EJS，ST-Prompt-Template 扩展） | 待定（§5.4） | R3 前调研 |
 | 不做 | 文本补全和 instruct；ST 的其他扩展（向量库、摘要、生图、TTS 等，我们有自己的对应功能）；改 ST 设置面板和侧栏的脚本 | — |
@@ -94,7 +94,7 @@ V3 的 `assets` 每项是 `{type, uri, name, ext}`：
 
 ### 3.3 组装
 
-照 `openai.js` 的 `prepareOpenAIMessages` → `populateChatCompletion` 移植。要点：
+按 `openai.js` 的 `prepareOpenAIMessages` → `populateChatCompletion` 行为实现。要点：
 
 1. 按 100001 的顺序取开着、且满足 `injection_trigger` 的条目。`main` 关着也保留（内容为空）。
 2. 填占位：世界书文本套 `wi_format`，场景、性格套各自的模板；人设只在人设位置是「在提示词里」时放进来。
@@ -150,7 +150,7 @@ DeepSeek 的缓存按前缀整段命中，命中价是未命中的五十分之�
 
 ### 5.1 宏
 
-ST 有两套宏引擎。1.17.0 起新装默认用新引擎（「Macros 2.0」，`public/scripts/macros/`），老用户保留原来的设置；旧引擎（`public/scripts/macros.js`）不再更新。两套都移植，设置里能切，默认新引擎。
+ST 有两套宏引擎。1.17.0 起新装默认用新引擎（「Macros 2.0」，`public/scripts/macros/`），老用户保留原来的设置；旧引擎（`public/scripts/macros.js`）不再更新。两套都实现，设置里能切，默认新引擎。
 
 **新引擎的写法**
 
@@ -197,16 +197,17 @@ MVU（MagVarUpdate，MIT）是中文卡里最常见的变量框架。它是一�
 - **事件**：`mag_variable_initialized`、`mag_variable_update_started`、`mag_command_parsed`、`mag_variable_update_ended` 等；全局对象 `Mvu` 有 `getMvuData`、`replaceMvuData`、`parseMessage`。
 - **状态栏**：前端块用酒馆助手的 `getVariables({type: 'message', message_id})` 或 `Mvu.getMvuData` 读；提示词里用 `{{get_message_variable::stat_data}}` 或 EJS 的 `getvar("stat_data")`。卡通常配两条正则：一条藏掉 `<UpdateVariable>`，一条藏掉占位标签。
 
-**我们的做法**
+**我们的做法**（2026-11-14 改）
 
-- **不重写 MVU，让它自己跑。** 酒馆助手接口（§8）做对了，MVU 的脚本就能在画布里跑，楼层快照、事件、校验都是它自己的。
-- **自带一份固定版本**：App 打包一份 MVU 的构建（MIT，保留许可证），把那个 jsdelivr 地址映射到本地，离线也能用、加载更快。卡写的是别的地址或版本时照常从网上取。自带的版本跟着 App 更新。
+- **原先的打算是让 MVU 自己的脚本跑**，取了 master 的构建看过后放弃：它运行时 import 51 个远程模块（各家模型的适配、mathjs 等），还直接读写 ST 的内部对象（`SillyTavern.chat`、`saveChat`、`registerMacro`、`loadWorldInfo` 等 22 种），离线做不到，要模拟的东西太多，还跟着上游变。
+- **改成引擎原生实现 MVU 的变量协议**（MIT，照它的源码移植语义，版权与来源记进 THIRD_PARTY_NOTICES.md）：`[initvar]` 初始值、楼层里的 `stat_data`、`<UpdateVariable>` 和 `<JSONPatch>` 的解析、相关的宏和事件。MVU 的「额外模型解析」和它的设置面板不做。
+- 卡脚本 import MVU 的地址时，App 换成本地的小模块，挂出全局 `Mvu`（`getMvuData`、`replaceMvuData`、`parseMessage`、事件名），接到引擎上。前端块照常用 `getVariables` 或 `Mvu.getMvuData` 读。
 - **原生状态面板**能直接读 `stat_data`（ui §8 的变量树视图），整理者也能读。
-- **zod 版**（`StageDog/tavern_resource` 的 `mvu_zod`）是 PolyForm NonCommercial：卡自己引入时照常跑，我们不打包、不抄。
+- **zod 版**（`StageDog/tavern_resource` 的 `mvu_zod`）是 PolyForm NonCommercial：卡自己引入时照常从网上加载（能不能跑看它用到的接口），我们不打包；它的 schema 校验先不支持。
 
 ### 5.4 提示词模板（EJS）
 
-ST-Prompt-Template 扩展（AGPL-3.0）让提示词、世界书里能写 `<% %>`（EJS），MVU 的教程就用它的 `getvar("stat_data")`。它是 AGPL，可以移植。R3 之前拿一批真实的中文卡统计用得多不多，再定做不做。
+ST-Prompt-Template 扩展（AGPL-3.0）让提示词、世界书里能写 `<% %>`（EJS），MVU 的教程就用它的 `getvar("stat_data")`。它是 AGPL，可以复用其实现。R3 之前拿一批真实的中文卡统计用得多不多，再定做不做。
 
 ## 6. 正则和显示
 
@@ -228,12 +229,12 @@ ST-Prompt-Template 扩展（AGPL-3.0）让提示词、世界书里能写 `<% %>`
 - **深度**：显示时，最新一条非系统消息是 0；提示词里同样从新往旧数，「接着写」时正在续写的那条是 -1。`minDepth` ≥ -1、`maxDepth` ≥ 0 才生效，空表示不限；写回存档那条路不看深度。
 - **`findRegex`**：按 `/模式/flags` 切开，flags 只认 ST 认的那几个字母，否则整串当模式；编译不过就静默跳过；没有 `g` 只换第一处。
 - **替换**：`{{match}}` 等于 `$0`；`$1`、`$<名字>` 展开，`$&`、`` $` ``、`$$` 不支持、原样输出；每个分组先删掉 `trimStrings`；最后整段再展开宏。
-- **在哪跑**：显示用的在画布的 JS 里跑，用的就是浏览器的 `RegExp`，和 ST 完全一样。提示词和写回用的在 Dart 里跑：Dart 的正则从 V8 的 irregexp 移植而来，lookbehind、命名分组、`s` 都有；剩下的差异靠夹具兜底。
+- **在哪跑**：显示用的在画布的 JS 里跑，用的就是浏览器的 `RegExp`，和 ST 完全一样。提示词和写回用的在 Dart 里跑：Dart 的正则沿用 V8 的 irregexp 规则，lookbehind、命名分组、`s` 都有；剩下的差异靠夹具兜底。
 - **不弹授权**：ST 对卡和预设的正则各问一次（`regex/index.js` 的 `checkPresetEmbeddedRegexScripts` 等）。我们默认就开；角色页写着「这张卡带 3 条正则、2 个脚本」，旁边一个开关。
 
 ### 6.2 显示流水线
 
-和 ST 的 `messageFormatting` 同一个顺序，用同一组库（showdown、DOMPurify），代码移植：
+和 ST 的 `messageFormatting` 同一个顺序，用同一组库（showdown、DOMPurify），实现与之一致：
 
 1. 显示用正则（按深度）。
 2. 修 Markdown（默认开，可关）。
@@ -347,13 +348,13 @@ iframe 和画布同源（酒馆助手就是这样，卡会直接用 `window.pare
 
 | 项目 | 许可证 | 我们怎么用 |
 |---|---|---|
-| SillyTavern | AGPL-3.0 | 移植代码，保留版权和来源说明 |
+| SillyTavern | AGPL-3.0 | 复用实现，版权与来源见 THIRD_PARTY_NOTICES.md |
 | Character Card V3 规范 | MIT | 照规范实现 |
 | MagVarUpdate（MVU） | MIT | 自带一份构建，保留许可证 |
-| ST-Prompt-Template（EJS） | AGPL-3.0 | 要做的话可以移植 |
+| ST-Prompt-Template（EJS） | AGPL-3.0 | 要做的话可以复用其实现 |
 | RisuAI | GPL-3.0 | 能和 AGPL 合并；目前只参考 |
-| 酒馆助手（JS-Slash-Runner） | PolyForm NonCommercial 1.0.0 | 不抄、不看源码，照文档重写 |
-| `mvu_zod`、tavern_helper_template | PolyForm NonCommercial 1.0.0 | 不打包、不抄；卡自己引入时照常跑 |
+| 酒馆助手（JS-Slash-Runner） | PolyForm NonCommercial 1.0.0 | 按公开文档重写 |
+| `mvu_zod`、tavern_helper_template | PolyForm NonCommercial 1.0.0 | 不打包；卡自己引入时照常跑 |
 
 以上是工程上的判断，不是法律意见。
 

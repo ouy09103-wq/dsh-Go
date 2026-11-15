@@ -80,6 +80,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
     bool Function()? modelReady,
     this._cloud,
     this._cloudLikely,
+    this._signedIn,
     this._liveWords,
     this.onRecognized,
     this.requiredProviderId,
@@ -116,6 +117,9 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
   /// A cloud recognizer is probably there (settings only, nothing asked):
   /// the microphone shows even without a phone or engine recognizer.
   final bool Function()? _cloudLikely;
+
+  /// Signed in to a DeepSeek account (for saying why DeepSeek cannot listen).
+  final bool Function()? _signedIn;
 
   /// Words as they are spoken, from the phone's streaming recognizer (null
   /// when its model is not downloaded): shown as provisional text while a
@@ -332,7 +336,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
           !_caps.recorder
               ? appL10n.chatVoiceMicrophoneFailed
               : _runMode == VoiceMode.deepseek
-              ? appL10n.speechNoCredential
+              ? (_signedIn?.call() ?? false ? appL10n.speechAccountUnusable : appL10n.speechNoCredential)
               : appL10n.speechCloudNotSetUp,
           change: true,
         ),

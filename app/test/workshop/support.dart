@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as image;
 
 final workshopTestOrigin = Uri.parse('https://workshop.example');
-final workshopTestForum = Uri.parse('https://forum.example');
+final workshopTestAccount = Uri.parse('https://github.com');
 const workshopTestId = '0123456789abcdef0123456789abcdef';
 const workshopTestDate = '2026-11-11T00:00:00.000Z';
 
@@ -38,14 +38,16 @@ Map<String, Object?> workshopCatalogJson({List<Object?>? entries, List<Object?> 
   'entries': entries ?? [workshopEntryJson()], 'withdrawn': withdrawn,
 };
 
-Map<String, Object?> workshopCaps({bool uploads = true, bool companion = true, String? forum}) => {
+Map<String, Object?> workshopCaps({bool uploads = true, bool companion = true, String? account,
+  String? clientId = 'test-client-id'}) => {
   'schema': 1, 'features': {'uploads': uploads, 'companion': companion}, 'kinds': ['pet', 'companion'],
-  'licenses': workshopLicenses.toList(), 'forumOrigin': forum ?? workshopTestForum.toString(), 'maxMocVersion': 6,
-  'limits': {'archiveBytes': workshopArchiveBytes, 'expandedBytes': workshopExpandedBytes, 'companionMemberBytes': 16 * 1024 * 1024, 'companionEntries': 1000, 'petEntries': 256},
+  'licenses': workshopLicenses.toList(), 'account': {'origin': account ?? workshopTestAccount.toString(), 'clientId': clientId},
+  'maxMocVersion': 6,
+  'limits': {'archiveBytes': workshopArchiveBytes, 'expandedBytes': workshopExpandedBytes, 'companionMemberBytes': 32 * 1024 * 1024, 'companionEntries': 1000, 'petEntries': 256},
 };
 
 Map<String, Object?> workshopSubmissionJson({String id = workshopTestId, String status = 'draft', Map<String, Object?>? metadata}) => {
-  'submissionId': id, 'owner': {'forumOrigin': workshopTestForum.toString(), 'forumUserId': 42, 'username': 'author'},
+  'submissionId': id, 'owner': {'accountOrigin': workshopTestAccount.toString(), 'accountId': 42, 'username': 'author'},
   'metadata': metadata ?? workshopMeta(), 'status': status, 'createdAt': workshopTestDate, 'updatedAt': workshopTestDate,
   if (status == 'rejected' || status == 'approved') 'review': {'at': workshopTestDate, 'decision': status == 'approved' ? 'approve' : 'reject', 'reason': 'review reason'},
   if (status == 'withdrawn') 'withdrawal': {'at': workshopTestDate, 'reason': 'author withdrew'},

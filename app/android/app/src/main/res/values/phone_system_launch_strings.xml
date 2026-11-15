@@ -9,4 +9,7 @@
     <string name="phone_system_handler_unconfirmed">The later screen read did not confirm the planned handler in the foreground; the action will not be repeated.</string>
     <string name="phone_system_attempt_stopped">%1$s (attempted; stopped afterward)</string>
     <string name="phone_system_choose_handler">Choose an app</string>
+    <string name="phone_system_unknown_app">Unknown app</string>
+    <string name="phone_system_confirm_unknown">The handling app is unknown. Allow this operation (%1$s)?</string>
+    <string name="phone_system_intent_unavailable">This system action could not be prepared. No request was sent.</string>
 </resources>

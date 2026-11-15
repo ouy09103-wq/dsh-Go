@@ -263,6 +263,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
       groupNames: turn.groupView?.names,
       groupNotMuted: turn.groupView?.enabledNames,
       preset: preset,
+      packRegex: turn.gameplayResources.regex,
     );
     turn.environment = environment;
     if (turn.kind == _TurnKind.send && turn.input.isNotEmpty) {
@@ -356,7 +357,13 @@ extension _AuthoringPromptPreviews on TavernEngine {
     world = world.withoutEntries(excluded);
     turn.state['timedWorldInfo'] = _copy(world.timedWorldInfo);
     turn.state['decoratorState'] = _copy(world.decoratorState);
-    final worldTrace = _worldInfoTrace(world, preparedUiHits: preparedUiHits, missingBooks: capture.missingBooks);
+    _adoptGameplayWorldInfo(turn, world);
+    final worldTrace = _worldInfoTrace(
+      world,
+      preparedUiHits: preparedUiHits,
+      missingBooks: capture.missingBooks,
+      packSources: turn.gameplayResources.packSources,
+    );
     turn.inspection = turn.inspection.copyWith(
       worldInfo: worldTrace,
       prompt: assembly,

@@ -5,19 +5,19 @@
 
 ## 0. 结论
 
-- **协议照 Clawd on Desk。** 状态名、事件对应、优先级、一次性与持续态的划分都沿用 Clawd，两套素材因此可以直接用。Codex Pet 留到第二期，作为导入格式。
+- **协议与 Clawd on Desk 一致。** 状态名、事件对应、优先级、一次性与持续态的划分都沿用 Clawd，两套素材因此可以直接用。Codex Pet 留到第二期，作为导入格式。
 - **宠物是状态指示器，不是养成游戏。** 它只表达 agent 在干什么、有没有事等你，不设饥饿、好感之类的数值，不主动调模型、不独立联网；「问一句」由用户触发，复用聊天发送链路。dsh-pet 每 5 分钟调一次模型说话，是我们明确不做的反例。
 - **一屏一个吉祥物。** 宠物站在活动条上时接管鲸尾；空状态里的静止鲸尾在宠物开启时也隐藏。
 - **同一件事只提醒一次。** 宠物在屏幕上时，它的气泡替代现有的玻璃横幅。当前正在看的对话不冒气泡，只做动作。后台照常发系统通知。
 - **不挡事。** 命中区只算身体，避开「回到底部」按钮，输入框弹出层打开时让位，列表底部为宠物留出高度，悬浮窗空闲时原地变淡。
-- **像素必须清楚。** 每个美术像素对应整数个**物理**像素，位置也对齐物理像素。尺寸按身体高度分小、标准、大三档。
+- **像素必须清楚。** 每个美术像素对应整数个**物理**像素，位置也对齐物理像素。尺寸按身体高度分小、标准、大三档，另有「自定义」（见 §2.10 下的说明）。
 - **悬浮窗做成可降级的可选项。** 默认关闭，用户打开时再申请权限。被拒、被系统藏起、被 ROM 杀掉，都退回 App 内宠物加系统通知，不报错。
 
-## 1. 调研：借什么、避什么
+## 1. 调研：采用什么、避开什么
 
 ### 1.1 逐个看
 
-| 产品 | 是什么 | 借鉴 | 避开 |
+| 产品 | 是什么 | 采用 | 避开 |
 |---|---|---|---|
 | **Clawd on Desk**（rullerzhou-afk，AGPL-3.0，美术另行授权） | 给 Claude Code、Codex 等编程 agent 用的像素桌宠，由 agent hook 驱动 12 种状态 | 状态集与事件对应，优先级表（error 8、notification 7、sweeping 6、attention 5、carrying / juggling 4、working 3、thinking 2、idle / roam 1、sleeping 0）。一次性态与持续态分开：attention、error、sweeping、notification、carrying 是一次性的。按会话数分档，用 `minDisplay` / `autoReturn` 控制停留时长。Stop 先按 working 压一会儿，没有后续进展才升成 attention，避免连续轮次反复庆祝。命中框分 default、wide、sleeping 三种，可按动画覆盖。60 秒无操作入睡，被唤醒时播 waking。mini 模式贴在屏幕边上探头。尺寸可调，按 `contentBox` 和 `baseline` 锚定 | 权限气泡里直接放「允许 / 拒绝」：桌面上有键鼠还算安全，手机悬浮窗上一点就批，误触和点击劫持风险太大。眼睛跟随依赖 SVG 和鼠标，手机上没有指针 |
 | **Codex Pets**（OpenAI Codex） | Codex 内置的悬浮伙伴，只表达三件事：在跑、等你输入、可以审阅了 | 状态极少、一眼看懂。用 `/pet`、设置页、命令面板随时收起或唤回。图集格式简单：8 列 × 9 行，每格 192×208，配一个 `pet.json`。codex-pet-web 的随机待机动作平均 120 秒一次，最短 45 秒、最长 300 秒，只在宠物空闲且可见时触发 | 9 行图集里没有睡觉、出错分档之类的状态，导入时只能降级映射（§3.5） |
@@ -48,7 +48,7 @@
 
 - 设置 › 主题里加一组「宠物」，点进去是宠物页。宠物页包含：
   - 选宠物：Deepy 小鲸鱼、鲸娘、不显示，带实时预览；
-  - 大小：小、标准、大；
+  - 大小：小、标准、大、自定义（选自定义时下面展开预览和滑条）；
   - 安静模式；
   - App 外显示；
   - 作者与来源，作为页底一行小字。
@@ -89,12 +89,13 @@
 |---|---|
 | 单击身体左半、右半 | 分别播 `tapLeft`、`tapRight` 反应，播一遍后回到原状态 |
 | 1.1 秒内连点 3 下 | 挠痒痒（`tickle`）；连点期间继续点会延长 |
+| 继续连点到 6 下（仍在 1.1 秒内） | 包里有 `annoyed` 反应时播它，并清空点击计数；没有就继续播 `tickle` |
 | 按住并移动超过 6dp | 拖动，播 `drag`，松手后吸附 |
 | 长按 | 小菜单：换宠物、藏起来 1 小时、宠物设置 |
 | 宠物在 notification 状态时单击 | 不播戳的反应，改为执行「去看看」：当前对话就滚到待确认的卡片，别的对话就打开那个对话 |
 | 宠物在睡觉时单击 | 只叫醒，不播戳的反应 |
 
-挠痒痒从规格的「连点 4 下」改成「1.1 秒内 3 下」，和鲸娘原页一致。手机上的目标很小，连点 4 下容易点偏。
+挠痒痒从规格的「连点 4 下」改成「1.1 秒内 3 下」，和鲸娘原页一致。手机上的目标很小，连点 4 下容易点偏。第 4、5 下仍在挠痒痒里，第 6 下才算「烦了」：包里有 `annoyed` 就播它并清空计数（下一次点又从头开始），没有就继续播 `tickle`。
 
 ### 2.6 气泡提醒（App 内）
 
@@ -187,6 +188,7 @@
 
   身体高度取 `contentBox.h`。
 - 缩放倍数 `k` 的定义是：每个美术像素占多少个**物理像素**。像素画包要求 `k` 为整数：先算 `max(1, round(目标dp × devicePixelRatio ÷ contentBox.h))`，再让小、标准、大**至少各差 1**（`medium = max(small + 1, …)`，`large = max(medium + 1, …)`）。不加这一步的话，dpr 2.75 的手机上 22/30/40dp 会同时落成 1/2/2，三档分不出大小，悬浮窗还会比 App 内小一档。
+- 「自定义」（2026-11-15）：身体高度 15–90dp，即标准的 50%–300%，滑条按标准的 5% 一格，显示为百分比。它单独取整 `max(1, round(高度 × dpr ÷ contentBox.h))`，不参与三档的「至少差 1」。拖动时只重画设置页里的预览，松手才保存（`pet.custom_height`），聊天页和悬浮窗随之更新；切回三档时这个高度留着，下次选自定义还在。悬浮窗收到 `size: custom` 和 `bodyHeight`，在原生侧变成 `custom:<dp>` 这个尺寸键，高度变了就重新载入贴图。用处是有的宠物包按 `contentBox` 定档后看起来还是偏小或偏大。
 - 非像素画包（`pixelArt: false`）的 `k` 不限整数：`k = 目标dp × devicePixelRatio ÷ contentBox.h`。
 - 宠物的左上角和脚线都对齐到物理像素。
 - 悬浮窗和 App 内用同一档位，也就是同一套 `k`：App 内是 `pet_sprite.dart` 的 `petDevicePixels`，悬浮窗是 Kotlin `PetPack.devicePixels`，两边各有一份逐值对齐的单测（`pet_pixel_test.dart`、`PetPackTest.kt`）。
@@ -276,7 +278,7 @@ app/assets/pets/<id>/<anim>.png     # 序列帧图，默认单行横条；帧多
   - Deepy 一段最多 68 帧：5 倍时单行宽 17,680 像素，会超过很多 GPU 的纹理上限。所以保持 5 倍，用网格排列（`cols`）并去重。
 - ★ **`box`**：每段动画的帧格只裁到这段动画实际有像素的范围，`box` 是帧格贴回画布的位置（逻辑像素）。`frameW = box.w × scale`。
 - **`frames`**：每项是 `{i, ms}`，`i` 指向图里的第几格。相同的帧只存一格，靠 `i` 重复引用。Deepy 是统一 20fps，持帧多，去重能省下不少。
-- ★ **`hitBoxes`**：结构照 Clawd：`default`、`wide`、`sleeping` 三类框，加上 `byAnim` 单独给框，单位是逻辑像素。两个包的框都从帧里量出来，不照搬主题：
+- ★ **`hitBoxes`**：结构与 Clawd 的分类一致：`default`、`wide`、`sleeping` 三类框，加上 `byAnim` 单独给框，单位是逻辑像素。两个包的框都从帧里量出来，不沿用主题：
   - 每帧只取最大的一块连通区域当身体，思考云、Zzz、音符这类脱离身体的道具不算；
   - 一段动画里至少 25 % 时间是身体的格子，才算进这段的身体框；
   - 超出 `default` 较多的动画进 `wideAnims`；离 `default` 太远或被拎起来的，在 `byAnim` 里单独给框；
@@ -286,17 +288,27 @@ app/assets/pets/<id>/<anim>.png     # 序列帧图，默认单行横条；帧多
   - `everyMs` 是插播间隔：平均 120 秒，最短 45 秒，最长 300 秒，只在空闲且可见时计时；
   - `anims` 是待机池，每项带时长和权重。
   - 基础待机循环在 `states.idle[0]`，不放进池子。
-  - 时长都是整 2 遍：Deepy 照搬 Clawd 的 `idleAnimations.duration`，鲸娘按原页的循环时长算。
-- ★ **`bonus`**：attention 时按 `chance` 的概率改播彩蛋动画。鲸娘的 `smile-hearts`、`thumbs-up` 放在这里，概率 0.2。Deepy 没有彩蛋，写 `{}`。
+  - 时长都是整 2 遍：Deepy 的取值与 Clawd 的 `idleAnimations.duration` 一致，鲸娘按原页的循环时长算。
+- ★ **`bonus`**：每个非 idle 状态进入时按 `chance` 抽一次彩蛋，抽中就先播这一段（`playMs` 或一遍的时长），播完回到该状态的主动画。idle 的小动作由 `idlePool` 管，不走 `bonus`。包里没给某个状态写 `bonus`、而 `states.<状态>` 还有别的动画时，按 1/3 概率抽其中一段。鲸娘的 `smile-hearts`、`thumbs-up` 放在 attention 下，概率 0.2；Deepy 没有彩蛋，写 `{}`。
+- ★ **`reactions`**：反应名（`tapLeft`、`tapRight`、`tickle`、`annoyed`、`drag` 等）→ 动画名。每个反应可以有多个动画，跨版本的写法是「基础名 + 编号」：
+  - `"tickle": "a", "tickle2": "b", "tickle3": "c"`：旧版 App 只读基础名、忽略带编号的键，照样能玩；当前 App 在基础名存在时把 `tickle2`、`tickle3`… 按出现顺序并进 `tickle`，每次播放随机抽一段（`reaction()` 取第一项，`reactionOutOf()` 抽一项）。
+  - 基础名不存在时，带编号的键保留成独立反应（`reaction('tickle2')` 仍可读），不会被静默丢掉。
+  - `"tickle": ["a", "b"]` 这种数组只在 App 内可读；导出和市场规范化都会降级成上面的编号写法，不能把数组当作跨版本分享格式。
+  - 需要在状态外保持固定姿势的地方（如拖动时的 `drag`）只读第一项。
+  - 空数组等于没写这个反应，不报错；数组或编号键里有一项不是已有动画名时整包拒绝。
 - ★ **`roam.faces`**：美术本身朝哪边，取 `"left"`、`"right"` 或 `"front"`。它取代含义不清的 `flip`。
   - `left`、`right`：往反方向走时以 `anchor.x` 为轴镜像。Deepy 的 `roamFlipAssets: true` 表示美术朝左，所以是 `left`。
   - `front`：正面，不镜像。鲸娘是 `front`，镜像会把发花和尾巴换边。
 - **`timings`**：
-  - Deepy 从 Clawd 主题照搬，只去掉 notification 的 `autoReturn`。
+  - Deepy 的取值与 Clawd 主题一致，只去掉 notification 的 `autoReturn`。
   - 鲸娘按原页事件表的保持遍数换算：error 1 遍，1480ms；happy 2 遍，3040ms；carrying 2 遍，2240ms；waking 1 遍，1880ms；notification 3 遍，2640ms，只作 `minDisplay`。
   - 鲸娘的压缩动画在原页里一直保持到下一个事件，没写遍数，所以 sweeping 的 `minDisplay` 取 1 遍，1740ms。
   - notification 不设 `autoReturn`，见 §4。
   - working / thinking 的 1000 是去抖，sweeping `autoReturn` 的 300000 是保险上限，两个包一样。
+- **缺省字段的回退**（旧包和手写包不必写全新字段）：
+  - `states` 没写的状态播 `states.idle[0]`；缺 `tiers` 时按该状态的主动画播，不分档；
+  - 没写 `bonus` 时该状态没有彩蛋（`states.<状态>` 有第二段动画时按 1/3 概率抽其中一段）；没写 `idlePool` 时待机小动作取 `states.idle` 第二段起的动画；
+  - 没写某个 `reactions` 键时对应的点按静默跳过，不报错也不崩；没写 `hitBoxes` 时用 `contentBox` 当命中区，没写 `timings` 时用默认时长。
 - 状态名一律用 Clawd 的。动画名用包自己的：鲸娘的反应叫 `poke-left`、`poke-right`、`tickle`、`drag`，游走叫 `swim`。
 - `author`、`license`、`source` 必须如实填写，宠物页底部原样显示，见 §9。两只都是 DSH-TUI 的吉祥物，作者与授权见仓库根目录的 `ASSETS.md`。
 
@@ -365,6 +377,44 @@ Clawd 主题 zip 的导入走宠物包转换工具（`app/tool/make_pet_pack.py`
 - **作者与授权**：宠物页底部原样显示包里的 `author · license`（§9）。
 - **共用入口**：Codex Pet 导入（§3.5）与市场下载都调用 `PetLibrary.install`。转换提示已保存在清单，主线负责结果页展示；缓存失效及 `reloadPack` 保持现有流程。市场规范化产物也必须通过当前 App 导入门，不能仅满足旧底层解析器的取整规则。
 
+### 3.7 玩家自制包的兼容性约定
+
+宠物包会跨 App 版本流传（市场下载、导出分享、旧手机），下面的约定保证旧版 App 不会因为新版格式整包拒绝：
+
+- **未知字段被忽略。** 解析只读认识的字段，其余（作者注释、其他格式的键、将来的扩展）不影响加载，导出时会被丢掉；App 内和悬浮窗读同一份包，导入门的检查更严（整数、帧格尺寸等），但也不会因为多写的字段拒绝。
+- **`reactions` 的跨版本格式是「基础名 + 编号」。** `"tickle": "a", "tickle2": "b", "tickle3": "c"`：旧版只播基础名、忽略编号键；当前 App 合并成列表随机抽。以后加候选只追加编号、基础名不动，旧版就还能跑。
+- **数组不适合跨版本分享。** `"tickle": ["a", "b"]` 只在当前 App 内可读；导出到市场和市场规范化都会降级成编号写法。手写或工具生成的、要分享的包直接写编号形式。
+- **编号只在基础名存在时合并。** 孤立出现的 `tickle2`（没有 `tickle`）保留为独立反应名，不被静默丢掉，误编号的包能看出问题。
+- **缺省字段有确定回退。** 缺状态播 idle、缺 `tiers` 不分档、缺 `reactions` 键跳过该手势，见 §3.2 末尾；旧包不会因为少写字段被拒。
+
+### 3.8 素材转换工具（2026-11-15）
+
+app/tool/pet_theme_convert.py 把素材转成 schema 1 宠物包，按目录内容自动识别：
+
+- clawd-on-desk 主题：theme.json + APNG，idle/roam/drag 的 CSS/SVG 由 pet_svg_frames.py 光栅化；
+  states、tiers、idleAnimations、reactions、timings 全从 theme.json 推导。
+- 图片：GIF / APNG / WebP / PNG，一个文件一个动画；文件名按中英文关键词认状态（idle、thinking、
+  working、error、done、sleep、walk、poke、drag、tickle 等），认不出来的进待机小剧场。
+- 逐帧目录（walk/01.png）与 Aseprite JSON 导出（按 frameTags 分动画）；单张图片做成静态待机。
+
+    python3 tool/pet_theme_convert.py --input DIR --out DIR [--id ID] [--input-name NAME] [--source URL] [--crisp]
+    python3 -I tool/test_pet_theme_convert.py
+
+技能 app/assets/skills/pet-theme/ 随 App 安装（脚本是 app/tool 的副本，测试会查一致性），
+宠物页的「让 AI 做一只宠物」把 /pet-theme 填进新对话。
+
+两个固定决定（改之前先看 §5 渲染）：
+
+- **像素画保持原尺寸锐利绘制，其它素材用 144×144、pixelArt: false**。小图、硬边素材按原尺寸走像素画
+  整数放大；带亚像素位移或抗锯齿的素材（clawd 主题是 12 倍导出）降到 2 倍再整数放大会「几帧不动再
+  跳一格」，改成 144 画布 + 面积平均 + 平滑插值（质心二阶差分 1.609%，288 原图 1.610%，不同帧保留
+  91%）。--crisp 强制前者。
+- **tickle2 / tickle3 编号而不是数组**：旧版 App 只读 tickle、忽略编号键，新版合并成候选列表，一份包
+  通吃新旧。
+
+已知限制：clawd 主题每档只取主文件（tiers 的 files 变体不导出）；SVG 的 CSS 关键帧参数写死在
+pet_svg_frames.py；整张精灵表要先拆帧或导出 Aseprite JSON。
+
 ## 4. 状态归约 `PetMood`
 
 `PetMood` 是 Dart 纯函数，只实现这一份，可单测。悬浮窗的 Kotlin 端只接收归约后的结果，不重复实现。
@@ -395,7 +445,7 @@ Clawd 主题 zip 的导入走宠物包转换工具（`app/tool/make_pet_pack.py`
 | notification | 有待确认或待回答的事（approval、question） | **持续，直到处理完** |
 | attention | `AlertKind.done`，并且 1.5 秒内同一对话没有开始新的一轮 | 一次性 |
 | error | `AlertKind.failed` | 一次性 |
-| carrying | 预留：上传或导入文件 | 一次性 |
+| carrying | 导入宠物包：`UserPetsController.import()` 期间（导入失败也会复位） | 一次性 |
 | sleeping | 空闲，并且 60 秒没有触摸 | 持续 |
 | waking | 睡着时被触摸或来了事件 | 一次性，`wakeMs` |
 | roam | 空闲期间随机触发 | 一次性 |
@@ -480,7 +530,7 @@ Clawd 主题 zip 的导入走宠物包转换工具（`app/tool/make_pet_pack.py`
 | 气泡 | 做完了 · 出错了 · 等你确认 · 等你回答 · 标题 · 做完了 · 3 个对话做完了 |
 | 长按菜单（App 内） | 换宠物 · 藏起来 1 小时 · 宠物设置 |
 | 长按半轮盘（悬浮窗） | 问一句 · 截图并问 DSH-Go · 新对话 · 停止当前任务（运行中）· 切换主机（多个）· 今天不再显示 · 宠物设置 |
-| 宠物页 | 宠物 · 大小（小 / 标准 / 大）· 安静模式 · App 外显示（有事时显示 / 一直显示）· 未授权 |
+| 宠物页 | 宠物 · 大小（小 / 标准 / 大 / 自定义）· 安静模式 · App 外显示（有事时显示 / 一直显示）· 未授权 |
 
 - 不写解释段落，不加感叹号，不用表情符号，不卖萌，不写催促或内疚式的话。
 - 安静模式的说明只占一行：「只做动作，不冒气泡」。
@@ -563,6 +613,8 @@ Clawd 主题 zip 的导入走宠物包转换工具（`app/tool/make_pet_pack.py`
 | 18 | 素材许可要如实填写 | 见 `ASSETS.md` | 宠物包 |
 | 19 | 悬浮窗的 `k` 与 App 内 `petDevicePixels` 逐值对齐：像素画包（含 scale > 1 的 Deepy）一律取整数，并保持小、标准、大至少各差 1（2026-11-01，修「悬浮窗里的鲸娘特别小」） | 悬浮窗原来只四舍五入一次，且只对 scale = 1 取整：鲸娘「大」在 dpr 1.84–3.06 只有 App 内的 2/3，「标准」在 dpr < 2.45 只有一半；Deepy 也小 5–12%。文档一直写着「悬浮窗和 App 内用同一档位」 | 悬浮窗 |
 | 20 | 悬浮窗里每段动画都画全：帧格超出平时窗口的动画，播放期间窗口长到「平时窗口 ∪ 该段帧格」，不再只限 happy、waking、typing 三段；触摸只认平时窗口和当前动画的命中框（2026-11-01，修「子代理、思考的图在 App 外显示不全」） | §6.1 原来接受「其余状态的特效裁掉」，结果 juggling 的音符和道具、thinking 的思考云被截掉一大截（Deepy 的 conducting 上方 18 个美术像素）。窗口跟着画面长、并只朝需要的方向长，是在显示完整和少挡下面 App 之间的折中；溢出部分单开不可触摸窗口在应用悬浮窗上只能画成 80% 不透明，没有采用 | 悬浮窗 |
+| 21 | 2026-11-14：`reactions` 每个反应可以有多个动画：跨版本用「基础名 + 编号」写法（`tickle`、`tickle2`…），数组只在 App 内可读；每次播放随机抽一段。`bonus` 从只对 attention 生效推广到所有非 idle 状态；1.1 秒内连点到第 6 下且包里有 `annoyed` 时播「烦了」并清空计数；`carrying` 接上真实导入（`UserPetsController.import()` 期间） | 一条反应只能写一个动画，同一个包的点按反馈完全重复；彩蛋只有 attention 用得上，其他状态多出来的动画只能当状态变体；连点超过 3 下后永远停在挠痒痒，没有升级反馈；`carrying` 一直只是预留字段，导入宠物包时既没有动画也不进状态归约 | 宠物包（`reactions` 可写数组或编号键、`bonus` 适用所有非 idle 状态）、聊天页（`pet_stage.dart` 的随机反应、全状态彩蛋、第 6 下 annoyed）、宠物信号（`pet_signals.dart` 的 `petCarryingProvider`）、导出与市场规范化（降到编号写法） |
+| 22 | 2026-11-14：旧版 App 兼容回退——导出的包和市场规范化把 `reactions` 数组降级成基础名 + 编号的字符串写法；旧包缺状态、缺 `tiers`、缺 `reactions` 键时按 §3.2 末尾 / §3.7 的回退规则读 | 用户要求旧版 App 能读新版导出的包：旧版解析器对 `reactions` 只认字符串，数组会让整包被拒。基础名 + 编号让旧版只播第一个、忽略其余，新版仍能随机；回退规则保证只写了 `idle` 的包不被拒 | 宠物包解析（`pet_pack.dart` 的 `reactionMap`）、导出（`pet_library_export.dart`）、市场规范化（`pet_pack_validator.dart` 的 `_marketManifest`）、文档 §3.2 / §3.7 |
 
 ## 13. 第二期与不做
 

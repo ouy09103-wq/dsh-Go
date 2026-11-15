@@ -5,7 +5,7 @@ WorkshopSubmission _sampleSubmission(WorkshopMetadata metadata, {
   WorkshopSubmissionStatus status = WorkshopSubmissionStatus.pending,
 }) => WorkshopSubmission.fromJson({
   'submissionId': id, 'metadata': metadata.toJson(), 'status': status.name,
-  'owner': {'forumOrigin': authForum.toString(), 'forumUserId': 42, 'username': '月白创作室'},
+  'owner': {'accountOrigin': authAccount.toString(), 'accountId': 42, 'username': '月白创作室'},
   'createdAt': '2026-11-12T00:00:00.000Z', 'updatedAt': '2026-11-12T00:00:00.000Z',
   if (status == WorkshopSubmissionStatus.approved || status == WorkshopSubmissionStatus.rejected)
     'review': {'at': '2026-11-12T00:00:00.000Z',
@@ -34,7 +34,7 @@ Future<T> _withPersonal<T>(Future<T> Function(AuthHarness harness, PersonalClien
     ..readSubmission = ((id) async => _sampleRow(id: id))
     ..withdrawSubmission = (id, _) async => _sampleRow(id: id, status: WorkshopSubmissionStatus.withdrawn);
   if (flagsDisabled) {
-    client.value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false, companion: false));
+    client.value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false, companion: false));
   }
   final harness = personalHarness(client);
   try { await authReady(harness.container); return await use(harness, client); }
@@ -142,7 +142,7 @@ Future<WorkshopSubmissionsSample> _withdrawal({bool sending = false, bool fail =
   client.withdrawSubmission = (id, _) async {
     if (sending) await gate.wait();
     if (unknown) throw const WorkshopException('workshop_network', resultUnknown: true);
-    if (fail) throw const WorkshopException('workshop_forum_auth_invalid', status: 401);
+    if (fail) throw const WorkshopException('workshop_account_unavailable', status: 503);
     return _sampleRow(id: id, status: WorkshopSubmissionStatus.withdrawn);
   };
   final controller = harness.container.read(workshopSubmissionsProvider.notifier);
@@ -182,7 +182,7 @@ Future<WorkshopReportSample> _report({bool idle = false, bool sending = false,
     if (unknown || newAfterUnknown) throw const WorkshopException('workshop_timeout', resultUnknown: true);
     if (throttled) throw const WorkshopException('workshop_rate_limited', status: 429, retryAfter: Duration(seconds: 60));
     if (futureError) throw const WorkshopException('workshop_future_rule', status: 409);
-    if (fail) throw const WorkshopException('workshop_forum_auth_invalid', status: 401);
+    if (fail) throw const WorkshopException('workshop_account_unavailable', status: 503);
     return personalThirdId;
   };
   WorkshopReportSample read() => WorkshopReportSample(access: harness.state,

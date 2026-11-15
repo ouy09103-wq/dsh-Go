@@ -36,4 +36,4 @@ go.dshtui.com 首页（`site/home/`）由社区开发者 ClayGao233 / 采云师�
 
 前端按 [smart-turn 的官方推理示例](https://github.com/pipecat-ai/smart-turn/blob/main/inference.py)
 使用 Whisper 8 秒特征，含补齐后的波形标准化 `do_normalize=True`。
-Android / JVM 的 ONNX Runtime 均固定 1.23.2（MIT）。
+Android / JVM 的 ONNX Runtime 均固定 1.27.0（MIT）。

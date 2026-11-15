@@ -2,12 +2,25 @@ part of 'state_engine.dart';
 
 /// Inert proposal text. data is never parsed as JSON, an expression or an op.
 class CardEventProposal {
-  const CardEventProposal({required this.eventId, required this.runId, required this.name, required this.data});
+  const CardEventProposal({
+    required this.eventId,
+    required this.runId,
+    required this.name,
+    required this.data,
+    this.source = const StateExecutionSource.legacy(),
+  });
+  final StateExecutionSource source;
   final String eventId;
   final String runId;
   final String name;
   final String data;
-  Map<String, Object?> toJson() => {'eventId': eventId, 'runId': runId, 'name': name, 'data': data};
+  Map<String, Object?> toJson() => {
+    'eventId': eventId,
+    'runId': runId,
+    'name': name,
+    'data': data,
+    if (source.isPack) 'executionSource': source.toJson(),
+  };
 }
 
 /// Detached admission. The host authenticates persisted capability, source
@@ -24,16 +37,47 @@ class CardEventInvocation {
     required this.stateActionAllowed,
   }) : _authorizedHandlerIds = List<String>.unmodifiable(authorizedHandlerIds),
        _proposals = List<CardEventProposal>.unmodifiable(proposals),
-       _runtime = _eventCopy(runtime);
+       _runtime = _eventCopy(runtime),
+       _authorizedHandlers = null,
+       packRuntimeExists = false,
+       _packRuntime = null;
+
+  CardEventInvocation.composed({
+    required this.definition,
+    required this.invocationId,
+    required this.capabilityFingerprint,
+    required Iterable<CardEventHandlerRef> authorizedHandlers,
+    required Iterable<CardEventProposal> proposals,
+    required this.runtimeExists,
+    Object? runtime,
+    required this.packRuntimeExists,
+    Object? packRuntime,
+    required this.stateActionAllowed,
+  }) : _authorizedHandlerIds = const [],
+       _authorizedHandlers = List.unmodifiable(authorizedHandlers),
+       _proposals = List.unmodifiable(proposals),
+       _runtime = _eventCopy(runtime),
+       _packRuntime = _eventCopy(packRuntime);
+
   final CardEventDefinition definition;
   final String invocationId;
   final String capabilityFingerprint;
   final bool runtimeExists;
   final bool stateActionAllowed;
   final List<String> _authorizedHandlerIds;
+  final List<CardEventHandlerRef>? _authorizedHandlers;
+  final bool packRuntimeExists;
+  final Object? _packRuntime;
   final List<CardEventProposal> _proposals;
   final Object? _runtime;
   List<String> get authorizedHandlerIds => List.of(_authorizedHandlerIds);
+  List<CardEventHandlerRef> get authorizedHandlers => _authorizedHandlers == null
+      ? [
+          for (final id in _authorizedHandlerIds)
+            CardEventHandlerRef(source: const StateExecutionSource.legacy(), localId: id),
+        ]
+      : List.of(_authorizedHandlers);
+  Object? get packRuntime => _eventCopy(_packRuntime);
   List<CardEventProposal> get proposals => List.of(_proposals);
   Object? get runtime => _eventCopy(_runtime);
   bool _sameBatch(CardEventInvocation other) =>
@@ -42,6 +86,13 @@ class CardEventInvocation {
           capabilityFingerprint == other.capabilityFingerprint &&
           _eventEqual(definition._raw, other.definition._raw) &&
           _eventEqual(definition._version, other.definition._version) &&
+          _eventEqual(definition._compositionIdentity, other.definition._compositionIdentity) &&
+          _eventEqual(
+            [for (final ref in authorizedHandlers) ref.toJson()],
+            [for (final ref in other.authorizedHandlers) ref.toJson()],
+          ) &&
+          packRuntimeExists == other.packRuntimeExists &&
+          _eventEqual(_packRuntime, other._packRuntime) &&
           _eventEqual(_authorizedHandlerIds, other._authorizedHandlerIds) &&
           _eventEqual(
             [for (final proposal in _proposals) proposal.toJson()],
@@ -60,11 +111,14 @@ class CardEventSnapshot {
     required this.initialized,
     required this.valid,
     required this.fingerprint,
+    required this.packRuntimeExists,
+    required Object? packRuntime,
     required List<_Json> consumed,
     required List<String> firedHandlers,
     required List<_Json> pendingPrompts,
     required List<_Json> issues,
-  }) : _consumed = _maps(consumed),
+  }) : _packRuntime = _eventCopy(packRuntime),
+       _consumed = _maps(consumed),
        _firedHandlers = List.of(firedHandlers),
        _pendingPrompts = _maps(pendingPrompts),
        _issues = _maps(issues);
@@ -73,6 +127,9 @@ class CardEventSnapshot {
   final bool initialized;
   final bool valid;
   final String fingerprint;
+  final bool packRuntimeExists;
+  final Object? _packRuntime;
+  Object? get packRuntime => _eventCopy(_packRuntime);
   final List<_Json> _consumed;
   final List<String> _firedHandlers;
   final List<_Json> _pendingPrompts;
@@ -87,6 +144,7 @@ class CardEventSnapshot {
     'initialized': initialized,
     'valid': valid,
     'fingerprint': fingerprint,
+    if (packRuntimeExists) ...{'packRuntimeExists': true, 'packRuntime': _auditCopy(_packRuntime)},
     'consumed': consumed,
     'firedHandlers': firedHandlers,
     'pendingPrompts': pendingPrompts,
@@ -104,24 +162,30 @@ class CardEventResult {
     required this.initialized,
     required this.changed,
     required Object? runtime,
+    required this.packRuntimeExists,
+    required Object? packRuntime,
     required List<_Json> receipts,
     required List<_Json> effects,
     required List<_Json> issues,
   }) : _runtime = _eventCopy(runtime),
+       _packRuntime = _eventCopy(packRuntime),
        _receipts = _maps(receipts),
        _effects = _maps(effects),
        _issues = _maps(issues);
   final bool valid;
   final bool runtimeExists;
+  final bool packRuntimeExists;
 
   /// True only when this candidate creates a previously absent ledger.
   final bool initialized;
   final bool changed;
   final Object? _runtime;
+  final Object? _packRuntime;
   final List<_Json> _receipts;
   final List<_Json> _effects;
   final List<_Json> _issues;
   Object? get runtime => _eventCopy(_runtime);
+  Object? get packRuntime => _eventCopy(_packRuntime);
   List<Map<String, Object?>> get receipts => _maps(_receipts);
   List<Map<String, Object?>> get effects => _maps(_effects);
   List<Map<String, Object?>> get issues => _maps(_issues);
@@ -132,6 +196,7 @@ class CardEventResult {
     'initialized': initialized,
     'changed': changed,
     'runtime': _auditCopy(_runtime),
+    if (packRuntimeExists) ...{'packRuntimeExists': true, 'packRuntime': _auditCopy(_packRuntime)},
     'receipts': receipts,
     'effects': effects,
     'issues': issues,
@@ -150,7 +215,8 @@ class StateEventFinishResult {
 class CardEventDefinition {
   CardEventDefinition.parse(Object? rawRegistry, {Object? version = 1})
     : _raw = _eventCopy(rawRegistry),
-      _version = _eventCopy(version) {
+      _version = _eventCopy(version),
+      _defined = rawRegistry != null {
     if (!defined) {
       return;
     }
@@ -279,21 +345,55 @@ class CardEventDefinition {
     }
   }
 
+  factory CardEventDefinition.compose(
+    Iterable<CardEventRegistrySource> sources, {
+    required String effectiveConfigId,
+    required bool compositionEligible,
+  }) => _composeCardEventDefinition(
+    sources,
+    effectiveConfigId: effectiveConfigId,
+    compositionEligible: compositionEligible,
+  );
+
+  CardEventDefinition._composed(this._raw, {required bool defined}) : _version = 1, _defined = defined;
   final Object? _raw;
   final Object? _version;
+  final bool _defined;
+  _Json? _compositionIdentity;
   final List<_Json> _issues = [];
   final List<_EventHandler> _handlers = [];
   bool _executable = false;
-  bool get defined => _raw != null;
+  bool get defined => _defined;
   bool get executable => _executable;
   Object? get raw => _eventCopy(_raw);
-  String get fingerprint => _fingerprint(_eventIdentity({'version': _version, 'eventRules': _raw}));
+  String get fingerprint =>
+      _fingerprint(_eventIdentity({'version': _version, 'eventRules': _raw, 'composition': ?_compositionIdentity}));
   List<Map<String, Object?>> get issues => _maps(_issues);
   List<String> get handlerIds => [for (final handler in _handlers) handler.id];
+  List<StateEventTarget> get eventTargets => {for (final handler in _handlers) handler.target}.toList();
+  List<CardEventHandlerRef> get handlerRefs => [
+    for (final handler in _handlers) CardEventHandlerRef(source: handler.source, localId: handler.id),
+  ];
 
-  CardEventSnapshot inspect({required bool runtimeExists, Object? runtime}) {
+  CardEventSnapshot inspect({
+    required bool runtimeExists,
+    Object? runtime,
+    bool packRuntimeExists = false,
+    Object? packRuntime,
+    Iterable<StateExecutionSource> activeSources = const [],
+  }) {
     final problems = _eventRuntimeIssues(runtimeExists, runtime);
-    final valid = problems.isEmpty && (!defined || executable);
+    final pack = _PackRuntime(exists: packRuntimeExists, raw: packRuntime);
+    final packProblems = <_Json>[];
+    for (final source in {
+      for (final handler in _handlers)
+        if (handler.source.isPack) handler.source,
+      for (final source in activeSources)
+        if (source.isPack) source,
+    }) {
+      packProblems.addAll(pack.issues(source, _PackDomain.events));
+    }
+    final valid = problems.isEmpty && packProblems.isEmpty && (!defined || executable);
     final ledger = problems.isEmpty && runtimeExists ? runtime! as _Json : null;
     return CardEventSnapshot._(
       defined: defined,
@@ -301,6 +401,8 @@ class CardEventDefinition {
       initialized: runtimeExists,
       valid: valid,
       fingerprint: fingerprint,
+      packRuntimeExists: packRuntimeExists,
+      packRuntime: pack.raw,
       consumed: [
         if (ledger?['consumed'] case final List<Object?> rows)
           for (final row in rows) _mapCopy(row! as _Json),
@@ -313,7 +415,7 @@ class CardEventDefinition {
         if (ledger?['pendingPrompts'] case final List<Object?> rows)
           for (final row in rows) _mapCopy(row! as _Json),
       ],
-      issues: [...issues, ...problems],
+      issues: [...issues, ...problems, ...packProblems],
     );
   }
 }
@@ -326,7 +428,22 @@ class _EventExpectation {
 }
 
 class _EventHandler {
-  _EventHandler(this.id, this.name, this.index, this.once, this.condition, this.expectations, this.actions);
+  _EventHandler(
+    this.id,
+    this.name,
+    this.index,
+    this.once,
+    this.condition,
+    this.expectations,
+    this.actions, {
+    this.source = const StateExecutionSource.legacy(),
+    this.eventTarget,
+    this.actionTargets = const {},
+  });
+  final StateExecutionSource source;
+  final Map<int, StateEventTarget> actionTargets;
+  final StateEventTarget? eventTarget;
+  StateEventTarget get target => eventTarget ?? (source: source, name: name);
   final String id;
   final String name;
   final int index;
@@ -526,11 +643,13 @@ class _CardEventSettlement {
   _CardEventSettlement(this.invocation, {this.session, Object? conditionState, this.stateValid = true})
     : _conditionState = _eventCopy(conditionState),
       _runtimeExists = invocation.runtimeExists,
-      _runtime = invocation.runtime;
+      _runtime = invocation.runtime,
+      _pack = session?._pack ?? _PackRuntime(exists: invocation.packRuntimeExists, raw: invocation._packRuntime);
   final CardEventInvocation invocation;
   final StateSession? session;
   final Object? _conditionState;
   final bool stateValid;
+  final _PackRuntime _pack;
   bool _runtimeExists;
   Object? _runtime;
   final List<_Json> _receipts = [], _effects = [], _issues = [];
@@ -555,14 +674,41 @@ class _CardEventSettlement {
     if (definition.defined && !definition.executable) {
       invalid.add(_issue('card_event_definition', '', 'The current event registry is not executable.'));
     }
+    final allowed = invocation.authorizedHandlers.toSet();
+    final known = definition.handlerRefs.toSet();
     if (invocation.invocationId.isEmpty ||
         invocation.capabilityFingerprint != definition.fingerprint ||
-        invocation._authorizedHandlerIds.any((id) => !definition.handlerIds.contains(id))) {
+        allowed.any((ref) => !known.contains(ref)) ||
+        definition._compositionIdentity != null && invocation._authorizedHandlers == null) {
       invalid.add(
         _issue(
           'card_event_capability',
           '',
           'Invocation id, definition fingerprint or authorized handler set is invalid.',
+        ),
+      );
+    }
+    if (session != null &&
+        definition._compositionIdentity != null &&
+        session!._definition._compositionIdentity?['effectiveConfigId'] !=
+            definition._compositionIdentity!['effectiveConfigId']) {
+      invalid.add(
+        _issue(
+          'card_event_composition',
+          '',
+          'State and event settlement must use the same admitted effective configuration.',
+        ),
+      );
+    }
+    if (session != null &&
+        definition._compositionIdentity != null &&
+        (invocation.packRuntimeExists != session!._pack._packOriginalExists ||
+            !_eventEqual(invocation._packRuntime, session!._pack._packOriginal))) {
+      invalid.add(
+        _issue(
+          'card_event_pack_baseline',
+          '/dshgoPackRuntime',
+          'The admitted event batch must use the state session original pack carrier.',
         ),
       );
     }
@@ -655,9 +801,10 @@ class _CardEventSettlement {
         _fired.addAll(ids.cast<String>());
       }
     }
-    final allowed = invocation._authorizedHandlerIds.toSet();
     for (final proposal in proposals) {
-      final handlers = definition._handlers.where((handler) => handler.name == proposal.name).toList();
+      final handlers = definition._handlers
+          .where((handler) => handler.target.name == proposal.name && handler.target.source == proposal.source)
+          .toList();
       final judgments = <_Json>[];
       for (var i = 0; i < handlers.length; i++) {
         if (_handlerCount >= 256) {
@@ -669,6 +816,11 @@ class _CardEventSettlement {
           _issues.add(issue);
           judgments.add({
             'handlerId': handlers[i].id,
+            if (handlers[i].source.isPack) ...{
+              'executionSource': handlers[i].source.toJson(),
+              'localId': handlers[i].id,
+              'sourceIndex': handlers[i].index,
+            },
             'outcome': 'handler-limit',
             'consumed': false,
             'consumedOnce': false,
@@ -700,10 +852,15 @@ class _CardEventSettlement {
     return _result(true);
   }
 
-  _Json _runHandler(CardEventProposal proposal, _EventHandler handler, Set<String> allowed) {
+  _Json _runHandler(CardEventProposal proposal, _EventHandler handler, Set<CardEventHandlerRef> allowed) {
     final actions = <_Json>[], problems = <_Json>[];
     final judgment = <String, Object?>{
       'handlerId': handler.id,
+      if (handler.source.isPack) ...{
+        'executionSource': handler.source.toJson(),
+        'localId': handler.id,
+        'sourceIndex': handler.index,
+      },
       'outcome': 'pending',
       'consumed': false,
       'consumedOnce': false,
@@ -711,15 +868,28 @@ class _CardEventSettlement {
       'actions': actions,
       'issues': problems,
     };
-    if (_consumed.contains((proposal.eventId, handler.id))) {
+    if (handler.source.isPack) {
+      final invalid = _pack.issues(handler.source, _PackDomain.events);
+      if (invalid.isNotEmpty) {
+        problems.addAll(invalid);
+        _issues.addAll(invalid);
+        judgment['outcome'] = 'runtime-error';
+        return judgment;
+      }
+    }
+    final consumed = handler.source.isPack
+        ? _pack.eventConsumed(handler.source, proposal.eventId, handler.id)
+        : _consumed.contains((proposal.eventId, handler.id));
+    if (consumed) {
       judgment['outcome'] = 'already-consumed';
       return judgment;
     }
-    if (handler.once && _fired.contains(handler.id)) {
+    final fired = handler.source.isPack ? _pack.eventFired(handler.source, handler.id) : _fired.contains(handler.id);
+    if (handler.once && fired) {
       judgment['outcome'] = 'once-skipped';
       return judgment;
     }
-    if (!allowed.contains(handler.id)) {
+    if (!allowed.contains(CardEventHandlerRef(source: handler.source, localId: handler.id))) {
       judgment['outcome'] = 'not-authorized';
       return judgment;
     }
@@ -789,19 +959,32 @@ class _CardEventSettlement {
       }
       final action = handler.actions[i];
       if (action['type'] == 'state') {
-        final result = session!._apply(action['ops'], StateActor.rules, 'directorEvent:${handler.id}');
+        final result = session!._apply(
+          action['ops'],
+          StateActor.rules,
+          'directorEvent:${handler.id}',
+          executionSource: handler.source.isPack ? handler.source : null,
+          localId: handler.source.isPack ? handler.id : null,
+        );
         actions.add({'index': i, 'type': 'state', ...result.toJson()});
         problems.addAll(result.issues);
         _issues.addAll(result.issues);
         accepted = accepted || result.acceptedCount > 0;
         rejected = rejected || result.rejectedCount > 0;
       } else {
+        final target = action['type'] == 'event' ? handler.actionTargets[i] : null;
         final effect = <String, Object?>{
           ..._mapCopy(action),
+          if (target != null) 'eventTarget': {'source': target.source.toJson(), 'name': target.name},
           'source': 'directorEvent',
           'eventId': proposal.eventId,
           'runId': proposal.runId,
           'handlerId': handler.id,
+          if (handler.source.isPack) ...{
+            'executionSource': handler.source.toJson(),
+            'localId': handler.id,
+            'sourceIndex': handler.index,
+          },
           'actionIndex': i,
         };
         final bytes = utf8.encode(jsonEncode(effect)).length;
@@ -859,6 +1042,11 @@ class _CardEventSettlement {
   }
 
   void _consume(CardEventProposal proposal, _EventHandler handler) {
+    if (handler.source.isPack) {
+      _pack.consumeEvent(handler.source, proposal.eventId, handler.id, once: handler.once);
+      _ledgerChanged = true;
+      return;
+    }
     if (!_runtimeExists) {
       _runtimeExists = true;
       _runtime = <String, Object?>{'version': 1};
@@ -887,6 +1075,8 @@ class _CardEventSettlement {
     initialized: !invocation.runtimeExists && _runtimeExists,
     changed: _ledgerChanged,
     runtime: _runtime,
+    packRuntimeExists: _pack.exists,
+    packRuntime: _pack.raw,
     receipts: _receipts,
     effects: _effects,
     issues: _issues,

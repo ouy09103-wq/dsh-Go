@@ -252,7 +252,7 @@ void main() {
       await _ready(h, _companion.withPreview(WorkshopPreviewInput.companionPng(workshopPng(2, 3))));
       final oldSession = h.state.session;
       final oldDraft = h.drafts.probes.single;
-      h.forum.emit(authSignedIn(userId: 43));
+      h.account.emit(authSignedIn(userId: 43));
       expect(h.state.session, isNot(same(oldSession)));
       expect(h.state.source, isNull);
       expect(h.state.preparedMetadata, isNull);

@@ -957,18 +957,42 @@ packages:
     dependency: "direct main"
     description:
       name: sherpa_onnx
-      sha256: c10a1052bf03b9e68562e5be7d3a60568738c8356f3607012f0260f88ea11f08
+      sha256: "889c03cf7a8788795e3a6d35bf9f20b66d1862ea7a73a1b6aaf6e450715c870a"
       url: "https://pub.dev"
     source: hosted
-    version: "1.12.36"
-  sherpa_onnx_android:
+    version: "1.13.4"
+  sherpa_onnx_android_arm64:
     dependency: "direct main"
     description:
-      name: sherpa_onnx_android
-      sha256: "03a70665e83c026ccf4d853fe87d011321bc66810c5ea108ea08a128f95d862a"
+      name: sherpa_onnx_android_arm64
+      sha256: "0337650bc2357f39b751f1b9ced37770de3b60026effe66473b557346b4e3f97"
       url: "https://pub.dev"
     source: hosted
-    version: "1.12.36"
+    version: "1.13.4"
+  sherpa_onnx_android_armeabi:
+    dependency: "direct main"
+    description:
+      name: sherpa_onnx_android_armeabi
+      sha256: "9e96729d99567c3f64fc6f4c232ef04b57ae4ef3bf1b21364ee6e461103cb7cf"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.13.4"
+  sherpa_onnx_android_x86:
+    dependency: "direct main"
+    description:
+      name: sherpa_onnx_android_x86
+      sha256: "6eaa462a24bf881c8ee2b3ab5b9fad3d310b714fc9d3ac4b9f650d0a90c9d0ab"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.13.4"
+  sherpa_onnx_android_x86_64:
+    dependency: "direct main"
+    description:
+      name: sherpa_onnx_android_x86_64
+      sha256: "181aa0f0968adf2cf2dcb369c879ea372653864538b82772877e22748a80254f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.13.4"
   sherpa_onnx_ios:
     dependency: transitive
     description:

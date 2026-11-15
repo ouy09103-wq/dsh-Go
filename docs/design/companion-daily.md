@@ -1,6 +1,6 @@
 # 伙伴：养成和每天来看她
 
-> 2026-11-09 起草，方向稿。owner 问：能不能靠伙伴系统提高粘性和日活，比如养成，或者每天上线互动。伙伴小屋现状见 [companion.md](companion.md)，角色数据和好感度的底座见 [roleplay.md](roleplay.md) §8。
+> 2026-11-09 起草，方向稿。背景：评估伙伴系统能否支撑日常互动，比如养成，或者每天上线。伙伴小屋现状见 [companion.md](companion.md)，角色数据和好感度的底座见 [roleplay.md](roleplay.md) §8。
 
 ## 0. 结论
 

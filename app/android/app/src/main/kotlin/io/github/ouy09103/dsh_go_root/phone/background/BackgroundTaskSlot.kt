@@ -45,6 +45,13 @@ internal class BackgroundTaskSlot<D : Any, P : Any>(private val lock: Any) {
         resources.filter { taskId == null || it.owner.taskId == taskId }.onEach { it.sealed = true }
     }
 
+    /** [peer] was discarded: its screens are gone, so every record on it is sealed and leaves its slot. */
+    fun evict(peer: P): List<TaskResource<D, P>> = synchronized(lock) {
+        val gone = resources.filter { it.peer === peer }.onEach { it.sealed = true }
+        resources = resources - gone.toSet()
+        gone
+    }
+
     /** Only after this exact driver's strict release succeeds outside the monitor. */
     fun complete(expected: TaskResource<D, P>): Boolean = synchronized(lock) {
         if (resources.none { it === expected }) false

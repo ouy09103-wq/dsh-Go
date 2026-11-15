@@ -222,7 +222,13 @@ extension _SlashChatEffects on _ScriptCoordinator {
     }
     final capturedExtra = _captureScriptObject(extra);
     _checkUserExtra(owner.context.value.id, 'createSlashMessage', capturedExtra, '/extra');
-    final data = await owner.storage(_bridgeOperation(() => _prepareDataContext(admission.capture.chatId)));
+    final capturedParent = insertion == 0 ? null : admission.capture.path[insertion - 1].message.nodeId;
+    final forceGameplay = engine
+        ._stateAt(admission.capture.chatId, capturedParent)
+        .containsKey('dshgoPackDefinitionConfigId');
+    final data = await owner.storage(
+      _bridgeOperation(() => _prepareDataContext(admission.capture.chatId, forceGameplay: forceGameplay)),
+    );
     final id = engine._store.newNodeId();
     final ref = _scriptRef(admission.capture.chatId, id);
     return _runSlashMessagePlan(
@@ -241,7 +247,11 @@ extension _SlashChatEffects on _ScriptCoordinator {
         final before = insertion < oldPath.length ? oldPath[insertion] : null;
         final oldFamily = before == null ? <String>[] : plan.children(plan.links[before]!.parentId, physical: true);
         final parent = insertion == 0 ? null : oldPath[insertion - 1];
-        final baseline = parent == null ? _initialMessageState(data) : _copy(plan.page(parent).state);
+        final initial = parent == null ? _initialMessageState(data) : null;
+        final baseline = initial?.state ?? _copy(plan.page(parent!).state);
+        if (initial != null && initial.adoptedGameplay != null) {
+          plan.initialized[id] = initial;
+        }
         plan.add(
           _ScriptWorkingPage(
             id: id,

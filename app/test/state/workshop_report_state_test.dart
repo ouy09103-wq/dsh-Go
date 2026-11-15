@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:dsh_app/forum/discourse_client.dart';
-import 'package:dsh_app/forum/forum_auth.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/state/workshop_report_state.dart';
 import 'package:dsh_app/workshop/workshop_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +12,7 @@ import 'workshop_personal_test_support.dart';
 void main() {
   test('report sends one explicit attempt, retains the id and works while uploads are disabled', () async {
     final client = PersonalClient()
-      ..value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false, companion: false));
+      ..value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false, companion: false));
     final harness = personalHarness(client);
     try {
       await authReady(harness.container);
@@ -59,7 +58,7 @@ void main() {
 
   test('known rejection and local reason validation do not invent an unknown report', () async {
     final client = PersonalClient()
-      ..sendReport = (kind, id, version, reason) async => throw const WorkshopException('workshop_forum_origin', status: 409);
+      ..sendReport = (kind, id, version, reason) async => throw const WorkshopException('workshop_account_origin', status: 409);
     final harness = personalHarness(client);
     try {
       await authReady(harness.container);
@@ -67,7 +66,7 @@ void main() {
       await controller.submit(personalEntry(), 'Please review');
       var state = harness.container.read(workshopReportProvider);
       expect(state.phase, WorkshopReportPhase.failed);
-      expect(state.error!.code, 'workshop_forum_origin');
+      expect(state.error!.code, 'workshop_account_origin');
       expect(state.error!.resultUnknown, isFalse);
       await controller.submit(personalEntry(), ' \u0085');
       state = harness.container.read(workshopReportProvider);
@@ -105,8 +104,8 @@ void main() {
       await authSignal(entered, pending).timeout(const Duration(seconds: 10));
       expect(await controller.submit(personalEntry(), 'Second click'), isFalse);
       expect(controller.beginNewOperation(), isFalse);
-      harness.forum.emit(authSignedIn(credentials:
-        const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      harness.account.emit(authSignedIn(credential:
+        const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       release.complete(personalThirdId);
       await pending;
       await settled;
@@ -144,7 +143,7 @@ void main() {
       await authSignal(entered, refreshing).timeout(const Duration(seconds: 10));
       pending = harness.container.read(workshopReportProvider.notifier).submit(personalEntry(), 'Please review');
       final settled = authSettled(pending);
-      harness.forum.emit(const ForumAuthState(phase: ForumAuthPhase.signedOut));
+      harness.account.emit(authSignedOut);
       release.complete(client.value);
       await pending;
       await refreshing;
@@ -175,8 +174,8 @@ void main() {
       final controller = harness.container.read(workshopReportProvider.notifier);
       await controller.submit(personalEntry(), 'First operation');
       final old = harness.container.read(workshopReportProvider).attempt;
-      harness.forum.emit(authSignedIn(credentials:
-        const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client')));
+      harness.account.emit(authSignedIn(credential:
+        const WorkshopAccountCredential('TEST_ONLY_KEY_B')));
       await authReady(harness.container);
       await controller.submit(personalEntry(), 'Second operation');
       final current = harness.container.read(workshopReportProvider);

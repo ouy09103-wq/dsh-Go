@@ -117,23 +117,62 @@
   "workshopErrorReadersBusy": "她正在用着，先离开伙伴小屋或关掉悬浮窗再试。",
   "workshopErrorInstallRecord": "本机的安装记录对不上，没有动它。",
   "workshopErrorOtherOrigin": "这是从别的工坊装的。",
-  "workshopErrorSignIn": "需要先登录论坛账号。",
+  "workshopErrorSignIn": "需要先登录 GitHub 账号。",
   "workshopErrorConsent": "需要先同意把登录凭据交给工坊核对身份。",
-  "workshopErrorForumMismatch": "登录的论坛和工坊认的不是同一个，请重新登录。",
-  "workshopErrorForumDown": "论坛暂时联系不上，稍后再试。",
+  "workshopErrorAccountMismatch": "登录的账号来源和工坊认的不一致，请重新登录。",
+  "workshopErrorAccountDown": "暂时没能向 GitHub 核对身份，稍后再试。",
   "workshopErrorPreferences": "没能保存本机的记录，这一步没有继续。",
   "workshopErrorBusy": "上一步还没结束，稍等。",
   "workshopErrorCancelled": "已取消。",
   "workshopErrorUnknownResult": "不确定有没有成功。先刷新看看，别急着重试。",
   "workshopErrorGeneric": "没有成功，稍后再试。",
-  "workshopDisclosureTitle": "让工坊核对你的论坛身份",
-  "workshopDisclosureLead": "投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的论坛登录凭据（User API Key）发给下面这个工坊服务，由它去问论坛你是哪个账号。",
+  "workshopErrorWithCode": "没有成功，稍后再试。（{code}）",
+  "@workshopErrorWithCode": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "workshopErrorPackage": "包里有文件不符合要求，没法上传（{code}）。",
+  "@workshopErrorPackage": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "workshopDisclosureTitle": "让工坊核对你的 GitHub 身份",
+  "workshopDisclosureLead": "投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的 GitHub 登录凭据发给下面这个工坊服务，由它去问 GitHub 你是哪个账号。",
   "workshopDisclosureWorker": "收到凭据的工坊",
-  "workshopDisclosureForum": "核对身份的论坛",
-  "workshopDisclosureUse": "投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向论坛确认身份，不保存。",
-  "workshopDisclosureKept": "本机只记下你同意过这两个地址，不另存凭据；换了其中一个会再问。",
+  "workshopDisclosureAccount": "核对身份的账号服务",
+  "workshopDisclosureUse": "投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向 GitHub 确认身份，不保存。",
+  "workshopDisclosureKept": "凭据只存在这台手机上，本机另外记下你同意过这两个地址；换了其中一个会再问。",
   "workshopDisclosureStale": "地址刚刚有变化，请按现在显示的重新确认。",
   "workshopDisclosureAccept": "同意并继续",
   "workshopDisclosureDecline": "暂不",
-  "workshopDisclosureUnsaved": "这次同意已经生效，但没能记在本机，下次可能再问一遍。"
+  "workshopDisclosureUnsaved": "这次同意已经生效，但没能记在本机，下次可能再问一遍。",
+  "workshopSignInTitle": "用 GitHub 登录",
+  "workshopSignInLead": "工坊用 GitHub 账号认人。这次授权只能读你的公开资料（用户名和账号编号），不能动你的仓库。",
+  "workshopSignInPreparing": "正在向 GitHub 要验证码…",
+  "workshopSignInSteps": "在 GitHub 验证页输入验证码并授权，再回到这里。",
+  "workshopSignInOpen": "复制并打开 GitHub",
+  "workshopSignInCopied": "验证码已复制",
+  "workshopSignInWaiting": "等你在 GitHub 上授权…",
+  "workshopSignInExpired": "验证码过期了。",
+  "workshopSignInDenied": "你在 GitHub 上取消了授权。",
+  "workshopSignInNetwork": "连不上 GitHub，检查网络后再试。",
+  "workshopSignInUnconfigured": "这个工坊还没开通 GitHub 登录。",
+  "workshopSignInAgain": "重新获取验证码",
+  "workshopAccountLine": "GitHub 账号 {login}",
+  "workshopAccountSignOut": "退出登录",
+  "workshopAccountSignedOut": "已退出。要彻底收回授权，去 GitHub 设置里的 Applications 页撤销。",
+  "workshopAccountSignOutFailed": "没能退出，稍后再试。",
+  "@workshopAccountLine": {
+    "placeholders": {
+      "login": {
+        "type": "String"
+      }
+    }
+  }
 }

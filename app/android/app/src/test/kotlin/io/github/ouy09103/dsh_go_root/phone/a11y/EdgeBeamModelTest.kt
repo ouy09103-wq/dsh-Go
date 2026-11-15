@@ -1,57 +1,91 @@
 package io.github.ouy09103.dsh_go_root.phone.a11y
 
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.exp
 
-/** The screen-edge beam's numbers: the Border beam `md` type scaled to a phone (411 × 914 dp). */
+/** The screen-edge rim's numbers on a phone: 1080 × 2400 px at 2.625 px/dp, corners of 110 px. */
 class EdgeBeamModelTest {
-    private val phoneW = 1080 / 2.625f
-    private val phoneH = 2400 / 2.625f
+    private val density = 2.625f
+    private val perimeter = EdgeRim.perimeter(1080f, 2400f, 110f)
+    private fun lumpsAt(t: Double) = FloatArray(EdgeRim.COUNT * EdgeRim.STRIDE).also { EdgeRim.lumps(t, perimeter, density, it) }
 
-    // ---- 尺度：整块屏幕 ---------------------------------------------------------------------------
+    // ---- 色带：整圈都有，不均匀 -----------------------------------------------------------------------
 
-    @Test fun aLapRoundAPhoneIsCalm() {
-        // 1.96 s round a 350 × 140 card, perimeter for perimeter, half again slower.
-        val lap = EdgeBeamSpec.lapSeconds(phoneW, phoneH)
-        assertEquals(1.96 * 2 * (phoneW + phoneH) / 980.0 * 1.5, lap, 1e-6)
-        assertTrue(lap in 7.0..9.0)
-        // Never frantic on a small screen, never sluggish on a tablet.
-        assertEquals(EdgeBeamSpec.LAP_MIN_S, EdgeBeamSpec.lapSeconds(200f, 300f), 0.0)
-        assertEquals(EdgeBeamSpec.LAP_MAX_S, EdgeBeamSpec.lapSeconds(1600f, 2400f), 0.0)
+    @Test fun thePerimeterGoesRoundTheRoundedCorners() {
+        assertEquals(2 * (1080f + 2400f), EdgeRim.perimeter(1080f, 2400f, 0f), 0.01f)
+        // Each corner swaps two straight radii for a quarter circle.
+        assertEquals(2 * (1080f + 2400f) - 8 * 110f + (2 * PI * 110).toFloat(), perimeter, 0.01f)
     }
 
-    @Test fun theBlobsScaleToTheScreenAsTheAuthorScalesPulseOutside() {
-        val (sx, sy) = EdgeBeamSpec.blobScale(phoneW, phoneH)
-        assertEquals(1.176f, sx, 0f)
-        assertEquals(EdgeBeamSpec.SCALE_MAX, sy, 0f) // 914 / 140 clamps at 4
-        assertEquals(EdgeBeamSpec.SCALE_MIN, EdgeBeamSpec.blobScale(50f, 30f).first, 0f)
+    @Test fun theRimIsAllRoundUnevenAndAveragesTheReferenceWidth() {
+        val l = lumpsAt(40.0)
+        val n = 2000
+        val t = FloatArray(n) { EdgeRim.thickness(perimeter * it / n, perimeter, l) }
+        val mean = t.average()
+        assertTrue("mean thickness $mean", mean in 0.75..1.25)
+        // Nowhere gone (the colour is all round), nowhere past the bound the shader's reach is built on.
+        assertTrue(t.min() >= 0.04f)
+        assertTrue(t.max() <= EdgeRim.MAX_THICKNESS * 1.25f)
+        // Uneven: thin stretches and lumps several times as deep.
+        assertTrue("min ${t.min()} max ${t.max()}", t.max() > 3 * t.min())
+    }
+
+    @Test fun theColourFadesInwardToNothingWithinTheReach() {
+        val w = EdgeBeamSpec.WIDTH_DP * density
+        assertEquals(1f, EdgeRim.hug(0f, 1f, w), 0f)
+        assertEquals(exp(-1f), EdgeRim.hug(w, 1f, w), 1e-6f)
+        // At the edge of the drawn band even the thickest lump is under half a step of 8-bit alpha.
+        val reach = EdgeBeamSpec.REACH * w
+        assertTrue(EdgeRim.hug(reach, EdgeRim.MAX_THICKNESS, w) * EdgeBeamSpec.DARK.rim * 255 < 0.5f)
+        assertEquals(14f, EdgeBeamSpec.WIDTH_DP, 0f)
+    }
+
+    @Test fun theLumpsDriftSlowerThanTheReference() {
+        for (i in 0 until EdgeRim.COUNT) {
+            val v = abs(EdgeRim.driftDpPerS(i))
+            assertTrue("lump $i at $v dp/s", v <= 22 * EdgeBeamSpec.CALM)
+        }
+        assertTrue(EdgeBeamSpec.CALM <= 1.0)
+        // Two seconds apart a lump has moved a few dp along a 2 600 dp edge: it sits there.
+        val a = lumpsAt(40.0)
+        val b = lumpsAt(42.0)
+        for (i in 0 until EdgeRim.COUNT) {
+            var d = abs(b[i * EdgeRim.STRIDE] - a[i * EdgeRim.STRIDE])
+            d = minOf(d, perimeter - d)
+            assertTrue("lump $i moved $d px", d / density <= 2 * 11.01f)
+        }
+    }
+
+    @Test fun theLumpsBreatheButStayTheSamePattern() {
+        val a = lumpsAt(0.0)
+        val b = lumpsAt(0.0)
+        assertTrue(a.contentEquals(b))
+        val depths = (0 until 200).map { lumpsAt(it * 0.1)[2] }
+        // ±25 % round the lump's own depth.
+        assertTrue(depths.max() / depths.min() in 1.3f..1.7f)
+        // Centres stay on the edge.
+        val far = lumpsAt(100_000.0)
+        for (i in 0 until EdgeRim.COUNT) assertTrue(far[i * EdgeRim.STRIDE] in 0f..perimeter)
+    }
+
+    @Test fun thePresetsStayUnderTheBorderBeamsOpacity() {
+        assertTrue(EdgeBeamSpec.DARK.rim <= 0.42f)
+        assertTrue(EdgeBeamSpec.LIGHT.rim <= 0.26f)
+        assertTrue(EdgeBeamSpec.DARK.line < EdgeBeamSpec.DARK.rim)
+        assertTrue(EdgeBeamSpec.LIGHT.line < EdgeBeamSpec.LIGHT.rim)
+        // At most 60 fps.
+        assertTrue(EdgeBeamSpec.FRAME_MS >= 16)
     }
 
     @Test fun theDisplaysCornerRadiusWinsOverTheFallback() {
         assertEquals(120f, EdgeBeamSpec.cornerPx(120, 2.625f), 0f)
         assertEquals(28 * 2.625f, EdgeBeamSpec.cornerPx(null, 2.625f), 0.001f)
         assertEquals(28 * 2.625f, EdgeBeamSpec.cornerPx(0, 2.625f), 0.001f)
-    }
-
-    @Test fun thePresetsAreTheAuthorsMd() {
-        assertEquals(0.26f, EdgeBeamSpec.DARK.stroke, 0f)
-        assertEquals(0.42f, EdgeBeamSpec.DARK.inner, 0f)
-        assertEquals(0.24f, EdgeBeamSpec.DARK.bloom, 0f)
-        assertEquals(0.12f, EdgeBeamSpec.LIGHT.stroke, 0f)
-        assertEquals(1.5f, EdgeBeamSpec.LIGHT.saturation, 0f)
-        // rgba(255,255,255,0.27) and rgba(0,0,0,0.14).
-        assertEquals(69, EdgeBeamSpec.DARK.shadow ushr 24)
-        assertEquals(36, EdgeBeamSpec.LIGHT.shadow ushr 24)
-        assertEquals(EdgeBeamSpec.WINDOW_POS.size, EdgeBeamSpec.WINDOW_ALPHA.size)
-        assertEquals(EdgeBeamSpec.WHITE_POS.size, EdgeBeamSpec.WHITE_ALPHA_DARK.size)
-        assertEquals(EdgeBeamSpec.BLOOM_POS.size, EdgeBeamSpec.BLOOM_ALPHA_LIGHT.size)
-        for (stops in listOf(EdgeBeamSpec.WINDOW_POS, EdgeBeamSpec.WHITE_POS, EdgeBeamSpec.BLOOM_POS)) {
-            assertTrue(stops.toList().zipWithNext().all { (a, b) -> a <= b })
-        }
     }
 
     // ---- 配色：跟 App 的主色 ------------------------------------------------------------------------
@@ -83,30 +117,10 @@ class EdgeBeamModelTest {
         assertEquals(0xFF778CC5.toInt(), EdgeBeamPalette.fromHsl(h, s, l))
     }
 
-    // ---- CSS 的时间与滤镜 ---------------------------------------------------------------------------
-
-    @Test fun cssCurves() {
+    @Test fun cssEase() {
         assertEquals(0.8024, BeamMath.ease(0.5), 1e-4)
-        assertEquals(0.5, BeamMath.easeInOut(0.5), 1e-9)
         assertEquals(0.0, BeamMath.ease(0.0), 0.0)
         assertEquals(1.0, BeamMath.ease(1.0), 0.0)
-    }
-
-    @Test fun theHueDriftsMinusToPlusAndBack() {
-        assertEquals(-30.0, BeamMath.hueDrift(0.0, 30.0, 12.0), 1e-9)
-        assertEquals(0.0, BeamMath.hueDrift(3.0, 30.0, 12.0), 1e-6)
-        assertEquals(30.0, BeamMath.hueDrift(6.0, 30.0, 12.0), 1e-9)
-        assertEquals(0.0, BeamMath.hueDrift(9.0, 30.0, 12.0), 1e-6)
-        assertEquals(-30.0, BeamMath.hueDrift(12.0, 30.0, 12.0), 1e-9)
-    }
-
-    @Test fun theFilterMatrixIsTheW3cChain() {
-        val identity = floatArrayOf(1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f)
-        assertArrayEquals(identity, BeamMath.filterMatrix(0.0, 1.0, 1.0), 1e-6f)
-        assertArrayEquals(identity, BeamMath.filterMatrix(360.0, 1.0, 1.0), 1e-6f)
-        assertEquals(1.3f, BeamMath.filterMatrix(0.0, 1.3, 1.0)[0], 1e-6f)
-        val grey = BeamMath.filterMatrix(0.0, 1.0, 0.0)
-        for (row in intArrayOf(0, 5, 10)) assertArrayEquals(floatArrayOf(0.213f, 0.715f, 0.072f), grey.copyOfRange(row, row + 3), 1e-6f)
     }
 
     // ---- 渐入渐出、暂停、移除动画 -----------------------------------------------------------------------
@@ -120,7 +134,7 @@ class EdgeBeamModelTest {
         assertEquals(BeamMath.ease(0.5).toFloat(), c.fadeNow, 1e-4f)
         c.frame(1_600)
         assertEquals(1f, c.fadeNow, 0f)
-        assertTrue(c.animating(1_600)) // on and travelling
+        assertTrue(c.animating(1_600)) // on and drifting
         c.show(false, 2_000)
         assertFalse(c.gone(2_400))
         assertTrue(c.gone(2_500))
@@ -137,7 +151,7 @@ class EdgeBeamModelTest {
         assertEquals(at, c.fadeNow, 0.01f)
     }
 
-    @Test fun pausedItSettlesStillAndStopsAskingForFrames() {
+    @Test fun pausedTheLumpsComeToRestAndNoFramesAreAskedFor() {
         val c = EdgeBeamClock(motion = true)
         c.show(true, 0)
         for (t in 0L..1_000L step 50) c.frame(t)
@@ -146,25 +160,38 @@ class EdgeBeamModelTest {
         for (t in 1_050L..1_500L step 50) c.frame(t)
         assertEquals(1f, c.stillNow, 0f)
         val stopped = c.phase
-        assertTrue(stopped in 1.0..1.5) // it slowed to a stop rather than halting
+        assertTrue(stopped in 1.0..1.5) // it slowed to a stop within half a second rather than halting
         c.frame(2_500)
-        assertEquals(stopped, c.phase, 0.0) // no travel once still
+        assertEquals(stopped, c.phase, 0.0)
         assertFalse(c.animating(2_500))
         c.pause(false, 3_000)
         assertTrue(c.animating(3_000))
     }
 
-    @Test fun withoutAnimationsItIsAStillOutlineAtOnce() {
+    @Test fun aRendererThatStandsStillAsksForFramesOnlyWhileItRamps() {
+        val c = EdgeBeamClock(motion = true)
+        c.show(true, 0)
+        assertTrue(c.animating(100, drifts = false)) // fading in
+        c.frame(EdgeBeamSpec.FADE_IN_MS)
+        assertFalse(c.animating(EdgeBeamSpec.FADE_IN_MS, drifts = false)) // on, and nothing moves
+        assertTrue(c.animating(EdgeBeamSpec.FADE_IN_MS)) // the shader's rim keeps drifting
+        c.pause(true, 5_000)
+        assertTrue(c.animating(5_100, drifts = false)) // settling into the line
+    }
+
+    @Test fun withoutAnimationsTheRimStandsStillAndPausingSwapsAtOnce() {
         val c = EdgeBeamClock(motion = false)
         c.show(true, 0)
         c.frame(0)
         assertEquals(1f, c.fadeNow, 0f)
-        assertEquals(1f, c.stillNow, 0f)
+        assertEquals(0f, c.stillNow, 0f) // the rim, not the line
         assertFalse(c.animating(0))
-        c.pause(false, 10) // resuming changes nothing: still is all there is
-        c.frame(20)
+        c.frame(5_000)
+        assertEquals(0.0, c.phase, 0.0) // nothing drifts
+        c.pause(true, 5_000)
+        c.frame(5_000)
         assertEquals(1f, c.stillNow, 0f)
-        c.show(false, 30)
-        assertTrue(c.gone(30))
+        c.show(false, 5_010)
+        assertTrue(c.gone(5_010))
     }
 }

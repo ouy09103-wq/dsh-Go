@@ -44,19 +44,7 @@ class RuntimeInstaller(
     private val engineUpgrade = EngineUpgrade(baseDir, sync)
 
     fun installedVersion(): String? =
-        if (!engineUpgrade.isPending() && rootfs.isDirectory && versionFile.isFile && complete()) {
-            versionFile.readText().trim().ifEmpty { null }
-        } else {
-            null
-        }
-
-    /**
-     * A version file survives a rootfs whose contents do not. Without this check the app calls a
-     * gutted runtime "installed and current" and never re-extracts it, so a launch fails forever
-     * with no way back but a manual reset. Three names are enough to tell a real Ubuntu tree from
-     * a marker next to nothing: they come from the bundle itself, not from user data.
-     */
-    private fun complete(): Boolean = INCOMPLETE_MARKERS.none { !File(rootfs, it).exists() }
+        if (!engineUpgrade.isPending() && rootfs.isDirectory && versionFile.isFile) versionFile.readText().trim().ifEmpty { null } else null
 
     fun isCurrent(): Boolean = installedVersion() == manifest.runtimeVersion
 
@@ -175,14 +163,6 @@ class RuntimeInstaller(
         context.assets.openFd(path).use { it.length }
     } catch (_: Exception) {
         -1L // compressed asset; fall back to the manifest
-    }
-
-    private companion object {
-        /**
-         * Files every bundled rootfs has and no reset ever keeps. Their absence means the tree
-         * was gutted, whatever rootfs.version still says.
-         */
-        val INCOMPLETE_MARKERS = listOf("usr/bin/env", "bin/sh", "opt/node/bin/node")
     }
 }
 

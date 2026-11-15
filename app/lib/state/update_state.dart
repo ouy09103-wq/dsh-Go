@@ -541,7 +541,8 @@ class AppUpdateController extends Notifier<AppUpdateState> {
 
     if (!isAutoCheckDue(now: _now(), lastChecked: at(_checkedKey), lastAttempt: at(_attemptKey))) return false;
     await check();
-    return ref.mounted && state.hasUpdate && !state.isSkipped && state.asset != null;
+    // Switched off while the check was in flight: keep the result, skip the offer.
+    return ref.mounted && state.autoCheck && state.hasUpdate && !state.isSkipped && state.asset != null;
   }
 
   /// Asks the sources for the latest release. Concurrent calls share one check;

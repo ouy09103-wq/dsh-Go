@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:math' as math;
 
@@ -54,10 +56,10 @@ abstract final class AppMotion {
   /// 折叠展开。
   static const collapseCurve = Curves.easeInOutCubic;
 
-  /// 滑行:抽屉、胶囊位移这类"跟手后落位"的运动,iOS 式长尾减速。
+  /// 滑行:抽屉、胶囊位移这类"跟手后落位"的运动,长尾减速。
   static const glide = Cubic(0.32, 0.72, 0.0, 1.0);
 
-  /// 弹簧,时长 + 回弹,取 Apple 的默认值:回弹 0 最通用,0.15 几乎看不出在弹,
+  /// 弹簧,时长 + 回弹,用系统弹簧的默认值:回弹 0 最通用,0.15 几乎看不出在弹,
   /// 超过 0.4 就夸张了。按压落位。
   static final pressSpring = SpringDescription.withDurationAndBounce(duration: const Duration(milliseconds: 150));
 

@@ -57,8 +57,8 @@ void main() {
     });
     client = WorkshopClient(origin: workshopTestOrigin, cacheFile: File('${temp.path}/catalog.json'), http: http,
       clock: () => DateTime.utc(2026, 11, 11, 1, 2, 3, 456, 789));
-    credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, forum: workshopTestForum,
-      userApiKey: 'synthetic-test-key', disclosureAccepted: true);
+    credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: workshopTestAccount,
+      token: 'synthetic_test_token', disclosureAccepted: true);
   });
   tearDown(() => temp.deleteSync(recursive: true));
 
@@ -271,7 +271,7 @@ void main() {
   test('redirect response is an error, never followed with the key', () async {
     http.route = (method, url, headers, _) {
       if (url.path.endsWith('/capabilities')) return workshopJsonResponse(workshopCaps());
-      expect(headers['User-Api-Key'], 'synthetic-test-key');
+      expect(headers['Authorization'], 'Bearer synthetic_test_token');
       return UpdateHttpResponse(status: 302, headers: {'location': 'https://other.example/steal'}, body: const Stream.empty());
     };
     await expectLater(client.submission(workshopTestId, credential: credential), workshopError('workshop_redirect'));
@@ -279,46 +279,48 @@ void main() {
     expect(http.requests, hasLength(2));
   });
 
-  test('both consent target and official forum must match before sending a key', () async {
-    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, forum: workshopTestForum,
-      userApiKey: 'synthetic-test-key', disclosureAccepted: false), workshopError('workshop_consent_required'));
-    final other = WorkshopCredential.forConsentedWorker(worker: Uri.parse('https://other.example'), forum: workshopTestForum,
-      userApiKey: 'synthetic-test-key', disclosureAccepted: true);
+  test('both consent target and account origin must match before sending a token', () async {
+    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: workshopTestAccount,
+      token: 'synthetic_test_token', disclosureAccepted: false), workshopError('workshop_consent_required'));
+    final other = WorkshopCredential.forConsentedWorker(worker: Uri.parse('https://other.example'), account: workshopTestAccount,
+      token: 'synthetic_test_token', disclosureAccepted: true);
     await expectLater(client.submission(workshopTestId, credential: other), workshopError('workshop_consent_required'));
     expect(http.requests, isEmpty);
-    http.route = (_, _, _, _) => workshopJsonResponse(workshopCaps(forum: 'https://different-forum.example'));
-    await expectLater(client.submission(workshopTestId, credential: credential), workshopError('workshop_forum_origin'));
-    expect(http.requests.every((r) => !r.headers.containsKey('User-Api-Key')), isTrue);
-    expect(credential.toString(), isNot(contains('synthetic-test-key')));
+    http.route = (_, _, _, _) => workshopJsonResponse(workshopCaps(account: 'https://different-account.example'));
+    await expectLater(client.submission(workshopTestId, credential: credential), workshopError('workshop_account_origin'));
+    expect(http.requests.every((r) => !r.headers.containsKey('Authorization')), isTrue);
+    expect(credential.toString(), isNot(contains('synthetic_test_token')));
   });
 
-  test('credential uses the Worker 512-byte printable ASCII limit', () {
-    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, forum: workshopTestForum,
-      userApiKey: 'a' * 512, disclosureAccepted: true), returnsNormally);
-    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, forum: workshopTestForum,
-      userApiKey: 'a' * 513, disclosureAccepted: true), workshopError('workshop_forum_auth_required'));
+  test('credential uses the Worker token charset and 255-character limit', () {
+    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: workshopTestAccount,
+      token: 'a' * 255, disclosureAccepted: true), returnsNormally);
+    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: workshopTestAccount,
+      token: 'a' * 256, disclosureAccepted: true), workshopError('workshop_account_auth_required'));
+    expect(() => WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: workshopTestAccount,
+      token: 'gho-with-dash', disclosureAccepted: true), workshopError('workshop_account_auth_required'));
     expect(http.requests, isEmpty);
   });
 
-  test('every author operation asserts the normalized forum and accepts matching IPv6 response ownership', () async {
-    const forum = 'https://[2001:db8::1]';
+  test('every author operation asserts the normalized account origin and accepts matching IPv6 response ownership', () async {
+    const account = 'https://[2001:db8::1]';
     credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin,
-      forum: Uri.parse('https://[2001:0db8:0000:0000:0000:0000:0000:0001]:443/'),
-      userApiKey: 'synthetic-test-key', disclosureAccepted: true);
+      account: Uri.parse('https://[2001:0db8:0000:0000:0000:0000:0000:0001]:443/'),
+      token: 'synthetic_test_token', disclosureAccepted: true);
     Map<String, Object?> row(String status) => {
       ...workshopSubmissionJson(status: status),
-      'owner': {'forumOrigin': forum, 'forumUserId': 42, 'username': 'author'},
+      'owner': {'accountOrigin': account, 'accountId': 42, 'username': 'author'},
     };
     var authorCalls = 0;
     http.route = (method, url, headers, _) {
       if (url.path.endsWith('/capabilities')) {
-        expect(headers.containsKey('User-Api-Key'), isFalse);
-        expect(headers.containsKey('X-Workshop-Forum-Origin'), isFalse);
-        return workshopJsonResponse(workshopCaps(forum: forum));
+        expect(headers.containsKey('Authorization'), isFalse);
+        expect(headers.containsKey('X-Workshop-Account-Origin'), isFalse);
+        return workshopJsonResponse(workshopCaps(account: account));
       }
       authorCalls++;
-      expect(headers['User-Api-Key'], 'synthetic-test-key');
-      expect(headers['X-Workshop-Forum-Origin'], forum);
+      expect(headers['Authorization'], 'Bearer synthetic_test_token');
+      expect(headers['X-Workshop-Account-Origin'], account);
       if (url.path.endsWith('/reports')) {
         return workshopJsonResponse({'reportId': workshopTestId}, status: 201);
       }
@@ -337,23 +339,23 @@ void main() {
       rightsConfirmed: true, credential: credential);
     final archive = File('${temp.path}/asserted.zip')..writeAsBytesSync([1, 2, 3, 4]);
     expect((await client.upload(draft, archive, credential: credential)).status, WorkshopSubmissionStatus.pending);
-    expect((await client.submission(workshopTestId, credential: credential)).ownerOrigin, credential.forum);
-    expect((await client.submissions(credential: credential)).submissions.single.ownerOrigin, credential.forum);
+    expect((await client.submission(workshopTestId, credential: credential)).ownerOrigin, credential.account);
+    expect((await client.submissions(credential: credential)).submissions.single.ownerOrigin, credential.account);
     expect((await client.withdraw(workshopTestId, 'take down', credential: credential)).status, WorkshopSubmissionStatus.withdrawn);
     expect(await client.report(kind: 'pet', id: 'cat', version: '1.0.0', reason: 'report', credential: credential), workshopTestId);
     expect(authorCalls, 6);
-    expect(credential.forum.toString(), forum);
+    expect(credential.account.toString(), account);
   });
 
-  test('normalized forum values still reject a different single or paged response owner', () async {
-    const forum = 'https://[2001:db8::1]';
-    credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, forum: Uri.parse(forum),
-      userApiKey: 'synthetic-test-key', disclosureAccepted: true);
+  test('normalized account origins still reject a different single or paged response owner', () async {
+    const account = 'https://[2001:db8::1]';
+    credential = WorkshopCredential.forConsentedWorker(worker: workshopTestOrigin, account: Uri.parse(account),
+      token: 'synthetic_test_token', disclosureAccepted: true);
     final row = {...workshopSubmissionJson(),
-      'owner': {'forumOrigin': 'https://[2001:db8::2]', 'forumUserId': 42, 'username': 'author'}};
+      'owner': {'accountOrigin': 'https://[2001:db8::2]', 'accountId': 42, 'username': 'author'}};
     http.route = (_, url, _, _) {
       if (url.path.endsWith('/capabilities')) {
-        return workshopJsonResponse(workshopCaps(forum: forum));
+        return workshopJsonResponse(workshopCaps(account: account));
       }
       return workshopJsonResponse(url.path.endsWith('/submissions')
         ? {'submissions': [row], 'nextCursor': null} : {'submission': row});
@@ -362,11 +364,11 @@ void main() {
     await expectLater(client.submissions(credential: credential), workshopError('workshop_bad_response'));
   });
 
-  test('a forum assertion conflict after capabilities is a known stable failure', () async {
+  test('an account assertion conflict after capabilities is a known stable failure', () async {
     http.route = (_, url, _, _) => url.path.endsWith('/capabilities') ? workshopJsonResponse(workshopCaps()) :
-      workshopJsonResponse({'error': 'workshop_forum_origin'}, status: 409);
+      workshopJsonResponse({'error': 'workshop_account_origin'}, status: 409);
     await expectLater(client.createSubmission(WorkshopMetadata.fromJson(workshopMeta()), requestId: workshopTestId,
-      rightsConfirmed: true, credential: credential), workshopError('workshop_forum_origin', unknown: false));
+      rightsConfirmed: true, credential: credential), workshopError('workshop_account_origin', unknown: false));
   });
 
   test('sharing-rights confirmation is explicit even for existing catalog metadata', () async {
@@ -385,14 +387,14 @@ void main() {
     http.route = (method, url, headers, body) {
       if (url.path.endsWith('/capabilities')) return workshopJsonResponse(workshopCaps());
       if (url.path.endsWith('/workshop.json')) return workshopJsonResponse(workshopCatalogJson());
-      expect(headers['User-Api-Key'], 'synthetic-test-key');
+      expect(headers['Authorization'], 'Bearer synthetic_test_token');
       if (method == 'POST') {
         final json = jsonDecode(utf8.decode(body!)) as Map;
         expect(json['requestId'], requestId);
         expect(json['rightsConfirmed'], isTrue);
         expect(json['description'], 'A small cat');
         expect(json['tags'], ['pet', 'cat']);
-        expect(json.containsKey('User-Api-Key'), isFalse);
+        expect(json.containsKey('Authorization'), isFalse);
         return workshopJsonResponse({'submission': workshopSubmissionJson(metadata: meta)}, status: 201);
       }
       expect(method, 'PUT');
@@ -409,8 +411,8 @@ void main() {
     expect(progress, [[0, 4], [4, 4]]);
     expect(client.cacheFile.existsSync(), isFalse);
     await client.catalog();
-    expect(client.cacheFile.readAsStringSync(), isNot(contains('synthetic-test-key')));
-    expect(client.cacheFile.readAsStringSync(), isNot(contains('forumUserId')));
+    expect(client.cacheFile.readAsStringSync(), isNot(contains('synthetic_test_token')));
+    expect(client.cacheFile.readAsStringSync(), isNot(contains('accountId')));
   });
 
   test('same requestId retry returns pending without uploading twice', () async {
@@ -441,11 +443,11 @@ void main() {
 
   test('complete fallback byte progress does not turn a rejected upload into success', () async {
     http.route = (_, url, _, _) => url.path.endsWith('/capabilities') ? workshopJsonResponse(workshopCaps()) :
-      workshopJsonResponse({'error': 'workshop_forum_origin'}, status: 409);
+      workshopJsonResponse({'error': 'workshop_account_origin'}, status: 409);
     final archive = File('${temp.path}/rejected-progress.zip')..writeAsBytesSync([1, 2, 3, 4]);
     final progress = <List<int>>[];
     await expectLater(client.upload(WorkshopSubmission.fromJson(workshopSubmissionJson()), archive, credential: credential,
-      onProgress: (sent, total) => progress.add([sent, total])), workshopError('workshop_forum_origin', unknown: false));
+      onProgress: (sent, total) => progress.add([sent, total])), workshopError('workshop_account_origin', unknown: false));
     expect(progress, [[0, 4], [4, 4]]);
   });
 

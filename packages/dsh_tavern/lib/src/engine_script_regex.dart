@@ -14,8 +14,54 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
     final managed = engine._regexLibrary.scripts;
     final group = chat == null ? null : engine._store.groupChat(chat.id);
     final actorId = query.characterId ?? context.value.characterId ?? (group == null ? chat?.characterId : null);
+    final packBuckets = <String>{
+      if (query.sources.contains(TavernScriptRegexSource.global)) 'global',
+      if (query.sources.contains(TavernScriptRegexSource.character) && actorId != null) 'character',
+      if (query.sources.contains(TavernScriptRegexSource.chat) && chatId != null) 'chat',
+    };
+    final gameplayCapture = packBuckets.isEmpty
+        ? null
+        : _captureGameplayResources(
+            engine,
+            characterId: actorId,
+            chatId: chatId,
+            kinds: const {'regex'},
+            deferResourceErrors: true,
+          );
     final result = <TavernScriptRegex>[];
     final enabledGlobally = settings['regexEnabled'] != false;
+
+    void checkGameplay() {
+      if (gameplayCapture != null && !_gameplayResourcesCurrent(engine, gameplayCapture)) {
+        throw _scriptError(
+          TavernScriptErrorCode.revisionConflict,
+          'getTavernRegexes',
+          'The captured gameplay regex sources changed.',
+          contextId: contextId,
+        );
+      }
+    }
+
+    void addPacks(TavernScriptRegexSource source) {
+      if (gameplayCapture == null || !packBuckets.contains(source.name)) {
+        return;
+      }
+      checkGameplay();
+      // Resolve only the bucket reached here. Errors from an unrequested
+      // bucket, or a character whose original lookup fails, stay unconsumed.
+      final packRules = _resolveGameplayResources(
+        gameplayCapture,
+        settings,
+        actorId: actorId,
+        kinds: const {'regex'},
+        regexBuckets: {source.name},
+      ).regex;
+      for (final rule in packRules) {
+        if (!query.effectiveOnly || rule.effective) {
+          result.add(rule);
+        }
+      }
+    }
 
     void addArray(
       Object? value,
@@ -79,6 +125,7 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
           ),
         );
       }
+      addPacks(TavernScriptRegexSource.global);
     }
     if (query.sources.contains(TavernScriptRegexSource.preset)) {
       addArray(_map(presetSettings['extensions'])['regex_scripts'], TavernScriptRegexSource.preset, {
@@ -107,7 +154,10 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
             settings['characterRegexEnabled'] != false &&
             !_strings(settings['disabledCharacterRegex']).contains(actorId),
       );
+      addPacks(TavernScriptRegexSource.character);
     }
+    addPacks(TavernScriptRegexSource.chat);
+    checkGameplay();
     return List.unmodifiable(result);
   }
 
@@ -178,6 +228,13 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
     final config = engine._config;
     final at = engine._clock();
     final actorId = characterId ?? context.value.characterId ?? (group == null ? chat?.characterId : null);
+    final gameplayCapture = _captureGameplayResources(
+      engine,
+      characterId: actorId,
+      chatId: chatId,
+      kinds: const {'regex'},
+      deferResourceErrors: true,
+    );
     final actor = actorId == null ? null : await engine._record(actorId);
     if (actorId != null && actor == null) {
       throw _scriptError(
@@ -189,6 +246,24 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
     }
     final groupView = group == null ? null : await engine._groups.capture(group);
     _context(contextId);
+    void checkGameplay() {
+      if (!_gameplayResourcesCurrent(engine, gameplayCapture)) {
+        throw _scriptError(
+          TavernScriptErrorCode.revisionConflict,
+          'formatAsTavernRegexedString',
+          'The captured gameplay regex sources changed.',
+          contextId: contextId,
+        );
+      }
+    }
+
+    checkGameplay();
+    final packRegex = _resolveGameplayResources(
+      gameplayCapture,
+      settings,
+      actorId: actorId,
+      kinds: const {'regex'},
+    ).regex;
     final random = Random(_displaySeed(jsonEncode([chatId, context.value.nodeId, source, destination.name])));
     final environment = _MacroEnvironment(
       actor == null ? <String, Object?>{} : _effectiveCard(actor.card.data, settings),
@@ -215,7 +290,28 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
       characterId: actorId ?? '',
       groupNames: groupView?.names,
       groupNotMuted: groupView?.enabledNames,
+      packRegex: packRegex,
     );
+    var resourceConflict = false;
+    ({Object error, StackTrace stackTrace})? resourceFailure;
+    bool cancelled() {
+      if (context.closed || _closed || engine._closing) {
+        return true;
+      }
+      if (resourceConflict || resourceFailure != null) {
+        return true;
+      }
+      // applyDisplay catches rule replacement errors. Preserve a real store
+      // error here and rethrow it after its original worker Future is drained.
+      try {
+        resourceConflict = !_gameplayResourcesCurrent(engine, gameplayCapture);
+      } catch (error, stackTrace) {
+        resourceFailure = (error: error, stackTrace: stackTrace);
+      }
+      return resourceConflict || resourceFailure != null;
+    }
+
+    checkGameplay();
     final RegexDisplayResult rendered;
     if (destination == RegexPhase.display) {
       rendered = await environment.regex.applyDisplay(
@@ -225,7 +321,7 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
         depth: depth,
         expand: environment.regexExpand,
         characterOverride: source == RegexPlacement.userInput ? environment.userName : null,
-        isCancelled: () => context.closed || _closed || engine._closing,
+        isCancelled: cancelled,
       );
     } else {
       rendered = environment.regex.applyWithDiagnostics(
@@ -237,7 +333,22 @@ extension _ScriptRegexBridge on _ScriptCoordinator {
         characterOverride: source == RegexPlacement.userInput ? environment.userName : null,
       );
     }
-    // Both phases are detached: no live variable/hash, SQL or generation receipt.
+    final failure = resourceFailure;
+    if (failure != null) {
+      Error.throwWithStackTrace(failure.error, failure.stackTrace);
+    }
+    if (resourceConflict) {
+      throw _scriptError(
+        TavernScriptErrorCode.revisionConflict,
+        'formatAsTavernRegexedString',
+        'The captured gameplay regex sources changed.',
+        contextId: contextId,
+      );
+    }
+    if (!context.closed && !_closed && !engine._closing) {
+      checkGameplay();
+    }
+    // Both phases stay detached: no variable/hash or SQL writes and no generation receipt.
     return TavernDisplayResult(
       text: rendered.text,
       warnings: rendered.warnings,

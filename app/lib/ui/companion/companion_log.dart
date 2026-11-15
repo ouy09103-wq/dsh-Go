@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import '../../companion/companion_light.dart';
 import '../../companion/companion_reply.dart';
 import '../../l10n/l10n.dart';
+import '../../state/app_notes.dart';
 import '../chat/tool_view.dart';
 import '../theme/app_icons.dart';
 import '../theme/motion.dart';
@@ -117,7 +118,7 @@ int? _readLabels;
 CompanionLogEntry? _entryOf(ChatItem item, Map<String, String> emotions, Map<String, String> actions) {
   switch (item) {
     case UserChatItem(:final text):
-      final said = companionSaidText(text);
+      final said = companionSaidText(withoutAppNotes(text));
       return said.isEmpty ? null : CompanionLogEntry.you(said);
     case AssistantChatItem(:final text, :final streaming):
       return _her(text, emotions, actions, streaming: streaming);

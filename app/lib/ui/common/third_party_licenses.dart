@@ -108,12 +108,17 @@ Copyright (c) 2026 DeepSeek
 $_mitTerms''';
 
 /// Phase: phone control (accessibility actions, control overlay and the do-not-disturb
-/// privileged display), used with the author's permission.
+/// privileged display), used under the MIT License with the author's permission.
 const _phaseNotice = '''
 Portions of the phone control feature are derived from Phase
-(https://github.com/CikeSeven/phase), Copyright (c) 2026 CikeSeven,
-used with the author's permission.
-''';
+(https://github.com/CikeSeven/phase), used under the MIT License
+with the author's permission.
+
+MIT License
+
+Copyright (c) 2026 CikeSeven
+
+$_mitTerms''';
 
 /// DS Bot: its NOTICE lines, what is derived from it, then the Apache License 2.0.
 const _dsBotNotice = '''
@@ -143,7 +148,7 @@ Copyright (c) 2026 qiannianhuanxiang
 
 $_mitTerms''';
 
-/// ONNX Runtime for Android (`com.microsoft.onnxruntime:onnxruntime-android`), 1.23.2.
+/// ONNX Runtime for Android (`com.microsoft.onnxruntime:onnxruntime-android`), 1.27.0.
 const _onnxRuntimeMit = '''
 MIT License
 

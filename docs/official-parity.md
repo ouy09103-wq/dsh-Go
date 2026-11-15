@@ -145,6 +145,6 @@
 ## 缺口与后续
 
 - **下载会话日志（`/export`）**：☑️ 已原生实现（`lib/ui/features/session_export_page.dart`）。和官方一样 GET `api/session.export?sessionId=…&includeDescendants=true` 拿 ZIP（`dsh-session-<id>.zip`），然后走系统分享或存到「下载/DSH」。入口：输入框 `/export`、全部功能 › 导出对话日志。经 DSH Remote 中转的主机没有 HTTP 通道，导不了，页面会说明。
-- **凭据遮挡**：☑️ 已原生实现（`lib/ui/chat/secret_mask.dart`），匹配规则照官方 `lib/client.js` 移植。
+- **凭据遮挡**：☑️ 已原生实现（`lib/ui/chat/secret_mask.dart`），匹配规则与官方 `lib/client.js` 一致。
 - **原生化候选**：Cordis 的批准运行和插件界面（目前在网页版）。
 - **待真机验证**：深链在手机 WebView 里是否都落对；SSH 主机的网页版；原生终端的软键盘与快捷键行；语音输入（系统识别与引擎插件两条路）；订阅登录失效后「重新登录」的整条路径；DS Bot 通知点开的跳转。

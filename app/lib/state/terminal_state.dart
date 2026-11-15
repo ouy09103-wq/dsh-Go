@@ -1,8 +1,7 @@
-// 对话终端:官方网页版右侧栏「终端」(dsh-client-ui-sidebar-terminal)在手机上的
-// 状态层。一个对话一组终端页签;每个页签是 Host 上的一个 PTY,外加本地的
-// xterm 屏幕模型。
+// 对话终端的状态层。一个对话一组终端页签;每个页签是 Host 上的一个 PTY,
+// 外加本地的 xterm 屏幕模型。
 //
-// 行为照官方 TerminalView(dsh-api-terminal-controller/client):
+// 行为与官方 TerminalView 一致:
 // * 打开时先列出 Host 保留的终端并逐个恢复;一个都没有就新建一个;
 // * 新建前先定好 id(重复 create 幂等,关闭过的 id 不能再用);
 // * 先 retain 再 attach;每次 attach 都从完整屏幕快照开始,换一块新屏幕;

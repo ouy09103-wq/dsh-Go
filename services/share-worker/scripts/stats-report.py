@@ -14,7 +14,11 @@ import sys
 import unicodedata
 from collections import Counter, defaultdict
 
-FEATURES = [("turns", "对话轮次"), ("voice", "语音"), ("phone", "手机操控"), ("share", "分享"), ("gen", "生成"), ("plugins", "插件")]
+FEATURES = [("turns", "对话轮次"), ("voice", "语音输入"), ("phone", "手机操控"), ("share", "分享"), ("gen", "生成"), ("plugins", "插件")]
+# v3 (1.0.17 on); 0 in older reports. stats.sh names the call count "calls".
+FEATURES_V3 = [("tavern", "酒馆"), ("room", "伙伴小屋"), ("calls", "通话")]
+TOKENS = [("tok_in", "输入"), ("tok_out", "输出")]
+MERGED = [f for f, _ in FEATURES + FEATURES_V3 + TOKENS] + ["v"]
 ROUTES = [("cn", "国内"), ("global", "海外"), ("github", "GitHub")]
 
 
@@ -146,11 +150,11 @@ def main():
         if have is None or num(r.get("build")) > num(have.get("build")):
             merged = dict(r)
             if have:
-                for f, _ in FEATURES:
+                for f in MERGED:
                     merged[f] = max(num(have.get(f)), num(r.get(f)))
             reports[key] = merged
         else:
-            for f, _ in FEATURES:
+            for f in MERGED:
                 have[f] = max(num(have.get(f)), num(r.get(f)))
     seen = defaultdict(set)
     for day, device in reports:
@@ -163,6 +167,32 @@ def main():
             continue
         rows.append([day, fmt(len(today_reports)), *[fmt(sum(num(v.get(f)) for v in today_reports)) for f, _ in FEATURES]])
     print(table(["日期", "日活", *[label for _, label in FEATURES]], rows) if rows else "（没有数据）")
+
+    # v3: who used the tavern, the room and calls, and the tokens model
+    # replies reported. Only v3 reports say; older ones are left out.
+    v3_days = []
+    for day in window:
+        v3 = [v for (d, _), v in reports.items() if d == day and num(v.get("v")) >= 3]
+        if v3:
+            v3_days.append((day, v3))
+    if v3_days:
+        print("\n酒馆、伙伴小屋、通话（1.0.17 起；台 = 当天用过的安装数，次 = 合计；只算 v3 报告）")
+        rows = []
+        for day, v3 in v3_days:
+            cells = []
+            for f, _ in FEATURES_V3:
+                cells += [fmt(sum(1 for v in v3 if num(v.get(f)) > 0)), fmt(sum(num(v.get(f)) for v in v3))]
+            rows.append([day, fmt(len(v3)), *cells])
+        heads = [h for _, label in FEATURES_V3 for h in (f"{label}·台", f"{label}·次")]
+        print(table(["日期", "v3 日活", *heads], rows))
+        print("\nToken（模型回复里报了用量的才算，不估算；人均 = 合计 ÷ 有 token 记录的安装）")
+        rows = []
+        for day, v3 in v3_days:
+            spent = [v for v in v3 if num(v.get("tok_in")) + num(v.get("tok_out")) > 0]
+            totals = [sum(num(v.get(f)) for v in spent) for f, _ in TOKENS]
+            per = [fmt(t / len(spent)) if spent else "—" for t in totals]
+            rows.append([day, fmt(len(spent)), *[fmt(t) for t in totals], *per])
+        print(table(["日期", "有记录的安装", *[f"{label}合计" for _, label in TOKENS], *[f"人均{label}" for _, label in TOKENS]], rows))
 
     if reports:
         print("\n7 日留存（D 天新出现的安装中，D+7 天仍上报的比例；此前 21 天没出现过算新安装，所以是粗略值）")

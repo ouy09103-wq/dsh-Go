@@ -156,7 +156,7 @@
 |---|---|---|---|
 | 维护方与状态 | 我们自己；渲染器已有约 5.3k 行（`app/lib/ui/chat/dsh_ui/`），带 4 种自绘图表 | flutter.dev，3 天前发布 2.0.0（要求 Flutter 3.44 / Dart 3.12，我们是 3.47 / 3.13，满足）。近一年主要是 SDK 升级和零星补组件，兼容性官方写的是「尽力而为」 | labs.flutter.dev，0.x 版本，面向「LLM 生成界面」，协议还在变 |
 | 作者用什么写 | JS 对象 / TS 类型，Node 作者最熟，LLM 写起来也最稳 | `.rfwtxt`，一种类 Dart 的 DSL；生产环境官方建议发二进制；Node 侧没有校验工具，要我们把 Dart 解析器编成 JS 另发 | JSON 消息流：扁平组件表 + 数据模型 |
-| 数据绑定 / 局部状态 | 要自己做：第一期只做路径引用，第二期移植 DS Bot 的公式（dsh-ui 二期本来就要做） | 现成：`data.x`、`args`、`state`、`...for`、`switch`、事件 | 现成：数据模型 + 路径绑定 |
+| 数据绑定 / 局部状态 | 要自己做：第一期只做路径引用，第二期实现与 DS Bot 兼容的公式（dsh-ui 二期本来就要做） | 现成：`data.x`、`args`、`state`、`...for`、`switch`、事件 | 现成：数据模型 + 路径绑定 |
 | 观感约束 | 只开放高层组件，颜色只能用语义色调，天然统一 | 默认开放 core widgets（Container、Padding、颜色…），作者能拼出任意样式。要统一就只能暴露我们自己的组件库，这样它就只剩「另一种语法」 | 目录由 App 定，可约束 |
 | 能不能在网页版和 TUI 复用 | ✅ 桥接的浏览器半侧写一个 React 渲染器即可，同一份声明网页版也显示（第二期）；dsh-TUI 可画成文本块 | ❌ 只有 Flutter 能画 | 有 Web 渲染器，但又多一套协议 |
 | 和已有资产 | 与模型输出的 `dsh-ui` 卡、准备提给上游 `@dsh-std/ui` 的 Panel 块是同一套 | 平行的第二套 | 平行的第二套 |
@@ -265,7 +265,7 @@ output: {
   - `image`：只收桥接同源地址或 ≤ 64 KiB 的 `data:`。
 
   前 5 种和准备提给上游 `@dsh-std/ui` 的 Panel 块一致。
-- **第二期**：加输入控件 slider / number / choice / toggle 和 `form`，以及移植自 DS Bot `formula.js` 的公式。与 `interactive-ui.md` 的二期共用一份实现。
+- **第二期**：加输入控件 slider / number / choice / toggle 和 `form`，以及公式（与 DS Bot `formula.js` 行为兼容，来源见 THIRD_PARTY_NOTICES.md）。与 `interactive-ui.md` 的二期共用一份实现。
 - **绑定**：任何值位置都可以写 `{ "$": "data.a.b" }`，从这个视图的数据模型里取值；第二期再加 `{ "=": "公式" }`。取不到值就显示「—」，不报错。
 - **不开放**：任意颜色（只能用语义色调 good / warn / bad / info / muted）、字体、尺寸、绝对定位、动画参数、外部图片地址。观感由 App 决定，这是保证插件界面也像 Apple / Claude App 的唯一办法。
 - **容错**：沿用 `dsh-ui` 的宽松校验：

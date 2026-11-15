@@ -75,6 +75,9 @@ class _Transport implements NativeFileTransport {
   final statuses = <String>[];
   VoidCallback? afterUpload;
   Object? uploadError;
+
+  /// Thrown once, by the next complete.
+  Object? completeError;
   DshGoInvokeResult response = const DshGoInvokeResult();
   @override
   Future<void> upload(String request, String stream, NativeSelectedFile file, Uint8List data) async {
@@ -88,6 +91,9 @@ class _Transport implements NativeFileTransport {
   @override
   Future<DshGoInvokeResult> complete(String request, String stream, String status) async {
     statuses.add(status);
+    final error = completeError;
+    completeError = null;
+    if (error != null) throw error;
     return response;
   }
 }
@@ -277,6 +283,25 @@ void main() {
     expect(platform.cancels, hasLength(3));
   });
 
+  test('a selected complete lost on the way is closed with error, so the next pick is not refused', () async {
+    final platform = _Platform(), transport = _Transport();
+    final runtime = NativeFileCoordinator(platform: platform, transport: transport, gate: NativeFileGate());
+    platform.files = [
+      platform.file([1, 2], reported: 2),
+    ];
+    transport.completeError = StateError('connection reset');
+    await expectLater(
+      _execute(runtime),
+      throwsA(isA<NativeFileException>().having((e) => e.problem, 'transport', NativeFileProblem.failed)),
+    );
+    expect(transport.statuses, ['selected', 'error']);
+    platform.files = [
+      platform.file([3], reported: 1),
+    ];
+    await _execute(runtime);
+    expect(transport.statuses.last, 'selected');
+  });
+
   test('app-wide gate and host cancellation do not wait for a never-returning chooser', () async {
     final gate = NativeFileGate(), platform = _Platform()..delayed = Completer(), other = _Platform();
     final transport = _Transport();
@@ -346,6 +371,75 @@ void main() {
     expect((calls[1].arguments as Map)['userGesture'], true);
     expect(transport.bytes.single, [1, 2, 3]);
     expect(transport.statuses, ['selected']);
+  });
+
+  testWidgets('an answer that comes after the panel went away hands its file request back', (tester) async {
+    final platform = _Platform(), transport = _Transport();
+    var current = true;
+    final bridge =
+        FakeBridge(
+            contributions([
+              {
+                ...plugin(
+                  'files',
+                  panels: [
+                    {'id': 'panel', 'title': 'Files'},
+                  ],
+                ),
+                'capabilities': ['files'],
+              },
+            ]),
+          )
+          ..answer = (_) {
+            // The person switched away before the bridge answered.
+            current = false;
+            return const DshGoInvokeResult(effects: [_wire]);
+          };
+    final stream = DshGoStream(() async => _FileSocket(), features: const ['files']);
+    final runtime = NativeFileCoordinator(platform: platform, transport: transport, gate: NativeFileGate());
+    Future<bool>? tapped;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...nativeOverrides(bridge, clock: () => _now),
+          nativeStreamProvider.overrideWithValue(stream),
+          nativeFileCoordinatorProvider.overrideWithValue(runtime),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: L10n.localizationsDelegates,
+          supportedLocales: L10n.supportedLocales,
+          home: Consumer(
+            builder: (context, ref, _) {
+              ref.watch(nativeContributionsProvider);
+              return Scaffold(
+                body: TextButton(
+                  onPressed: () => tapped = runNativeTap(
+                    context,
+                    ref,
+                    package: 'files',
+                    surface: NativeSurface.panel,
+                    id: 'panel',
+                    action: 'choose',
+                    userGesture: true,
+                    stillCurrent: () => current,
+                  ),
+                  child: const Text('Choose'),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Choose'));
+      expect(await tapped, isFalse);
+    });
+    expect(platform.picks, 0);
+    expect(transport.statuses, ['cancelled']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await stream.close();
   });
 
   testWidgets('actual tap runner gates selection and rejects callback side effects', (tester) async {

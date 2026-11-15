@@ -1,8 +1,8 @@
-// What stands between a person and the pages that act as their forum account
-// (我的投稿, 举报): signing in to the forum, the workshop's own checks, and
-// agreeing that the workshop is handed the forum credential.
+// What stands between a person and the pages that act as their GitHub account
+// (我的投稿, 举报): signing in with GitHub, the workshop's own checks, and
+// agreeing that the workshop is handed the GitHub token.
 //
-// Signing in stays the forum's (its account sheet). The agreement is asked
+// Signing in is the sign-in sheet's (workshop_sign_in.dart). The agreement is asked
 // here because both pages need it and neither can send the person to the
 // other; what is confirmed is the very object the sheet showed
 // (workshopAccessProvider, contract §6).
@@ -16,20 +16,20 @@ import '../../l10n/l10n.dart';
 import '../../state/workshop_auth_state.dart';
 import '../common/brief_notice.dart';
 import '../common/empty_view.dart';
-import '../forum/forum_account_sheet.dart';
 import '../theme/app_icons.dart';
 import 'workshop_disclosure.dart';
+import 'workshop_sign_in.dart';
 import 'workshop_text.dart';
 
-/// Where the person is on the way to acting as their forum account.
+/// Where the person is on the way to acting as their GitHub account.
 enum WorkshopAuthorGate {
-  /// The forum key or the workshop's checks are still being read.
+  /// The stored token or the workshop's checks are still being read.
   checking,
 
-  /// Not signed in to the forum.
+  /// Not signed in.
   signIn,
 
-  /// The workshop's checks failed (unreachable, another forum, …).
+  /// The workshop's checks failed (unreachable, another account system, …).
   failed,
 
   /// Signed in, but hasn't agreed to hand the credential to the workshop.
@@ -38,7 +38,7 @@ enum WorkshopAuthorGate {
 }
 
 WorkshopAuthorGate workshopAuthorGate(WorkshopAccessState access) {
-  if (access.forumRestoring) return WorkshopAuthorGate.checking;
+  if (access.accountRestoring) return WorkshopAuthorGate.checking;
   if (!access.signedIn) return WorkshopAuthorGate.signIn;
   if (access.loading) return WorkshopAuthorGate.checking;
   if (access.error != null || access.capabilities == null) return WorkshopAuthorGate.failed;
@@ -46,7 +46,7 @@ WorkshopAuthorGate workshopAuthorGate(WorkshopAccessState access) {
 }
 
 /// The gate as a designed state: one glyph, one line, at most one button
-/// (登录论坛 / 重试 / 查看说明). While checking, and once open, a quiet ring.
+/// (登录 / 重试 / 查看说明). While checking, and once open, a quiet ring.
 class WorkshopAuthorGateView extends ConsumerWidget {
   const WorkshopAuthorGateView({
     super.key,
@@ -56,7 +56,7 @@ class WorkshopAuthorGateView extends ConsumerWidget {
     this.compact = false,
   });
 
-  /// Why this page wants a forum account.
+  /// Why this page wants a signed-in account.
   final String signInTitle;
   final String signInMessage;
 
@@ -73,12 +73,12 @@ class WorkshopAuthorGateView extends ConsumerWidget {
         return const Center(child: SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2)));
       case WorkshopAuthorGate.signIn:
         return EmptyView(
-          icon: AppIcons.forum,
+          icon: AppIcons.profile,
           title: signInTitle,
           message: signInMessage,
           compact: compact,
-          actionLabel: l10n.remoteForumSignIn,
-          onAction: () => unawaited(showForumAccountSheet(context)),
+          actionLabel: l10n.workshopSignInTitle,
+          onAction: () => unawaited(showWorkshopSignInSheet(context)),
         );
       case WorkshopAuthorGate.failed:
         final code = access.error?.code;
@@ -104,8 +104,8 @@ class WorkshopAuthorGateView extends ConsumerWidget {
   }
 }
 
-/// Shows which workshop receives the forum credential and which forum it is
-/// checked with, and records the answer. The object confirmed is the one the
+/// Shows which workshop receives the GitHub token and which account system it
+/// is checked with, and records the answer. The object confirmed is the one the
 /// sheet showed; if the account or the workshop changed meanwhile, the state
 /// layer refuses it and the gate says so.
 Future<void> confirmWorkshopDisclosure(BuildContext context, WidgetRef ref) async {

@@ -18,9 +18,13 @@ class StreamingAsrModelState {
     this.totalBytes = streamingAsrDefaultBytes,
     this.model,
     this.error,
+    this.blocked = false,
   });
 
   final StreamingAsrModelStatus status;
+
+  /// Ready, but it once crashed the app on this phone: live words stay off.
+  final bool blocked;
   final int doneBytes;
   final int totalBytes;
   final StreamingAsrModel? model;
@@ -75,6 +79,7 @@ class StreamingAsrModelController extends Notifier<StreamingAsrModelState> {
         doneBytes: done,
         totalBytes: store.manifest.bytes,
         model: model,
+        blocked: model != null && store.trial.failed,
       );
     } catch (error) {
       if (_alive(generation)) state = StreamingAsrModelState(status: StreamingAsrModelStatus.failed, error: error);

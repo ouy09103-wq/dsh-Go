@@ -118,8 +118,9 @@ final class RegexEngine {
     Iterable<RegexScript> globalScripts = const [],
     Iterable<RegexScript> presetScripts = const [],
     Iterable<RegexScript> characterScripts = const [],
+    Iterable<RegexScript> chatScripts = const [],
     this.enabled = true,
-  }) : _scripts = List.unmodifiable([...globalScripts, ...presetScripts, ...characterScripts]);
+  }) : _scripts = List.unmodifiable([...globalScripts, ...presetScripts, ...characterScripts, ...chatScripts]);
 
   final bool enabled;
   final List<RegexScript> _scripts;

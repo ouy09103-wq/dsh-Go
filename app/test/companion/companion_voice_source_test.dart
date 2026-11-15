@@ -462,6 +462,33 @@ void main() {
       await until(() => folder.listSync().isEmpty);
     });
 
+    test(
+      "the phone's voice set without ready (chosen mid-call): the engine starts first; a refused line ends",
+      () async {
+        final client = MockClient((_) async => http.Response('', 500));
+        final speaker = CompanionSpeaker(CompanionVoice(), () => client, () async => folder);
+        addTearDown(speaker.dispose);
+        final events = <CompanionVoiceEvent>[];
+        speaker.events.listen(events.add);
+        speaker.settings = const CompanionVoiceSettings(on: true);
+        speaker
+          ..speak('a', '一。')
+          ..speak('b', '二。');
+        await until(() => calls.where((c) => c.method == 'speak').length == 2);
+        expect(calls.map((c) => c.method).where((m) => m != 'stop'), ['ready', 'speak', 'speak']);
+        expect(calls.where((c) => c.method == 'speak').map((c) => (c.arguments as Map)['id']), ['a', 'b']);
+
+        // The engine won't take it: no progress will come, so it ends here.
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          (call) async => false,
+        );
+        speaker.speak('c', '三。');
+        await until(() => events.any((e) => e.id == 'c'));
+        expect(events.singleWhere((e) => e.id == 'c').type, CompanionVoiceEventType.error);
+      },
+    );
+
     test('stop: nothing queued plays after it', () async {
       final gate = Completer<void>();
       final client = MockClient((request) async {

@@ -19,7 +19,9 @@ dsh-go 的原生界面可以显示 DSH 插件的内容：工具结果画成卡�
 | 点了之后能做什么 | 8 种效果，3 秒窗口 | [动作与效果](actions.md) |
 | 朗读、开口即停、高频字幕、悬浮字幕 | `capabilities` + `media` / `micro` / `overlays`（v1.2，可选） | [声音与字幕](voice.md) |
 | 在哪些主机上有、怎么装 | 本机 / SSH / 中转；按路径安装 | [主机覆盖、安装与降级](hosts.md) |
+| 发布 npm、进发现索引、上架官方市场 | 三层流程与四个独立状态 | [发布与上架](market.md) |
 | 什么不能自定义、为什么 | 有界样式、字体文件、尺寸、链接 | [设计规则](design-rules.md) |
+| 插件能做什么、不能做什么 | 一张总表：能力、两种 overlay、降级、未来项 | [能力边界](capabilities.md) |
 | 新旧 App 都能用 | `caps`、`adaptView` | [兼容与版本](versions.md) |
 | 发出去之前 | 逐条过 | [自查清单](checklist.md) |
 
@@ -43,3 +45,5 @@ dsh-go 的原生界面可以显示 DSH 插件的内容：工具结果画成卡�
 ```
 
 规格原文：[`docs/design/native-plugins-protocol.md`](../design/native-plugins-protocol.md)（协议）、[`docs/design/native-plugins-views.md`](../design/native-plugins-views.md)（视图）。
+
+想让 App 里有自己的**像素宠物**或 **Live2D 伙伴**？那不属于插件，是 App 内容：[宠物包](../pets/README.md) · [Live2D 伙伴](../live2d/README.md)。

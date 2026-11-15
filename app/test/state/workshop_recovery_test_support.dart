@@ -117,8 +117,8 @@ class RecoveryPreferences extends PublishPreferences implements WorkshopPendingR
   }
 }
 
-String recoveryScope({Uri? worker, Uri? forum, int userId = 42}) => sha256.convert(utf8.encode(jsonEncode([
-  (worker ?? authWorker).toString(), (forum ?? authForum).toString(), userId,
+String recoveryScope({Uri? worker, Uri? account, int userId = 42}) => sha256.convert(utf8.encode(jsonEncode([
+  (worker ?? authWorker).toString(), (account ?? authAccount).toString(), userId,
 ]))).toString();
 
 Object? _canonical(Object? value) {

@@ -52,8 +52,7 @@ HostLinkError hostKeyMismatchError(SshHostConfig config, PresentedHostKey key) =
 /// SSH remote host: connect → verify host key → start/reuse `dsh web` →
 /// local forward → DshClient login; then keepalive and reconnect.
 ///
-/// Mirrors dsh-tauri's SSH plugin flow (`bootstrap.utils.ts`, `transport.ts`):
-/// the remote server binds 127.0.0.1 only, the token comes from its log, and
+/// The remote server binds 127.0.0.1 only, the token comes from its log, and
 /// the client presents `Host: 127.0.0.1:<remote port>` so DSH's Host fence
 /// accepts requests that arrive through the tunnel.
 class SshHostLink implements HostLink {

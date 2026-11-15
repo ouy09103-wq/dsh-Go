@@ -109,7 +109,7 @@ void main() {
         await harness.controller.requestPendingAbandonment();
         final offer = harness.state.abandonOffer!;
         expect(offer.range, whole ? WorkshopPendingAbandonRange.allLocalAccounts : WorkshopPendingAbandonRange.currentAccount);
-        expect((offer.worker, offer.forum, offer.forumUserId), (authWorker, authForum, 42));
+        expect((offer.worker, offer.account, offer.accountId), (authWorker, authAccount, 42));
         expect(harness.state.error, same(error));
         expect(await platform.raw(recoveryPendingKey), raw);
         expect(harness.drafts.probes, isEmpty);
@@ -316,10 +316,10 @@ void main() {
         await authSignal(entered, pending);
         if (changeWorker) {
           final next = PublishClient([], worker: Uri.parse('https://other-workshop.example'));
-          preferences.accepted.add(preferences.pair(next.origin, authForum));
+          preferences.accepted.add(preferences.pair(next.origin, authAccount));
           harness.chooseClient(next);
         } else {
-          harness.forum.emit(authSignedIn(userId: 43));
+          harness.account.emit(authSignedIn(userId: 43));
         }
         await authReady(harness.container);
         expect(harness.state.session, isNot(same(session)));
@@ -349,7 +349,7 @@ void main() {
       final offer = harness.state.abandonOffer!;
       final nextScope = recoveryScope(userId: 43);
       await preferences.real.savePendingSubmission(nextScope, recoveryPending(scope: nextScope));
-      harness.forum.emit(authSignedIn(userId: 43));
+      harness.account.emit(authSignedIn(userId: 43));
       await authReady(harness.container);
       await harness.controller.confirmPendingAbandonment(offer);
       expect(harness.state.recoveryError!.code, 'workshop_confirmation_stale');
@@ -377,7 +377,7 @@ void main() {
       final pending = harness.controller.confirmPendingAbandonment(offer);
       settled = authSettled(pending);
       await authSignal(entered, pending);
-      harness.forum.emit(authSignedIn(userId: 43));
+      harness.account.emit(authSignedIn(userId: 43));
       await authReady(harness.container);
       expect(harness.state.session, isNot(same(session)));
       expect(harness.state.waitingForPreviousOperation, isTrue);

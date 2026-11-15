@@ -1,18 +1,18 @@
 part of 'workshop_page_samples.dart';
 
-Future<WorkshopAccessState> _access({ForumAuthState? forum, bool accepted = false,
-  bool uploads = true, bool companion = true, Uri? responseForum, String? failure,
+Future<WorkshopAccessState> _access({WorkshopAccountState? account, bool accepted = false,
+  bool uploads = true, bool companion = true, Uri? responseAccount, String? failure,
   bool readPreferencesFails = false, bool unconfigured = false}) async {
-  final client = AuthClient(forum: responseForum);
+  final client = AuthClient(account: responseAccount);
   client.value = WorkshopCapabilities.fromJson(workshopCaps(
-    forum: (responseForum ?? authForum).toString(), uploads: uploads, companion: companion));
+    account: (responseAccount ?? authAccount).toString(), uploads: uploads, companion: companion));
   if (failure != null) client.readCapabilities = () async => throw WorkshopException(failure);
   final preferences = AuthPreferences();
-  if (accepted) preferences.accepted.add(preferences.pair(authWorker, authForum));
+  if (accepted) preferences.accepted.add(preferences.pair(authWorker, authAccount));
   if (readPreferencesFails) {
     preferences.readDisclosure = (_, _) async => throw const WorkshopException('workshop_preferences');
   }
-  final harness = AuthHarness(client: client, preferences: preferences, initial: forum,
+  final harness = AuthHarness(client: client, preferences: preferences, initial: account,
     loadClient: unconfigured ? (_) async => throw const WorkshopException('workshop_unconfigured') : null);
   try {
     return await authReady(harness.container);
@@ -26,14 +26,14 @@ Future<WorkshopAccessState> accessLoading() async {
   finally { await authReady(harness.container); harness.dispose(); }
 }
 
-Future<WorkshopAccessState> accessForumRestoring() => _access(forum: const ForumAuthState());
+Future<WorkshopAccessState> accessAccountRestoring() => _access(account: const WorkshopAccountState(phase: WorkshopAccountPhase.restoring));
 Future<WorkshopAccessState> accessSignedOut() => _access(
-  forum: const ForumAuthState(phase: ForumAuthPhase.signedOut));
+  account: authSignedOut);
 Future<WorkshopAccessState> accessDisclosureRequired() => _access();
-Future<WorkshopAccessState> accessProfilePending() => _access(forum: authSignedIn(userId: null), accepted: true);
+Future<WorkshopAccessState> accessProfilePending() => _access(account: authSignedIn(userId: null), accepted: true);
 Future<WorkshopAccessState> accessUploadsDisabled() => _access(accepted: true, uploads: false);
 Future<WorkshopAccessState> accessCompanionDisabled() => _access(accepted: true, companion: false);
-Future<WorkshopAccessState> accessForumMismatch() => _access(responseForum: Uri.parse('https://another-forum.example'));
+Future<WorkshopAccessState> accessAccountMismatch() => _access(responseAccount: Uri.parse('https://another-account.example'));
 Future<WorkshopAccessState> accessNetworkFailed() => _access(failure: 'workshop_network');
 Future<WorkshopAccessState> accessUnconfigured() => _access(unconfigured: true);
 Future<WorkshopAccessState> accessDisclosureReadFailed() => _access(readPreferencesFails: true);

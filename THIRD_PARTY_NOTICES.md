@@ -1,6 +1,6 @@
 # 第三方声明（Third-Party Notices）
 
-本文件集中列出 dsh-go 复制或改写进源码的第三方代码与素材，以及随 App 一起分发的字体、原生库和 Linux 运行时组件。源文件头那一行 `Portions derived from …` 指向这里。
+本文件集中列出 dsh-go 复制或改写进源码的第三方代码与素材，以及随 App 一起分发的字体、原生库和 Linux 运行时组件。源文件头用 `SPDX-FileCopyrightText` / `SPDX-License-Identifier` 标记版权与许可，并指向本文件；各项目的派生关系见各条目。
 
 - App 内「设置 › 开源许可」页随 APK 分发同样的声明（`app/lib/ui/common/third_party_licenses.dart`，字体在 `app/lib/ui/settings/font_licenses.dart`）。
 - Dart / Flutter 依赖应按 `app/pubspec.lock`（以及本地包的 lock）核对直接与传递依赖；Flutter 从包根 `LICENSE` 收集许可并显示在许可证页。这里不逐包重复，发行前仍须核验实际 APK 的许可资产，不能仅凭依赖声明认定已收录。
@@ -9,13 +9,13 @@
 
 ## 一、复制或改写进源码的代码
 
-### Phase（经作者许可使用）
+### Phase（MIT，作者授权）
 
 | 项 | 内容 |
 |---|---|
 | 项目 | Phase，https://github.com/CikeSeven/phase （基于提交 `c209f6f`） |
 | 版权人 | Copyright (c) 2026 CikeSeven |
-| 许可 | 经作者许可使用 |
+| 许可 | MIT：作者授权本项目按 MIT 许可使用 |
 | 用途 | 手机操控：无障碍读屏与操作、控制浮层，以及「不打扰模式」的特权虚拟屏 |
 
 上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/phone/`。
@@ -32,13 +32,15 @@
 | `background/PrivilegedProtocol.kt` | 失败原因码集合 |
 | `background/ShizukuStarter.kt` | `shizuku/ShizukuConnection.kt` |
 | `app/android/app/src/main/res/xml/phone_accessibility_service.xml` | `accessibility_service.xml` |
+| `a11y/ImageObservation.kt` | Phase 的视觉观察与截图路径 |
+| `app/android/app/src/main/res/xml-v33/phone_accessibility_service.xml` | `accessibility_service.xml`（API 33 变体） |
 
 声明原文：
 
 ```text
 Portions of the phone control feature are derived from Phase
 (https://github.com/CikeSeven/phase), Copyright (c) 2026 CikeSeven,
-used with the author's permission.
+used under the MIT License with the author's permission.
 ```
 
 ### go.dshtui.com 首页（作者交付使用）
@@ -97,6 +99,7 @@ used with the author's permission.
 | `packages/dsh_client/lib/src/binary_response.dart` | `@deepseek-ai/dsh-client-connection`（`parseBinaryResponse`） | 二进制结果解码 |
 | `packages/dsh_client/lib/src/deliverables.dart` | `@deepseek-ai/dsh-client-ui-deliverables`（`isPresentedData`、`isPresentedFile`、`presentedForClosing`） | 交付文件校验与按轮选取 |
 | `runtime/patches/route-guard.diff` | `dsh-host-webserver` | 运行时构建时打到 DSH 上的补丁 |
+| `runtime/bridge/dsh-go-bridge/PRESET-NOTICE.txt`、`cordis.patch.yml`（shared rows） | `@deepseek-ai/dsh-web-app@0.2.2-rc.1` 的 `presets/standard.patch.yml` | 标准工具集预置的 NOTICE 与拷贝来源 |
 
 此外，App 中部分组件的结构与行为参照 DeepSeek Harness 的 Web 客户端（MIT），包括消息操作、提及、输入区 dock、回合过程、产物、工作区、终端和定时任务等，不逐文件列出。
 
@@ -161,9 +164,9 @@ DS Bot 的 NOTICE 原文附在文末。
 | 项目 | Libraries.dev，https://github.com/Jakubantalik/Libraries.dev （基于提交 `387b049`） |
 | 版权人 | Copyright (c) 2026 Jakub Antalik |
 | 许可 | MIT（只用代码；`LICENSE-MODEL.md` 管的模型文件 `Magnet.mfxl`、`VoicePosition.mfxl` 和 Pro 内容都没有用） |
-| 用途 | 界面特效：思考光球、边框流光、语音辉光、语音光环、机器人头像等，从作者的 TypeScript / Swift / Metal 源码翻译成 Dart、Flutter 着色器和 Kotlin |
+| 用途 | 界面特效：思考光球、边框流光、语音辉光、语音光环、机器人头像等，从作者的 TypeScript / Swift / Metal 源码翻译成 Dart、Flutter 着色器和 Kotlin；手机操控时屏幕边缘的色带取自 Distortion waves（`packages/distortion-waves`）着色器里留在屏幕边缘的那部分颜色（rim）和 `WaveRim.lumps` |
 
-本仓库位置：`app/lib/ui/fx/`（每个文件第一行注明出处）及其 `app/shaders/fx/` 下的着色器。
+本仓库位置：`app/lib/ui/fx/`（每个文件第一行注明出处）及其 `app/shaders/fx/` 下的着色器；手机操控的边缘色带在 `app/android/app/src/main/kotlin/io/github/ouy09103/dsh_go_root/phone/a11y/EdgeBeam.kt`、`EdgeBeamModel.kt`（同样在文件第一行注明出处）。
 
 金属质感的着色器 `app/shaders/fx/metal_liquid.frag` 是 metal-fx 用的 Paper Shaders `liquidMetal`（Apache-2.0，Paper Design, Inc.，`@paper-design/shaders` 0.0.80）的 GLSL 翻译，按 metal-fx 的 NOTICE 原文保留：
 
@@ -207,6 +210,7 @@ Libraries.dev metal-fx, translated to Flutter GLSL.
 | 项目 | SillyTavern，https://github.com/SillyTavern/SillyTavern |
 | 版本 | 1.19.0，提交 `7e8663cd9c184a550b37238218bdd32c6efc68e9` |
 | 许可 | AGPL-3.0（与本项目相同） |
+| 版权 | SillyTavern 项目及其贡献者（上游 LICENSE 只有 AGPL-3.0 正文，没有单独的版权行；贡献者见上游仓库的提交记录） |
 | 用途 | 酒馆引擎照 SillyTavern 的行为移植或改写：提示词组装、世界书、宏、斜杠命令、正则、角色卡与聊天文件的读写、人设 |
 | 来源文件 | `public/script.js`；`public/scripts/` 下的 `PromptManager.js`、`openai.js`、`personas.js`、`world-info.js`、`macros.js`、`slash-commands.js`、`bookmarks.js`；`src/character-card-parser.js`、`src/prompt-converters.js`、`src/endpoints/characters.js`、`src/endpoints/chats.js`、`src/endpoints/backends/chat-completions.js` |
 | 文件 | `packages/dsh_tavern/lib/src/` 下文件头写明 SillyTavern 来源和提交的文件 |
@@ -237,7 +241,7 @@ Libraries.dev metal-fx, translated to Flutter GLSL.
 | 许可 | Apache License 2.0 |
 | 用途 | 桌面快捷方式与快速设置磁贴的图标；按自适应图标画布缩放、居中 |
 
-均在 `app/android/app/src/main/res/drawable/` 下：`ic_shortcut_chat_glyph.xml`（`chat_bubble_outline_rounded`）、`ic_shortcut_new_chat_glyph.xml`（`add_comment_outlined`）、`ic_shortcut_voice_glyph.xml`（`mic_none_rounded`）、`ic_tile_new_chat.xml`（`add_comment_outlined`）。
+均在 `app/android/app/src/main/res/drawable/` 下：`ic_shortcut_chat_glyph.xml`（`chat_bubble_outline_rounded`）、`ic_shortcut_new_chat_glyph.xml`（`add_comment_outlined`）、`ic_shortcut_voice_glyph.xml`（`mic_none_rounded`）、`ic_tile_new_chat.xml`（`add_comment_outlined`）、`ic_pet_mic.xml`（`mic_none_rounded`）、`ic_pet_send.xml`（`arrow_upward_rounded`）。
 
 ### discourse-emojis（MIT）
 
@@ -304,10 +308,10 @@ Libraries.dev metal-fx, translated to Flutter GLSL.
 | mobile_scanner（pub 包，含 Android 插件代码） | 7.5.0 | BSD-3-Clause | Copyright (c) 2022, Julian Steenbakker | Remote「扫码配对电脑」的相机扫码和相册识图 |
 | ML Kit Barcode Scanning（`com.google.mlkit:barcode-scanning`，模型随 APK 打包） | 17.3.0 | [ML Kit 服务条款](https://developers.google.com/ml-kit/terms)（Google 免费分发的二进制，非开源） | Google LLC | mobile_scanner 的二维码识别，在手机本地运行，不需要 Google Play 服务 |
 | CameraX（`androidx.camera:*`，mobile_scanner 的依赖） | 随 mobile_scanner 7.5.0 | Apache-2.0 | The Android Open Source Project | 扫码时的相机预览 |
-| ONNX Runtime（`com.microsoft.onnxruntime:onnxruntime-android`） | 1.23.2 | MIT | Copyright (c) Microsoft Corporation | 语音通话在手机上跑判停模型 |
+| ONNX Runtime（`com.microsoft.onnxruntime:onnxruntime-android`） | 1.27.0 | MIT | Copyright (c) Microsoft Corporation | 语音通话在手机上跑判停模型 |
 | Silero VAD v6.2（模型文件 `assets/speech/silero_vad.onnx`） | `be95df9` | MIT | Copyright (c) 2020-present Silero Team | 语音通话判断有没有在说话 |
 | smart-turn v3.2（模型文件 `assets/speech/smart-turn-v3.2-cpu.onnx`） | `f766f81` | BSD-2-Clause | Copyright (c) 2024–2025, Daily | 语音通话判断一句话说完没有 |
-| sherpa-onnx（pub 包 `sherpa_onnx`、`sherpa_onnx_android`） | 1.12.36 | Apache-2.0 | Xiaomi Corporation 与 k2-fsa 贡献者 | 手机上的流式语音识别；它带的 `libonnxruntime.so` 与上面 ONNX Runtime 1.23.2 相同，只打包一份 |
+| sherpa-onnx（pub 包 `sherpa_onnx`、`sherpa_onnx_android_*`） | 1.13.4 | Apache-2.0 | Xiaomi Corporation 与 k2-fsa 贡献者 | 手机上的流式语音识别；它带的 `libonnxruntime.so` 也是 ONNX Runtime 1.27.0，只打包一份 |
 | Streaming Zipformer 中英双语模型（不随 APK，按需下载，csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20） | `98590b7` | Apache-2.0 | csukuangfj；上游 pfluo/k2fsa-zipformer-chinese-english-mixed | 实时字幕；许可全文随 APK 的 `assets/licenses/streaming-asr-model-APACHE-2.0.txt` |
 
 ### tawcroot（tawc，MIT）
@@ -384,7 +388,7 @@ APK 内置的 Linux 运行时由 `runtime/build-runtime.sh` 构建，以下组�
 
 | 组件 | 版本 | 来源 | 许可 |
 |---|---|---|---|
-| proot | 5.1.107.98 | Termux（源码 https://github.com/termux/proot） | GPL-2.0（`licenses/proot-COPYING.txt`） |
+| proot | 5.1.107.102 | Termux（源码 https://github.com/termux/proot） | GPL-2.0（`licenses/proot-COPYING.txt`） |
 | libtalloc | 2.5.0 | Termux | LGPL-3.0-or-later（`licenses/libtalloc-notice.txt`） |
 | libandroid-shmem | 0.7 | Termux | BSD-3-Clause（`licenses/libandroid-shmem-copyright.txt`） |
 | Ubuntu Base 与软件包（tzdata、ca-certificates、git 及依赖） | 24.04.5 | Canonical / Ubuntu | 各包自带，见 `/usr/share/doc/` |
@@ -393,7 +397,7 @@ APK 内置的 Linux 运行时由 `runtime/build-runtime.sh` 构建，以下组�
 | pnpm | 11.28.5 | npm | MIT |
 | DeepSeek Harness 主包（`@deepseek-ai/dsh`） | 0.2.1-rc.4 | npm | MIT；构建补丁集合由 `runtime/patches/pins.json` 决定 |
 
-GPL / LGPL 组件的对应源码：proot、libtalloc、libandroid-shmem 的二进制取自 Termux 官方 apt 仓库（https://packages.termux.dev/apt/termux-main ），`runtime/build-runtime.sh` 固定了每个 .deb 的 SHA-256。源码分别在 https://github.com/termux/proot （tag `v5.1.107.98`，构建时一并下载并核对哈希）、https://www.samba.org/ftp/talloc/ （2.5.0）、https://github.com/termux/libandroid-shmem （0.7）；Termux 的构建配方在 https://github.com/termux/termux-packages 。本项目对这三个二进制的修改只有上面说的 DT_NEEDED / DT_SONAME 改名。
+GPL / LGPL 组件的对应源码：proot、libtalloc、libandroid-shmem 的二进制取自 Termux 官方 apt 仓库（https://packages.termux.dev/apt/termux-main ），`runtime/build-runtime.sh` 固定了每个 .deb 的 SHA-256。源码分别在 https://github.com/termux/proot （tag `v5.1.107.102`，构建时一并下载并核对哈希）、https://www.samba.org/ftp/talloc/ （2.5.0）、https://github.com/termux/libandroid-shmem （0.7）；Termux 的构建配方在 https://github.com/termux/termux-packages 。本项目对这三个二进制的修改只有上面说的 DT_NEEDED / DT_SONAME 改名。
 
 ### npm 传递依赖与发行核验
 
@@ -432,6 +436,7 @@ C710 新增的 `image` 4.12.0 是 MIT 许可 pub 依赖；其原许可由 Flutte
 
 ```text
 Copyright (c) 2026 CikeSeven                                   (PiPilot)
+Copyright (c) 2026 CikeSeven                                   (Phase)
 Copyright (c) 2026 DeepSeek                                    (DeepSeek Harness)
 Copyright (c) 2026 DSH Remote contributors                     (ds-harness-remote)
 Copyright (c) 2026 qiannianhuanxiang                           (DSHA)

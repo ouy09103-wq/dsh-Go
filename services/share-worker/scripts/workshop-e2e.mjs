@@ -12,8 +12,8 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { check, COMPANION_ID, dartResultObserver, diagnosticLines, KEEP_ID, localConfig,
-  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, previewDescriptor, previewResponse, REHEARSAL_PREVIEW,
+import { ACCOUNT_ORIGIN, check, COMPANION_ID, dartResultObserver, diagnosticLines, KEEP_ID, localConfig,
+  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, previewDescriptor, previewResponse, REHEARSAL_CLIENT_ID, REHEARSAL_PREVIEW,
   rehearsalFixtures, removeTemporaryStorage, sha256 } from './workshop-e2e-support.mjs';
 import { localTlsCredentials } from './workshop-e2e-tls.mjs';
 
@@ -102,10 +102,10 @@ async function reservedPort() {
 function readHttp(origin, path, { agent, signal, method = 'GET', headers = {}, body, timeout = 15000 }) {
   const url = new URL(path, origin);
   check(path.startsWith('/') && !path.startsWith('//') && url.origin === loopbackOrigin(origin), 'request_left_local_origin');
-  const payload = body == null ? undefined : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
+  const content = body == null ? undefined : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
   return new Promise((resolveResponse, reject) => {
     const req = httpsRequest(url, { agent, method, signal,
-      headers: { ...headers, ...(payload ? { 'Content-Length': String(payload.length) } : {}) } }, response => {
+      headers: { ...headers, ...(content ? { 'Content-Length': String(content.length) } : {}) } }, response => {
       const chunks = []; let size = 0;
       response.on('data', chunk => {
         size += chunk.length;
@@ -116,18 +116,19 @@ function readHttp(origin, path, { agent, signal, method = 'GET', headers = {}, b
       response.once('end', () => resolveResponse({ status: response.statusCode, headers: response.headers, bytes: Buffer.concat(chunks) }));
     });
     const timer = setTimeout(() => req.destroy(Object.assign(new Error('rehearsal_http_timeout'), { rehearsalCode: 'rehearsal_http_timeout' })), timeout);
-    req.once('error', reject); req.once('close', () => clearTimeout(timer)); req.end(payload);
+    req.once('error', reject); req.once('close', () => clearTimeout(timer)); req.end(content);
   });
 }
 
 export async function run({ skipDart = false, log = console.log } = {}) {
-  let temp, forum, running, agent, origin, forumOrigin, lastRequest;
+  let temp, github, running, agent, origin, githubApi, lastRequest;
   let step = 'setup', failure, tempRemovalAttempts;
   const children = [], completed = [], cleanupErrors = [], abort = new AbortController();
   const interrupted = () => abort.abort();
   process.once('SIGINT', interrupted); process.once('SIGTERM', interrupted);
-  const adminKey = randomBytes(32).toString('base64url'), forumKey = randomBytes(32).toString('base64url');
-  const secrets = [adminKey, forumKey];
+  // GitHub tokens are [A-Za-z0-9_]; hex keeps the synthetic one inside the Worker's shape check.
+  const adminKey = randomBytes(32).toString('base64url'), githubToken = 'gho_' + randomBytes(32).toString('hex');
+  const secrets = [adminKey, githubToken];
   const env = localEnvironment(process.env);
   const execute = async (executable, args, cwd, extra = {}, observe, verbatim = false) => {
     check(!abort.signal.aborted, 'interrupted');
@@ -154,7 +155,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     lastRequest = { method, path };
     const response = await readHttp(origin, path, { method, body, agent, signal: abort.signal,
       headers: { ...(body ? { 'Content-Type': Buffer.isBuffer(body) ? 'application/zip' : 'application/json' } : {}),
-        ...(author ? { 'User-Api-Key': forumKey, 'X-Workshop-Forum-Origin': forumOrigin } : {}),
+        ...(author ? { Authorization: `Bearer ${githubToken}`, 'X-Workshop-Account-Origin': ACCOUNT_ORIGIN } : {}),
         ...(admin ? { 'X-Admin-Key': adminKey } : {}), ...headers } });
     lastRequest = { method, path, status: response.status, responseBytes: response.bytes.length,
       contentType: response.headers['content-type'] ?? null };
@@ -172,7 +173,8 @@ export async function run({ skipDart = false, log = console.log } = {}) {
   };
   const capabilities = async (uploads, companion) => {
     const { value } = await call(API + '/capabilities');
-    check(value.schema === 1 && value.features?.uploads === uploads && value.features?.companion === companion && value.forumOrigin === forumOrigin,
+    check(value.schema === 1 && value.features?.uploads === uploads && value.features?.companion === companion &&
+      value.account?.origin === ACCOUNT_ORIGIN && value.account?.clientId === REHEARSAL_CLIENT_ID,
       'capabilities_do_not_match_local_configuration');
     check(value.preview && Object.entries(REHEARSAL_PREVIEW).filter(([key]) => key !== 'sources').every(([key, expected]) => value.preview[key] === expected) &&
       Array.isArray(value.preview.sources) && value.preview.sources.length === 2 && REHEARSAL_PREVIEW.sources.every(source => value.preview.sources.includes(source)),
@@ -204,13 +206,13 @@ export async function run({ skipDart = false, log = console.log } = {}) {
   const legacyEntry = (entry, item) => {
     check(matches(entry, item) && !Object.hasOwn(entry, 'preview') && !Object.hasOwn(entry, 'previewSource'), 'legacy_publication_gained_preview');
   };
-  let requestNumber = 0, forumCalls = 0;
+  let requestNumber = 0, githubCalls = 0;
   const submit = async item => {
     const creation = await call(API + '/submissions', { method: 'POST', body: { ...item.meta, requestId: `local_rehearsal_request_${++requestNumber}` }, author: true, status: 201 });
     const made = creation.value.submission;
     check(made?.status === 'draft' && /^[a-f0-9]{32}$/.test(made.submissionId) && matches(made.metadata, item), 'new_submission_is_not_expected_draft');
     check(made.metadata.previewSource === item.meta.previewSource && !Object.hasOwn(made, 'preview'), 'draft_preview_choice_mismatch');
-    check(made.owner?.forumOrigin === forumOrigin && made.owner?.forumUserId === 7601 && made.owner?.username === 'local-rehearsal-user', 'unexpected_synthetic_owner');
+    check(made.owner?.accountOrigin === ACCOUNT_ORIGIN && made.owner?.accountId === 7601 && made.owner?.username === 'local-rehearsal-user', 'unexpected_synthetic_owner');
     const uploaded = await call(`${API}/submissions/${made.submissionId}/archive`, { method: 'PUT', body: item.bytes, author: true });
     check(uploaded.value.submission?.status === 'pending' && uploaded.value.submission?.submissionId === made.submissionId && matches(uploaded.value.submission.metadata, item), 'upload_did_not_reach_pending');
     const submitted = uploaded.value.submission;
@@ -248,21 +250,21 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     const fixtures = await rehearsalFixtures(worker);
     check(!fixtures.v1.bytes.equals(fixtures.v2.bytes), 'version_fixtures_must_differ');
     agent = new Agent({ ca: tls.cert, keepAlive: false });
-    forum = createServer(tls, (request, response) => {
+    github = createServer(tls, (request, response) => {
       response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store');
-      if (request.method !== 'GET' || request.url !== '/session/current.json') { response.writeHead(404); response.end('{"error":"not_found"}'); return; }
-      if (request.headers['user-api-key'] !== forumKey) { response.writeHead(401); response.end('{"error":"invalid_test_key"}'); return; }
-      forumCalls++; response.end(JSON.stringify({ current_user: { id: 7601, username: 'local-rehearsal-user' } }));
+      if (request.method !== 'GET' || request.url !== '/user') { response.writeHead(404); response.end('{"message":"Not Found"}'); return; }
+      if (request.headers.authorization !== `Bearer ${githubToken}`) { response.writeHead(401); response.end('{"message":"Bad credentials"}'); return; }
+      githubCalls++; response.end(JSON.stringify({ id: 7601, login: 'local-rehearsal-user' }));
     });
-    await new Promise((ready, reject) => { forum.once('error', reject); forum.listen(0, '127.0.0.1', ready); });
-    forumOrigin = `https://127.0.0.1:${forum.address().port}`;
+    await new Promise((ready, reject) => { github.once('error', reject); github.listen(0, '127.0.0.1', ready); });
+    githubApi = `https://127.0.0.1:${github.address().port}`;
     const port = await reservedPort(); origin = loopbackOrigin(`https://127.0.0.1:${port}`);
     const original = parseJsonc(readFileSync(resolve(worker, 'wrangler.jsonc'), 'utf8'));
     const configFile = join(temp, 'wrangler.json'), persist = join(temp, 'state');
     await writeFile(join(temp, '.dev.vars'), `ADMIN_KEY=${adminKey}\n`, { mode: 0o600 });
     const start = async (uploads, companion) => {
       if (running) await stop(running);
-      await writeFile(configFile, JSON.stringify(localConfig(worker, original, forumOrigin, { uploads, companion, port })));
+      await writeFile(configFile, JSON.stringify(localConfig(worker, original, githubApi, { uploads, companion, port })));
       running = launch(process.execPath, [wrangler, 'dev', '--config', configFile, '--local', '--persist-to', persist,
         '--ip', '127.0.0.1', '--port', String(port), '--inspector-ip', '127.0.0.1', '--inspector-port', '0',
         '--local-protocol', 'https', '--https-cert-path', caFile, '--https-key-path', keyFile,
@@ -279,10 +281,10 @@ export async function run({ skipDart = false, log = console.log } = {}) {
         }
       }
     };
-    await phase('01 capabilities and configured HTTPS forum', () => start(true, true));
+    await phase('01 capabilities and configured HTTPS GitHub stand-in', () => start(true, true));
     let sid1, sid2, public1, public2, kept, companionEntry;
-    await phase('02 real forum identity and pet upload reaches pending', async () => {
-      sid1 = await submit(fixtures.v1); check(forumCalls >= 2, 'worker_did_not_contact_local_forum');
+    await phase('02 GitHub identity and pet upload reaches pending', async () => {
+      sid1 = await submit(fixtures.v1); check(githubCalls >= 2, 'worker_did_not_contact_local_github');
     });
     await phase('03 approval publishes byte-identical archive', async () => {
       await approve(sid1);
@@ -391,7 +393,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       const expected = Buffer.from(sha256(scripts[0][1]), 'hex').toString('base64');
       const expectedCsp = `default-src 'none'; script-src 'sha256-${expected}'; style-src 'unsafe-inline'; img-src blob: 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
       check(csp === expectedCsp && /^text\/html(?:;|$)/.test(page.headers['content-type'] ?? '') &&
-        !html.includes(adminKey) && !html.includes(forumKey), 'admin_page_csp_or_secret_mismatch');
+        !html.includes(adminKey) && !html.includes(githubToken), 'admin_page_csp_or_secret_mismatch');
       await expectError(ADMIN + '/submissions?status=pending', 401, 'workshop_admin_auth_required');
     });
   } catch (error) {
@@ -402,10 +404,10 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     for (const child of children.toReversed()) {
       try { await stop(child); } catch { cleanupErrors.push('spawned_process_cleanup_failed'); }
     }
-    if (forum?.listening) {
-      forum.closeAllConnections();
-      try { await new Promise((closed, reject) => forum.close(error => error ? reject(error) : closed())); }
-      catch { cleanupErrors.push('local_forum_cleanup_failed'); }
+    if (github?.listening) {
+      github.closeAllConnections();
+      try { await new Promise((closed, reject) => github.close(error => error ? reject(error) : closed())); }
+      catch { cleanupErrors.push('local_github_cleanup_failed'); }
     }
     if (temp) {
       try { tempRemovalAttempts = await removeTemporaryStorage(temp); } catch { cleanupErrors.push('temporary_storage_cleanup_failed'); }
@@ -415,7 +417,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
   if (failure || cleanupErrors.length) {
     log(JSON.stringify({ result: 'FAIL', failure, cleanupErrors, completed, tempRemovalAttempts })); return 1;
   }
-  log(JSON.stringify({ result: skipDart ? 'PARTIAL' : 'PASS', completed, forumRequests: forumCalls,
+  log(JSON.stringify({ result: skipDart ? 'PARTIAL' : 'PASS', completed, githubRequests: githubCalls,
     dart: skipDart ? 'explicitly_skipped' : 'real_http_passed', cleanup: 'local_services_stopped_and_temp_removed', tempRemovalAttempts }));
   return skipDart ? 2 : 0;
 }

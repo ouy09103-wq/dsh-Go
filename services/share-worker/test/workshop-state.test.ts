@@ -4,7 +4,7 @@ import { makeEnv } from './fakes';
 import { PetBucket } from './pet-market-fakes';
 import { metaFor, pet } from './workshop-fixtures';
 afterEach(() => vi.useRealTimers());
-const owner = { forumOrigin: 'https://forum.dshtui.com', forumUserId: 42, username: 'Synthetic owner' };
+const owner = { accountOrigin: 'https://github.com', accountId: 42, username: 'Synthetic owner' };
 function context() { const bucket = new PetBucket(); return { bucket, env: makeEnv({ BUCKET: bucket as unknown as R2Bucket }).env }; }
 it('reserves withdrawal capacity before admitting drafts instead of filling all authority bytes', async () => {
   const f = context(), previous = await loadState(f.env), state = editState(previous), now = '2026-11-11T00:00:00.000Z', metadata = metaFor(pet());

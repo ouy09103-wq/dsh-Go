@@ -76,7 +76,18 @@ abstract class CallConversation {
 
 /// The person's choices for a call: speaking over her stops her; the
 /// loudspeaker or the earpiece; [spokenHint] goes before the first message.
-typedef CallChoices = ({bool bargeIn, bool speaker, String? spokenHint});
+typedef CallChoices = ({bool bargeIn, bool speaker, String? spokenHint, CallPause pause});
+
+/// One exchange of the call as it reads: what the person said, and her reply
+/// as far as it is known (all of it, or, [cut], as far as she got).
+@immutable
+class CallTurn {
+  const CallTurn(this.you, {this.her = '', this.cut = false});
+
+  final String you;
+  final String her;
+  final bool cut;
+}
 
 class VoiceCallController extends ChangeNotifier {
   VoiceCallController({
@@ -118,6 +129,7 @@ class VoiceCallController extends ChangeNotifier {
   /// when the page opens).
   final Future<CallChoices> Function() choices;
   bool _bargeIn = true;
+  CallPause _pause = CallPause.normal;
 
   /// Put before the call's first message: asks for short spoken answers.
   String? _spokenHint;
@@ -144,6 +156,9 @@ class VoiceCallController extends ChangeNotifier {
   bool _over = false;
   Timer? _overTimer;
 
+  /// Since the person began talking over her (for [_overTimer]'s deadline).
+  final _overFor = Stopwatch();
+
   /// What the person had heard of a reply they cut off, for their next message.
   String? _cutAt;
 
@@ -166,7 +181,15 @@ class VoiceCallController extends ChangeNotifier {
   bool _replyDone = true;
   int _turn = 0;
   int _recognizing = 0;
+
+  /// The recognition under way when she was skipped before speaking.
+  int _hushed = 0;
   bool _disposed = false;
+
+  final _turns = <CallTurn>[];
+
+  /// The call so far, oldest first.
+  List<CallTurn> get turns => List.unmodifiable(_turns);
 
   CallPhase get phase => _phase;
   CallEnd? get ended => _ended;
@@ -201,6 +224,20 @@ class VoiceCallController extends ChangeNotifier {
   /// sending, the voice); cleared when the next turn starts.
   Object? get error => _error;
 
+  /// The recognition setting changed: what is said next goes to what it names
+  /// now (if that can listen; else to the one already in use).
+  Future<void> refreshRecognizer() async {
+    if (_phase == CallPhase.ended) return;
+    final mine = ++_refreshing;
+    // Still starting: start() looks again with the new setting.
+    if (_cloud == null) return;
+    final next = await recognizer();
+    // A later change has the last word, whichever answer comes back first.
+    if (next != null && mine == _refreshing && _phase != CallPhase.ended) _cloud = next;
+  }
+
+  int _refreshing = 0;
+
   Future<void> start() async {
     unawaited(const DiagnosticsChannel().recordVoiceStage('call_started'));
     _replySub = conversation.replies.listen(_onReply);
@@ -208,11 +245,18 @@ class VoiceCallController extends ChangeNotifier {
     final chosen = await choices();
     if (_disposed || _phase == CallPhase.ended) return;
     _bargeIn = chosen.bargeIn;
+    _pause = chosen.pause;
     _speaker = chosen.speaker;
     _spokenHint = chosen.spokenHint;
     notifyListeners();
-    final cloud = await recognizer();
-    if (_disposed || _phase == CallPhase.ended) return;
+    VoiceCloud? cloud;
+    int mine;
+    do {
+      // Changed while this looked (refreshRecognizer during start): look again.
+      mine = ++_refreshing;
+      cloud = await recognizer();
+      if (_disposed || _phase == CallPhase.ended) return;
+    } while (mine != _refreshing);
     if (cloud == null) {
       _end(CallEnd.noRecognizer);
       return;
@@ -230,7 +274,7 @@ class VoiceCallController extends ChangeNotifier {
       }
     }
     unawaited(const DiagnosticsChannel().recordVoiceStage('preparing'));
-    final started = await audio.startCall(bargeIn: _bargeIn);
+    final started = await audio.startCall(bargeIn: _bargeIn, pause: _pause);
     if (_disposed || _phase == CallPhase.ended) {
       if (started == CallStart.ok) unawaited(audio.stopCall());
       return;
@@ -267,7 +311,12 @@ class VoiceCallController extends ChangeNotifier {
           // until what was said is known, or the person keeps talking.
           out.duck(true);
           _overTimer?.cancel();
-          _overTimer = Timer(confirmAfter, _cutIn);
+          // The chosen pause's extra quiet doesn't count as talking on: a short
+          // 嗯嗯 still arrives as an utterance before this confirms.
+          _overFor
+            ..reset()
+            ..start();
+          _overTimer = Timer(confirmAfter + _pause.longer, _cutIn);
           return;
         }
         _set(CallPhase.hearing);
@@ -334,12 +383,15 @@ class VoiceCallController extends ChangeNotifier {
       return;
     }
     _heard = text.trim();
+    _turns.add(CallTurn(_heard));
     _reply = '';
     _said = '';
     _voiced = false;
     _spoken = 0;
     _turn++;
-    _replyDone = false;
+    // Skipped while this was being made out: it still goes, its reply is not read.
+    final hushed = mine == _hushed;
+    _replyDone = hushed;
     final hint = _spokenHint;
     final cut = _cutAt;
     _cutAt = null;
@@ -348,8 +400,12 @@ class VoiceCallController extends ChangeNotifier {
     _hinted = true;
     _cued = false;
     _cueTimer?.cancel();
-    _cueTimer = Timer(cueAfter, _cue);
-    _set(CallPhase.thinking);
+    if (hushed) {
+      if (!_disposed) notifyListeners();
+    } else {
+      _cueTimer = Timer(cueAfter, _cue);
+      _set(CallPhase.thinking);
+    }
     final sent = await conversation.send(message);
     if (_phase == CallPhase.ended) return;
     if (!sent) {
@@ -368,6 +424,7 @@ class VoiceCallController extends ChangeNotifier {
       out.add(text.substring(_spoken));
       _spoken = text.length;
       _reply = text;
+      if (_turns.isNotEmpty) _turns.last = CallTurn(_turns.last.you, her: text);
       notifyListeners();
     }
     if (reply.done) {
@@ -392,6 +449,9 @@ class VoiceCallController extends ChangeNotifier {
     final out = _out;
     if (out != null) {
       _cutAt = out.heard;
+      if (_turns.isNotEmpty && _turns.last.her.isNotEmpty) {
+        _turns.last = CallTurn(_turns.last.you, her: out.heard, cut: true);
+      }
       _stopVoice();
     }
     if (!_replyDone) unawaited(conversation.interrupt());
@@ -474,6 +534,20 @@ class VoiceCallController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Changed in 通话设置: the next pause is judged by it (the one under way too).
+  void setPause(CallPause pause) {
+    if (_phase == CallPhase.ended || pause == _pause) return;
+    _pause = pause;
+    // Talking over her right now: the deadline moves with the pause, from when they began.
+    if (_overTimer?.isActive ?? false) {
+      _overTimer!.cancel();
+      final left = confirmAfter + pause.longer - _overFor.elapsed;
+      _overTimer = Timer(left.isNegative ? Duration.zero : left, _cutIn);
+    }
+    // Before the microphone is open this changes nothing there; startCall takes [_pause].
+    unawaited(audio.callPause(pause));
+  }
+
   Future<void> setSpeaker(bool on) async {
     if (_phase == CallPhase.ended) return;
     _speaker = await audio.speaker(on);
@@ -481,8 +555,13 @@ class VoiceCallController extends ChangeNotifier {
   }
 
   /// Tapped while she speaks: she stops, the reply goes on in the conversation.
+  /// Before she has begun (her voice about to be tried out on the same
+  /// speaker), she won't read this reply at all.
   void skip() {
-    if (_phase != CallPhase.speaking) return;
+    if (_phase != CallPhase.speaking && _phase != CallPhase.thinking) return;
+    // Thinking may still be making out what was said: that reply stays quiet too.
+    if (_phase == CallPhase.thinking) _hushed = _recognizing;
+    _cueTimer?.cancel();
     _stopVoice();
     // The rest is there to read.
     _voiced = false;

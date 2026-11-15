@@ -1,22 +1,47 @@
 part of 'state_engine.dart';
 
 /// Stable across definition edits: an existing slot/entity binding stays bound.
-String secretBindingKey(String slotId, String entityId) => _fingerprint([slotId, entityId]);
+String secretBindingKey(
+  String slotId,
+  String entityId, {
+  StateExecutionSource source = const StateExecutionSource.legacy(),
+}) => source.isPack
+    ? _fingerprint({
+        'kind': 'pack',
+        'installedPackId': source.installedPackId,
+        'bindingId': source.bindingId,
+        'slotId': slotId,
+        'entityId': entityId,
+      })
+    : _fingerprint([slotId, entityId]);
 
 /// Fixed declarations only. Model output cannot choose paths or release policy.
 class SecretDefinition {
-  SecretDefinition.parse(Object? rawRegistry, {required StateDefinition state, Object? version = 1})
-    : _raw = _eventCopy(rawRegistry),
-      _version = _eventCopy(version),
-      _state = state {
+  SecretDefinition.parse(
+    Object? rawRegistry, {
+    required StateDefinition state,
+    Object? version = 1,
+    this.source = const StateExecutionSource.legacy(),
+    String? effectiveConfigId,
+  }) : _raw = _eventCopy(rawRegistry),
+       _version = _eventCopy(version),
+       _state = state {
     try {
       _stateFingerprint = state.fingerprint;
     } catch (_) {
-      _stateFingerprint = _fingerprint(_eventIdentity({'version': state._version, 'state': state._raw}));
+      _stateFingerprint = _fingerprint(
+        _eventIdentity({'version': state._version, 'state': state._raw, 'composition': ?state._compositionIdentity}),
+      );
       _issues.add(_issue('secret_state_identity', '', 'The state definition has no finite JSON identity.'));
     }
     _identity = _fingerprint(
-      _eventIdentity({'version': _version, 'secretSlots': _raw, 'stateDefinitionFingerprint': _stateFingerprint}),
+      _eventIdentity({
+        'version': _version,
+        'secretSlots': _raw,
+        'stateDefinitionFingerprint': _stateFingerprint,
+        if (source.isPack) 'source': source.toJson(),
+        'effectiveConfigId': ?effectiveConfigId,
+      }),
     );
     if (!defined) return;
     _collectProtectedPaths();
@@ -145,6 +170,7 @@ class SecretDefinition {
   }
 
   final Object? _raw, _version;
+  final StateExecutionSource source;
   final StateDefinition _state;
   late final String _stateFingerprint, _identity;
   final List<_Json> _issues = [];
@@ -215,7 +241,7 @@ class SecretDefinition {
           continue;
         }
         final entityId = entity.value! as String;
-        if (bound.contains(secretBindingKey(slot.id, entityId)) ||
+        if (bound.contains(secretBindingKey(slot.id, entityId, source: source)) ||
             current.exists != slot.expectedExists ||
             (current.exists && current.value != null)) {
           continue;

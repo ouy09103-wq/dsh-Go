@@ -1,4 +1,6 @@
-// Idea after PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:convert';
 
@@ -421,12 +423,10 @@ class RuntimeLaunchFacts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final en = l10n.localeName == 'en';
     String method(String mode) => switch (mode) {
       'direct' => l10n.phoneLaunchDirect,
       'proot' => l10n.phoneLaunchCompatible,
       'tawcroot' => l10n.phoneLaunchTawcroot,
-      'root' => en ? 'Root (uid 0)' : 'root（uid 0）',
       _ => mode,
     };
     // One child of the card: keep SheetGroup's 2dp between its rows.

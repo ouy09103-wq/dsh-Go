@@ -38,12 +38,13 @@ Shows your DeepSeek account or API key and balance; tap it to open your account.
 
 ## General
 
-- **Interface**: whether the app opens to **Native** or **Web**, and DSH Web's options; see [Web mode](05-web.md).
+- **Interface**: the **Mode** group at the top sets **Open on launch** (Work, Companion or Tavern). Below it, choose whether the app opens to **Native** or **Web**, and DSH Web's options; see [Web mode](05-web.md).
 - **Language**: **System**, **简体中文** or **English**.
 - **Notifications**: turn on **Allow notifications**, then choose **Turn complete**, **Error or stopped**, **Needs approval** and **Questions for you**. Alerts from remote hosts need the app running and the connection online. Sound, banners and the lock screen are set in system settings.
 - **Voice**: the **Reading voice** (for reading replies aloud, the companion room and voice calls), how voice input recognizes speech (**Automatic**, **DeepSeek**, **System**, **Voice model** or **Another cloud service**), the voice model download, and for voice calls **Call background**, **Interrupt by speaking**, **Spoken answers** and **Speakerphone by default**.
 - **Performance**: **Auto**, **Full** or **Light**, plus glass blur, interface motion, fluid motion and **Refresh rate** (Auto / Max / System).
 - **Background running**: see [FAQ](11-faq.md). Until it's set up, the row says so on the right.
+- **System permissions**: the system permissions each feature uses. [Open](dshgo://open/system-permissions)
 - **Privacy and sharing**:
   - **My shared links**: see [Sharing and replay](07-sharing.md).
   - **Share configuration**: select the current host's settings, plugins, skills and personal preferences to share, and share them as a link, QR code or file.
@@ -66,6 +67,7 @@ Shows your DeepSeek account or API key and balance; tap it to open your account.
   - **Installation route**: after the full update APK is downloaded and verified, keep normal installation (the default), or explicitly choose Shizuku or local ADB. The latter routes accept only this app, with matching current signers and a higher build number, and require native confirmation for this attempt; Phone control and AI Shell need not be enabled. Shizuku permission is separate from approval to install. Local ADB uses an already-paired identity; the existing Android Shell page can guide pairing. All routes remain subject to system and vendor security policies, do not guarantee skipping a scan, do not support root, and never automatically switch routes or retry after failure. Installation may replace the app process. If the outcome is unknown, read the actual installed state first. End the wait only after checking that no system installation is running; clearing this record does not cancel or retry an installation.
   - **Save the package**: when the system refuses to install at all (Xiaomi and other vendors), the update window can save the package into Downloads/DSH-Go, so you can sign it yourself with MT Manager and install that. A package you signed has a different signature from ours: in-app updates then always report a signature mismatch, and every later version has to be signed and installed by hand. Prefer Shizuku or local ADB where you can; those need no signing.
   - **Check automatically**: on by default; checks when the app opens, at most once a day. A new version opens the update window, unless you're on another page or typing, in which case **Check for updates** shows it. Skipped versions aren't offered again, and nothing downloads or installs on its own.
+  - **Star DSH Go on GitHub**: opens the project page, where you can star it or share it with friends.
   - **Open-source licenses**.
 
 ## Permissions

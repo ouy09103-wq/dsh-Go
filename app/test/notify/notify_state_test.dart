@@ -56,7 +56,12 @@ void main() {
         AlertDelivery.system,
       );
       expect(
-        deliveryFor(ask, prefs: const NotifyPrefs(approval: false), foreground: false, viewed: (host: _ssh, sessionId: 's1')),
+        deliveryFor(
+          ask,
+          prefs: const NotifyPrefs(approval: false),
+          foreground: false,
+          viewed: (host: _ssh, sessionId: 's1'),
+        ),
         AlertDelivery.none,
       );
     });
@@ -308,7 +313,9 @@ void main() {
     for (final kind in [HostKind.ssh, HostKind.relay]) {
       test('$kind current-chat requests become system reminders on background', () async {
         final host = kind == HostKind.ssh ? _ssh : const HostRef.relay('lab');
-        make(active: fakeHostConnection(local: false, kind: kind, hostId: 'lab'));
+        make(
+          active: fakeHostConnection(local: false, kind: kind, hostId: 'lab'),
+        );
         container.read(activeHostProvider.notifier).select(host);
         container.read(currentSessionProvider.notifier).select('r1');
         await settle();
@@ -327,7 +334,9 @@ void main() {
     }
 
     test('a remote attention banner migrates only once, not again from pending', () async {
-      make(active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'));
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
       await settle();
       remote.emit(approval('e9', 'r1'));
       await settle();
@@ -338,7 +347,9 @@ void main() {
     });
 
     test('a withdrawn remote banner is not recovered on background', () async {
-      make(active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'));
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
       await settle();
       remote.emit(approval('e9', 'r1'));
       await settle();
@@ -349,7 +360,9 @@ void main() {
     });
 
     test('a request announced across the foreground edge posts only once', () async {
-      make(active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'));
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
       await settle();
       remote.emit(question('q9', 'r1', ['Continue?']));
       container.read(appForegroundProvider.notifier).set(false);
@@ -358,7 +371,9 @@ void main() {
     });
 
     test('remote background recovery still respects per-kind notification settings', () async {
-      make(active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'));
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
       await settle();
       remote.emit(approval('e9', 'r1'));
       remote.emit(question('q9', 'r1', ['Continue?']));
@@ -491,6 +506,21 @@ void main() {
       expect(c.read(viewedChatProvider), isNull);
       c.read(appForegroundProvider.notifier).set(true);
       c.read(chatOnScreenProvider.notifier).set(false);
+      expect(c.read(viewedChatProvider), isNull);
+    });
+
+    test('on a call, the call\'s conversation, though the chat is under the call page', () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      c.read(currentSessionProvider.notifier).select('s1');
+      c.read(chatOnScreenProvider.notifier).set(false);
+      c.read(callChatProvider.notifier).set((host: HostRef.local, sessionId: 's2'));
+      expect(c.read(viewedChatProvider), (host: HostRef.local, sessionId: 's2'));
+      c.read(appForegroundProvider.notifier).set(false);
+      expect(c.read(viewedChatProvider), isNull);
+      c.read(appForegroundProvider.notifier).set(true);
+      c.read(callChatProvider.notifier).set(null);
       expect(c.read(viewedChatProvider), isNull);
     });
   });

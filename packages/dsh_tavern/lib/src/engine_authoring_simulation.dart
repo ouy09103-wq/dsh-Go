@@ -306,6 +306,14 @@ extension _AuthoringSimulation on TavernEngine {
       task.adoptTemporary(temporary);
       task.cancellation.check();
       task.chatId = _bootstrapAuthoringSimulationStore(temporary, seed);
+      task.origin = {
+        ...task.origin,
+        'temporaryGameplay': {
+          'domainId': temporary._authoringAuthority.domainId,
+          'chatId': task.chatId,
+          'originDomainId': seed.gameplay.domainId,
+        },
+      };
       for (var index = 0; index < request.userInputs.length; index++) {
         task.cancellation.check();
         final turn = _AuthoringSimulationTurnRecord(index + 1, request.userInputs[index]);

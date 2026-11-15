@@ -1,6 +1,6 @@
 # 酒馆：优化排期
 
-> 2026-11-10。来源是另一个会话写的优化技术文档（基线 `feat/roleplay` 的 f0bd262a，参考了 [bychv/dsh-preset-enhance](https://github.com/bychv/dsh-preset-enhance) 0.3.7-rc.1）。owner 对它的三项决定说「按照你的设计来」（下面 §1）。这里是对过当前代码（4cff2d12）之后的版本：已经做了的划掉，做法不同的以代码为准。分工照总纲：界面归主线，`packages/dsh_tavern` 归 Pro（写进 tavern2 的 ADDENDUM-04）。
+> 2026-11-10。基于优化技术文档（基线 `feat/roleplay` 的 f0bd262a，对照过 [bychv/dsh-preset-enhance](https://github.com/bychv/dsh-preset-enhance) 0.3.7-rc.1）。§1 的三项决定已确认。这里是对过当前代码（4cff2d12）之后的版本：已经做了的划掉，做法不同的以代码为准。分工照总纲：界面归主线，`packages/dsh_tavern` 独立推进。
 
 ## 1. 已定的三件事
 

@@ -16,7 +16,7 @@ void main() {
     final raw = jsonEncode({scope: {'directoryName': '../not-a-private-draft'}, other: pending.toJson()});
     final platform = recoveryPlatform({recoveryPendingKey: raw});
     const preferences = PrefsWorkshopPreferences();
-    await preferences.acceptDisclosure(authWorker, authForum);
+    await preferences.acceptDisclosure(authWorker, authAccount);
     await preferences.reserveSubmissionRequestId(pending.fingerprint, pending.requestId);
     final disclosure = await platform.raw(recoveryDisclosuresKey);
     final ids = await platform.raw(recoveryRequestsKey);

@@ -15,10 +15,15 @@ export 'src/backup.dart';
 export 'src/director.dart';
 export 'src/dshgo_inspection.dart';
 export 'src/engine.dart';
+export 'src/gameplay.dart';
+export 'src/gameplay_bindings.dart';
+export 'src/gameplay_cast.dart';
+export 'src/gameplay_export.dart';
+export 'src/gameplay_packs.dart';
 export 'src/import_report.dart';
 export 'src/inspection.dart';
 export 'src/lorebook_library.dart';
-export 'src/io/card_codec.dart' hide DecodedCardSeed;
+export 'src/io/card_codec.dart' hide DecodedCardSeed, cardAssetDataUri;
 export 'src/io/chat_jsonl.dart';
 export 'src/io/st_chat_document.dart';
 export 'src/llm/model_client.dart';
@@ -49,6 +54,9 @@ export 'src/store/character_library.dart'
     hide AuthoringCardMedia, AuthoringCharacterCapture, replayAuthoringSaveAs, authoringSaveAsReceipt;
 export 'src/store/chat_store.dart'
     hide
+        GameplayBindingStore,
+        GameplaySimulationStore,
+        StoredGameplaySimulationData,
         AuthoringStore,
         StoredAuthoringDraft,
         AuthoringAuthorityStore,
@@ -78,4 +86,4 @@ export 'src/store/chat_store.dart'
         StoredRememberMemory,
         StoredDisplayHistory,
         StoredHistoryLink;
-export 'src/worldinfo/world_info.dart';
+export 'src/worldinfo/world_info.dart' hide remapWorldInfoBook, WorldInfoPackSource, exportGameplayWorldInfoEntry;

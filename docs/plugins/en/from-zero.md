@@ -355,6 +355,8 @@ The example has no `prepare` or `prepublishOnly` build scripts, so these command
 
 ## 7. Verify the market index dsh-go actually consumes
 
+> Submission and listing in the official market (dsh-go-market) are covered in [Publishing and listing](market.md). This section is about the default discovery index only.
+
 The app currently reads dshfind's **format-1 index** at `https://api.dshfind.com/market/dsh-index.json`. Website discovery and inclusion in this index have different requirements.
 
 Add the `dsh-plugin` topic to your own public GitHub repository and check the npm package's `repository` backlink. dshfind processes discoveries on a subsequent refresh; this is not a fixed delivery-time guarantee. Its discovery code also recognizes npm's `dsh-plugin` and `dsh-bundle` keywords.

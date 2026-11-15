@@ -64,7 +64,6 @@ class MainActivity : FlutterActivity() {
             engine.plugins.add(io.github.ouy09103.dsh_go_root.launch.LaunchClipPlugin())
             engine.plugins.add(io.github.ouy09103.dsh_go_root.icons.PictureShortcutPlugin())
             engine.plugins.add(io.github.ouy09103.dsh_go_root.usage.UsagePlugin())
-            engine.plugins.add(io.github.ouy09103.dsh_go_root.root.RootPlugin())
             engine.plugins.add(io.github.ouy09103.dsh_go_root.companion.CompanionVoicePlugin())
             engine.plugins.add(io.github.ouy09103.dsh_go_root.speech.SpeechPlugin())
             engine.plugins.add(io.github.ouy09103.dsh_go_root.companion.CompanionWidgetPlugin())

@@ -111,7 +111,7 @@ Future<WorkshopPublishSample> _publishPreviewSample(String kind, _PreviewSampleM
     return WorkshopSubmission.fromJson({
       'submissionId': call.draft.id, 'metadata': call.draft.metadata.toJson(),
       'status': 'pending',
-      'owner': {'forumOrigin': authForum.toString(), 'forumUserId': 42, 'username': 'test-user'},
+      'owner': {'accountOrigin': authAccount.toString(), 'accountId': 42, 'username': 'test-user'},
       'createdAt': '2026-11-11T00:00:00.000Z', 'updatedAt': '2026-11-11T00:00:00.000Z',
       'preview': _previewDescriptor(call.draft.metadata),
     });

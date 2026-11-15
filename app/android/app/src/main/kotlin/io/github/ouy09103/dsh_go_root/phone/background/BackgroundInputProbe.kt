@@ -27,6 +27,11 @@ internal class BackgroundInputProbe(private val context: Context, private val di
     private val receiver = object : ResultReceiver(ui) {
         override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
             val data = resultData ?: return
+            // CREATED carries the Activity's finish receiver, an App subclass of ResultReceiver.
+            // A Binder-delivered Bundle has no class loader, and the default one cannot find App
+            // classes in this privileged process: reading it threw BadParcelableException, and every
+            // probe failed as inputWindowNotReady. Set the App's loader before reading any value.
+            data.classLoader = javaClass.classLoader
             if (data.get(ProbeActivityContract.NONCE) != nonce) return
             try {
                 if (resultCode == ProbeActivityContract.CREATED) {

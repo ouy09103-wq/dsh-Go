@@ -91,6 +91,19 @@ class TawcrootBuildTests(unittest.TestCase):
             BUILD.cached_archive(self.source, self.root / "other", bad)
         self.assertEqual(list((self.root / "other").iterdir()), [])
 
+    def test_archive_import_and_reuse_without_file_digest(self):
+        # Capability simulation only; the real interpreter is unchanged.
+        cache = self.root / "cache"
+        with mock.patch.dict(hashlib.__dict__), \
+                mock.patch.object(BUILD.urllib.request, "urlopen") as network:
+            hashlib.__dict__.pop("file_digest", None)
+            first = BUILD.cached_archive(self.source, cache, self.archive)
+            again = BUILD.cached_archive(self.source, cache, offline=True)
+        network.assert_not_called()
+        self.assertEqual(first, again)
+        self.assertEqual(first.read_bytes(), self.archive.read_bytes())
+        self.assertEqual(hashlib.sha256(first.read_bytes()).hexdigest(), self.source["archiveSha256"])
+
     def test_extracts_only_production_sources_and_license(self):
         src = BUILD.extract_source(self.archive, self.source, self.root / "x")
         self.assertTrue((src / "src/main.c").is_file())

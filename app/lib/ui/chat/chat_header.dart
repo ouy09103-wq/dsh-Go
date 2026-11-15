@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: rewritten as floating chrome-glass pieces sharing one
 // BackdropGroup, on a measuring row that decides which piece gives way.
 
@@ -34,7 +36,7 @@ class HeaderStatus {
   final String? spoken;
 }
 
-/// 聊天顶栏:**没有整条色带**(Claude 式),只有几枚浮动玻璃件;
+/// 聊天顶栏:**没有整条色带**,只有几枚浮动玻璃件;
 /// 内容滚到下面时才浮现一层页面色渐隐,与二级页面同一套做法。
 /// 打开着对话时最右是「新对话」圆键,与 ≡ 镜像。对话有进行中的自动化任务时,
 /// 标题胶囊的尾端是一颗与它同心的时钟键([HeaderScheduleCap])。

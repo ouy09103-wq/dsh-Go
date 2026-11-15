@@ -194,7 +194,7 @@ const adminLogic = (() => {
   const statusName = (value) => ({ draft: '尚未上传', pending: '待审核', approved: '已通过', rejected: '已拒绝', withdrawn: '已撤回', open: '未处理', resolved: '已处理' }[value] || plain(value));
   const kindName = (value) => ({ pet: '像素宠物', companion: 'Live2D 伙伴' }[value] || plain(value));
   const actor = (value) => value === 'admin' ? '管理密钥持有人（admin）' : object(value)
-    ? plain(value.username) + ' · ' + plain(value.forumOrigin) + ' · 用户 ' + plain(value.forumUserId) : plain(value);
+    ? plain(value.username) + ' · GitHub · 用户 ' + plain(value.accountId) : plain(value);
   const size = (value) => Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString('zh-CN') + ' 字节' : plain(value);
   function validation(value) {
     if (!value) return '尚无已通过的包校验记录';
@@ -482,7 +482,7 @@ const adminLogic = (() => {
       const row = node('article', undefined, 'row');
       if (view === 'submissions') {
         row.append(node('span', L.statusName(item.status), 'badge'), node('h3', item.metadata.title.zh));
-        pair(row, '英文名称', item.metadata.title.en); pair(row, '论坛作者', L.actor(item.owner));
+        pair(row, '英文名称', item.metadata.title.en); pair(row, '作者', L.actor(item.owner));
         pair(row, '种类', L.kindName(item.metadata.kind)); pair(row, '压缩包大小', L.size(item.metadata.size));
         pair(row, '提交时间（UTC）', item.submittedAt || item.createdAt); pair(row, '校验摘要', L.validation(item.validation));
         pair(row, '投稿标识', item.submissionId);
@@ -572,7 +572,7 @@ const adminLogic = (() => {
     const item = submissionDetail.submission, inspection = submissionDetail.inspection;
     root.append(node('h3', item.metadata.title.zh)); pair(root, '英文名称', item.metadata.title.en);
     pair(root, '状态', L.statusName(item.status)); pair(root, '当前发布指向', submissionDetail.current ? '是（公开可用性仍受功能开关影响）' : '否（已通过不等于当前发布指向）');
-    pair(root, '投稿标识', item.submissionId); pair(root, '论坛作者', L.actor(item.owner)); pair(root, '种类', L.kindName(item.metadata.kind));
+    pair(root, '投稿标识', item.submissionId); pair(root, '作者', L.actor(item.owner)); pair(root, '种类', L.kindName(item.metadata.kind));
     pair(root, '作品标识 / 版本', item.metadata.id + ' / ' + item.metadata.version); pair(root, '元数据作者', item.metadata.author);
     pair(root, '许可', item.metadata.license); pair(root, '来源（仅文本）', item.metadata.source);
     pair(root, '压缩包大小', L.size(item.metadata.size)); pair(root, 'SHA-256', item.metadata.sha256);

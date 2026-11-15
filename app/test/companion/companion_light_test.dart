@@ -61,6 +61,53 @@ void main() {
       ]);
     });
 
+    test('the tokens the reply reported, once it finished; nothing when it reported none', () async {
+      Future<List<(int, int)>> heard(List<Map<String, Object?>> events) async {
+        final usage = <(int, int)>[];
+        await streamCompanionReply(
+          client: _answering(200, _sse(events)),
+          apiKey: 'sk-test',
+          system: '',
+          lines: const [CompanionLine.user('你好')],
+          onUsage: (input, output) => usage.add((input, output)),
+        ).drain<void>();
+        return usage;
+      }
+
+      expect(
+        await heard([
+          {
+            'type': 'message_start',
+            'message': {
+              'usage': {'input_tokens': 900, 'cache_read_input_tokens': 300, 'output_tokens': 1},
+            },
+          },
+          _text('你来啦。'),
+          // Running totals, not increments.
+          {
+            'type': 'message_delta',
+            'delta': <String, Object?>{},
+            'usage': {'output_tokens': 20},
+          },
+          {
+            'type': 'message_delta',
+            'delta': <String, Object?>{},
+            'usage': {'input_tokens': 0, 'output_tokens': 42},
+          },
+          {'type': 'message_stop'},
+        ]),
+        [(1200, 42)],
+      );
+      expect(
+        await heard([
+          {'type': 'message_start', 'message': <String, Object?>{}},
+          _text('你来啦。'),
+          {'type': 'message_stop'},
+        ]),
+        isEmpty,
+      );
+    });
+
     test('a refused key, a busy model and an error event say which', () async {
       Future<CompanionLightFailure> failure(MockClient client) async {
         try {

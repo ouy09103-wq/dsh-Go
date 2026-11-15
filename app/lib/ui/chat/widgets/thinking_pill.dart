@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -154,7 +156,7 @@ class _ThinkingPillState extends State<ThinkingPill> {
           ),
         ),
         const SizedBox(width: StreamRow.gap),
-        // 标签直接换字,不做淡入淡出:两个词叠在同一个位置上闪一下更难看。
+        // 标签直接换字,不做淡入淡出:两个词叠在同一个位置上闪一下更乱。
         ThinkingLabel(active ? l10n.chatThinkingActive : l10n.chatThinking, active: active),
         ?widget.meta,
         if (preview.isNotEmpty) ...[

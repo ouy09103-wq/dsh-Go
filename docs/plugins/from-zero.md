@@ -355,6 +355,8 @@ npm view @your-scope/dsh-text-metrics name version repository dist.integrity --j
 
 ## 7. 核对 dsh-go 实际使用的市场索引
 
+> 官方市场（dsh-go-market）的投稿与上架规则见[发布与上架](market.md)。本节只讲默认的发现索引。
+
 当前 App 默认读取 dshfind 的 **format-1 索引**：`https://api.dshfind.com/market/dsh-index.json`。dshfind 网站目录发现和这个索引有不同的准入规则。
 
 先在自己的公开 GitHub 仓库添加 `dsh-plugin` topic，并核对 npm 包的 `repository` 回链。dshfind 的发现任务会在后续刷新时处理它；不能承诺固定几分钟到账。仓库中的发现逻辑也会识别 npm 的 `dsh-plugin` / `dsh-bundle` 关键词。

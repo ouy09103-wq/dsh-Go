@@ -15,6 +15,9 @@
     <string name="overlay_fold_row">收成小球</string>
     <string name="overlay_hold_hint">按住小球 1 秒可直接停止</string>
     <string name="overlay_stop_description">停止 DSH 的操作</string>
+    <string name="overlay_move_left">移到左侧</string>
+    <string name="overlay_move_centre">移到中间</string>
+    <string name="overlay_move_right">移到右侧</string>
     <string name="overlay_paused_short">已暂停</string>
     <string name="overlay_waiting">等你在下方确认</string>
     <string name="overlay_waived">免确认</string>

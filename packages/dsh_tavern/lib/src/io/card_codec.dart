@@ -583,6 +583,10 @@ int _scriptCount(Object? scripts) {
   return count;
 }
 
+/// Internal export helper sharing the codec's existing MIME projection.
+String cardAssetDataUri(String path, List<int> bytes) =>
+    Uri.dataFromBytes(bytes, mimeType: _assetMime(path.split('.').last)).toString();
+
 String _assetMime(String ext) => switch (ext.toLowerCase()) {
   'png' || 'apng' => 'image/png',
   'jpg' || 'jpeg' => 'image/jpeg',

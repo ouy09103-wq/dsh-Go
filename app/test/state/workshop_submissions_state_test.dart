@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:dsh_app/forum/discourse_client.dart';
-import 'package:dsh_app/forum/forum_auth.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
+import 'package:dsh_app/state/workshop_report_state.dart';
 import 'package:dsh_app/state/workshop_submissions_state.dart';
 import 'package:dsh_app/workshop/workshop_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +13,7 @@ import 'workshop_personal_test_support.dart';
 void main() {
   test('personal pages are explicit, deduplicate ids and retain status reasons while uploads are disabled', () async {
     final client = PersonalClient()
-      ..value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false, companion: false));
+      ..value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false, companion: false));
     client.readPage = (cursor, status) async => cursor == null
       ? WorkshopSubmissionPage([personalRow(), personalRow(id: personalSecondId)], personalSecondId)
       : WorkshopSubmissionPage([personalRow(id: personalSecondId, status: WorkshopSubmissionStatus.rejected),
@@ -167,8 +167,8 @@ void main() {
       pending = controller.refresh();
       final settled = authSettled(pending);
       await authSignal(entered, pending).timeout(const Duration(seconds: 10));
-      harness.forum.emit(authSignedIn(credentials:
-        const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      harness.account.emit(authSignedIn(credential:
+        const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       release.complete(WorkshopSubmissionPage([personalRow()], null));
       await pending;
       await settled;
@@ -209,7 +209,7 @@ void main() {
       await authSignal(entered, refreshing).timeout(const Duration(seconds: 10));
       pending = harness.container.read(workshopSubmissionsProvider.notifier).refresh();
       final settled = authSettled(pending);
-      harness.forum.emit(const ForumAuthState(phase: ForumAuthPhase.signedOut));
+      harness.account.emit(authSignedOut);
       release.complete(client.value);
       await pending;
       await refreshing;
@@ -233,7 +233,7 @@ void main() {
 
   test('withdrawal preserves its response reason and is available while uploads are disabled', () async {
     final client = PersonalClient()
-      ..value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false, companion: false))
+      ..value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false, companion: false))
       ..readPage = (cursor, status) async => WorkshopSubmissionPage([personalRow()], null);
     final harness = personalHarness(client);
     try {
@@ -279,7 +279,7 @@ void main() {
 
   test('withdrawal distinguishes known rejection, invalid reason and inconsistent success', () async {
     final client = PersonalClient()
-      ..withdrawSubmission = (id, reason) async => throw const WorkshopException('workshop_forum_origin', status: 409);
+      ..withdrawSubmission = (id, reason) async => throw const WorkshopException('workshop_account_origin', status: 409);
     final harness = personalHarness(client);
     try {
       await authReady(harness.container);
@@ -331,6 +331,25 @@ void main() {
       if (!disposed) {
         harness.dispose();
       }
+    }
+  });
+
+  test('a token the Worker refuses signs the account out, from a page read and from a report', () async {
+    const refused = WorkshopException('workshop_account_auth_invalid', status: 401);
+    final client = PersonalClient()
+      ..readPage = ((cursor, status) async => throw refused)
+      ..sendReport = ((kind, id, version, reason) async => throw refused);
+    for (final act in [
+      (AuthHarness h) => h.container.read(workshopSubmissionsProvider.notifier).refresh(),
+      (AuthHarness h) => h.container.read(workshopReportProvider.notifier).submit(personalEntry(), 'Please review'),
+    ]) {
+      final harness = personalHarness(client);
+      try {
+        await authReady(harness.container);
+        await act(harness);
+        expect(harness.account.invalidated, 1);
+        expect(harness.state.signedIn, isFalse);
+      } finally { harness.dispose(); }
     }
   });
 }

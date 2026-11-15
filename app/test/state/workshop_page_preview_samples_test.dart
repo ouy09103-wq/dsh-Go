@@ -28,8 +28,8 @@ void _publisher(WorkshopPublishSample sample, String kind) {
   expect(state.session, same(access.session));
   expect(access.canSubmit(kind), isTrue);
   expect(access.worker, stateOrigin);
-  expect(access.forum, Uri.parse('https://forum.example'));
-  expect(access.capabilities!.forumOrigin, access.forum);
+  expect(access.account, Uri.parse('https://github.com'));
+  expect(access.capabilities!.account.origin, access.account);
   expect(access.capabilities!.preview!.sources, {'pet-idle', 'companion-preview'});
   expect(state.pendingChecked, isTrue);
   expect(state.working, isFalse);
@@ -134,8 +134,8 @@ void main() {
       expect(pending.publish.hasPending, isFalse, reason: 'the known server result cleared the local journal');
       expect(pending.publish.pendingKnownUnsent, isFalse);
       expect(pending.publish.error, isNull);
-      expect(result.ownerOrigin, pending.access.forum);
-      expect(result.ownerId, pending.access.forumUserId);
+      expect(result.ownerOrigin, pending.access.account);
+      expect(result.ownerId, pending.access.accountId);
       expect(result.metadata.toJson(), metadata.toJson());
       expect(pending.publish.preparedMetadata!.toJson(), metadata.toJson());
       expect(pending.publish.files, ready.publish.files);

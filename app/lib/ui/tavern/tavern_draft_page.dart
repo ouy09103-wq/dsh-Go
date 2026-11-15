@@ -30,6 +30,7 @@ import 'tavern_character_page.dart';
 import 'tavern_draft_history_page.dart';
 import 'tavern_draft_prompt_page.dart';
 import 'tavern_draft_trial_page.dart';
+import 'tavern_pack_export_page.dart';
 
 class TavernDraftPage extends ConsumerStatefulWidget {
   const TavernDraftPage({super.key, required this.draftId});
@@ -568,6 +569,14 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
                   key: ValueKey('tavern-draft-save-new-$id'),
                   onPressed: _busy ? null : () => unawaited(_saveAsNew(source)),
                   child: Text(l10n.tavernDraftSaveNew),
+                ),
+              if (source.target.kind == TavernAuthoringTargetKind.character)
+                OutlinedButton(
+                  key: ValueKey('tavern-draft-pack-$id'),
+                  onPressed: _busy
+                      ? null
+                      : () => unawaited(Navigator.of(context).push(TavernPackDraftExportPage.route(_draft!, id))),
+                  child: Text(l10n.tavernPackDraftExport),
                 ),
               if (findings.isEmpty && picked.isNotEmpty)
                 Padding(

@@ -265,6 +265,75 @@ class PreviewTavern implements Tavern, TavernPreview {
   @override
   Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) => _noDraft();
 
+  // The preview keeps no gameplay packs: none listed or read, none taken in.
+  static Future<T> _noPack<T>() => Future<T>.error(UnsupportedError('The preview keeps no gameplay packs.'));
+
+  @override
+  Future<TavernCastImportResult> importDshgoCastMember(
+    TavernCastSource source,
+    String localCastId, {
+    required String operationId,
+    String? domainId,
+  }) => _noPack();
+
+  @override
+  Future<TavernCastImportResult?> readDshgoCastImport(String domainId, String operationId) async => null;
+
+  @override
+  Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request) => _noPack();
+
+  @override
+  Future<Uint8List> exportCharacterWithPacks(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) => _noPack();
+
+  @override
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) => _noPack();
+
+  @override
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) => _noPack();
+
+  @override
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  }) => _noPack();
+
+  @override
+  Future<TavernGameplayResolution> resolveGameplayConfig(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
+  }) => _noPack();
+
+  @override
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) => _noPack();
+
+  @override
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false}) async => const [];
+
+  @override
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref) async => null;
+
+  @override
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId) async => null;
+
+  @override
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref) => _noPack();
+
+  @override
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  }) => _noPack();
+
   @override
   Future<TavernAuthoringDraft> editAuthoringDraft(
     String draftId, {

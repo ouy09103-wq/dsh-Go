@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dsh_app/forum/discourse_client.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/state/workshop_auth_state.dart';
 import 'package:dsh_app/state/workshop_preferences.dart';
 import 'package:dsh_app/state/workshop_publish_sources.dart';
@@ -305,8 +305,7 @@ void main() {
       expect(h.state.error, isNull);
       expect(h.state.busy, isTrue);
       expect(h.preferences.clears, 1);
-      h.forum.emit(authSignedIn(credentials: const ForumCredentials(
-        key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      h.account.emit(authSignedIn(credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       await authReady(h.container);
       expect(h.state.session, isNot(same(oldSession)));
       expect(h.state.waitingForPreviousOperation, isTrue);
@@ -330,20 +329,20 @@ void main() {
   });
 
   test('known unsent local cleanup needs no rights, profile or successful capabilities refresh', () async {
-    const credentials = ForumCredentials(key: 'TEST_ONLY_KEY_A', clientId: 'test-client');
+    const credentials = WorkshopAccountCredential('TEST_ONLY_KEY_A');
     final events = <String>[];
     final client = _PreflightPublishClient(events);
     final h = PublishHarness(client: client, events: events,
-      initial: authSignedIn(credentials: credentials));
+      initial: authSignedIn(credential: credentials));
     try {
       await _prepareCompanion(h);
       await h.controller.submit();
       final session = h.state.session;
       expect(h.controller.setInput(h.state.input.copyWith(rightsConfirmed: false)), isTrue);
-      h.forum.emit(authSignedIn(credentials: credentials, userId: null));
+      h.account.emit(authSignedIn(credential: credentials, userId: null));
       await authReady(h.container);
       expect(h.state.session, same(session));
-      expect(h.container.read(workshopAccessProvider).forumUserId, isNull);
+      expect(h.container.read(workshopAccessProvider).accountId, isNull);
       client.readCapabilities = () async => throw const WorkshopException('workshop_network');
       await h.container.read(workshopAccessProvider.notifier).refresh();
       expect(h.container.read(workshopAccessProvider).error?.code, 'workshop_network');
@@ -431,14 +430,14 @@ void main() {
   });
 
   test('unknown profile cannot check an account journal and first profile arrival can retry', () async {
-    const credentials = ForumCredentials(key: 'TEST_ONLY_KEY_A', clientId: 'test-client');
-    final h = PublishHarness(initial: authSignedIn(credentials: credentials, userId: null));
+    const credentials = WorkshopAccountCredential('TEST_ONLY_KEY_A');
+    final h = PublishHarness(initial: authSignedIn(credential: credentials, userId: null));
     try {
       await h.start();
       final session = h.state.session;
       expect(h.state.error?.code, 'workshop_profile_required');
       expect(h.preferences.reads, 0);
-      h.forum.emit(authSignedIn(credentials: credentials));
+      h.account.emit(authSignedIn(credential: credentials));
       await authReady(h.container);
       expect(h.state.session, same(session));
       await h.controller.restorePending();
@@ -687,7 +686,7 @@ void main() {
         h.client.creating = (call) async => publishResult(
           mismatch == 'metadata' ? WorkshopMetadata.fromJson({...call.metadata.toJson(), 'author': 'Other'}) : call.metadata,
           ownerId: mismatch == 'ownerId' ? 43 : 42,
-          forum: mismatch == 'ownerOrigin' ? Uri.parse('https://another-forum.example') : authForum,
+          account: mismatch == 'ownerOrigin' ? Uri.parse('https://another-account.example') : authAccount,
         );
       }
       try {
@@ -799,7 +798,7 @@ void main() {
       pending = h.controller.prepare();
       settled = authSettled(pending);
       await authSignal(entered, pending);
-      h.forum.emit(authSignedIn(credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      h.account.emit(authSignedIn(credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       await authReady(h.container);
       // Do not read publisher state before the old completion. _current must
       // flush the pending session rebuild instead of trusting ref.mounted.
@@ -836,7 +835,7 @@ void main() {
       pending = h.controller.submit();
       settled = authSettled(pending);
       await authSignal(entered, pending);
-      h.forum.emit(authSignedIn(credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      h.account.emit(authSignedIn(credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       await authReady(h.container);
       expect(h.state.session, isNot(same(oldSession)));
       expect(h.state.waitingForPreviousOperation, isTrue);
@@ -907,7 +906,7 @@ void main() {
       await authSignal(entered, refresh);
       pending = h.controller.submit();
       settled = authSettled(pending);
-      h.forum.emit(authSignedIn(credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client')));
+      h.account.emit(authSignedIn(credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B')));
       await authReady(h.container);
       release.complete();
       await pending;
@@ -933,7 +932,7 @@ void main() {
       await h.prepared();
       final session = h.state.session;
       final next = PublishClient(h.events, worker: Uri.parse('https://other-workshop.example'));
-      h.preferences.accepted.add(h.preferences.pair(next.origin, authForum));
+      h.preferences.accepted.add(h.preferences.pair(next.origin, authAccount));
       h.chooseClient(next);
       await authReady(h.container);
       expect(h.state.session, isNot(same(session)));
@@ -995,7 +994,7 @@ void main() {
       h.client.uploads.single.progress?.call(2, 4);
       expect(h.state.phase, WorkshopPublishPhase.complete);
       expect(h.drafts.probes.single.cleanups, 0);
-      h.forum.emit(authSignedIn(credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'), userId: 43));
+      h.account.emit(authSignedIn(credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'), userId: 43));
       await authReady(h.container);
       expect(h.state.result, isNull);
       expect(h.state.waitingForPreviousOperation, isTrue);
@@ -1015,5 +1014,17 @@ void main() {
       if (settled != null) await settled;
       await h.close();
     }
+  });
+
+  test('a token the Worker refuses signs the account out and keeps the journal for the next sign-in', () async {
+    final h = PublishHarness();
+    try {
+      await h.prepared();
+      h.client.creating = (_) async => throw const WorkshopException('workshop_account_auth_invalid', status: 401);
+      await h.controller.submit();
+      expect(h.account.invalidated, 1);
+      expect(h.container.read(workshopAccessProvider).signedIn, isFalse);
+      expect(h.preferences.pending, hasLength(1));
+    } finally { await h.close(); }
   });
 }

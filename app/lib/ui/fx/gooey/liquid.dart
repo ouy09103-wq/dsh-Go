@@ -382,7 +382,8 @@ class _RenderLiquid extends RenderProxyBox {
     required this._filterPadding,
     required bool reduced,
   }) {
-    this.fill = fill;
+    _fill = fill;
+    _shape.color = fill.withValues(alpha: 1);
     _engine.reduced = reduced;
   }
 
@@ -420,17 +421,19 @@ class _RenderLiquid extends RenderProxyBox {
     markNeedsPaint();
   }
 
-  // Shapes are drawn opaque and the fill's alpha is applied to the layer: the
-  // threshold would otherwise turn a translucent fill solid.
+  // Shapes stay opaque so the goo threshold never sees a translucent edge; the
+  // fill's colour and alpha are painted over the thresholded silhouette
+  // instead. A layer's opacity lands in the colour-matrix input before the
+  // filter runs (Impeller), so a 20% fill used to be thresholded to nothing.
   final _shape = Paint();
   final _layer = Paint();
   final _isolate = Paint();
+  Color _fill = const Color(0xFFFFFFFF);
   set fill(Color value) {
-    final opaque = value.withValues(alpha: 1);
-    if (opaque == _shape.color && value.a == _layer.color.a) return;
-    _shape.color = opaque;
-    _layer.color = Color.fromRGBO(0, 0, 0, value.a);
-    markNeedsPaint();
+    if (value == _fill) return;
+    _fill = value;
+    _shape.color = value.withValues(alpha: 1);
+    _invalidate();
   }
 
   set reduced(bool value) {
@@ -467,7 +470,14 @@ class _RenderLiquid extends RenderProxyBox {
   List<_Pass> _build() {
     final goo = _then(_blurOf(_blur), _alpha(_contrast, Liquid.interceptFor(_contrast)));
     final bin = _then(goo, _binarize);
-    _layer.imageFilter = goo;
+    // The threshold runs on the opaque shape; the fill (colour and alpha) is
+    // applied on top of the thresholded silhouette. The threshold cuts the
+    // edge with no antialiasing, so a hair of blur after the tint turns that
+    // hard edge back into a smooth one (the goo itself stays crisp).
+    _layer.imageFilter = _then(
+      _then(goo, ColorFilter.mode(_fill, BlendMode.srcIn)),
+      _blurOf(0.6),
+    );
     ui.ImageFilter morph(ui.ImageFilter src, double spread, {required bool grow}) => _then(
       src,
       grow

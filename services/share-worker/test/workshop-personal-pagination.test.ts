@@ -6,7 +6,7 @@ import { PetBucket } from './pet-market-fakes';
 import { metaFor, pet } from './workshop-fixtures';
 
 const API = '/api/workshop/v1';
-const OWNER: Owner = { forumOrigin: 'https://forum.dshtui.com', forumUserId: 42, username: 'Synthetic pagination owner' };
+const OWNER: Owner = { accountOrigin: 'https://github.com', accountId: 42, username: 'Synthetic pagination owner' };
 const START = Date.parse('2020-01-01T00:00:00.000Z'), COMMITTED = '2020-01-02T00:00:00.000Z';
 const sid = (value: number) => value.toString(16).padStart(32, '0');
 const bytes = pet(), metadata = metaFor(bytes);
@@ -14,7 +14,7 @@ type Page = { submissions: Submission[]; nextCursor: string | null };
 const ids = (page: Page) => page.submissions.map(item => item.submissionId);
 
 beforeEach(() => vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
-  new Response(JSON.stringify({ current_user: { id: OWNER.forumUserId, username: OWNER.username } }))));
+  new Response(JSON.stringify({ id: OWNER.accountId, login: OWNER.username }))));
 afterEach(() => vi.restoreAllMocks());
 
 function row(value: number, millis: number, status: 'draft' | 'pending' = 'draft', owner = OWNER): Submission {
@@ -34,7 +34,7 @@ async function setup(initial: Submission[]) {
   await change(state => state.submissions.push(...initial));
   const call = (path: string, method = 'GET', body?: object | Uint8Array, admin = false) =>
     workshop(new Request('https://example.org' + API + path, {
-      method, headers: { 'User-Api-Key': 'synthetic-pagination-key', 'X-Workshop-Forum-Origin': OWNER.forumOrigin,
+      method, headers: { Authorization: 'Bearer synthetic_pagination_token', 'X-Workshop-Account-Origin': OWNER.accountOrigin,
         ...(admin ? { 'X-Admin-Key': env.ADMIN_KEY! } : {}),
         ...(body ? { 'Content-Type': body instanceof Uint8Array ? 'application/zip' : 'application/json' } : {}) },
       ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
@@ -131,7 +131,7 @@ it('keeps live status membership on its own side of the creation-time cursor', a
 });
 
 it('rejects missing and other-owner anchors identically while retaining query format limits', async () => {
-  const f = await setup([row(1, 0), row(2, 10, 'draft', { ...OWNER, forumUserId: 43 })]);
+  const f = await setup([row(1, 0), row(2, 10, 'draft', { ...OWNER, accountId: 43 })]);
   for (const query of [`cursor=${sid(2)}`, `cursor=${sid(99)}`, 'cursor=invalid', 'limit=0', 'limit=101', 'status=other']) {
     const response = await f.call('/submissions?' + query);
     expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: 'workshop_bad_query' });

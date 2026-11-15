@@ -71,6 +71,7 @@ class ReadAloudController extends Notifier<ReadAloudState> {
       deepseek: ref.read(deepSeekSpeechProvider),
       audio: ref.read(speechAudioProvider),
       speaker: speaker,
+      gap: ref.read(deepSeekSpeechGapProvider),
     );
     _out = out;
     _sub = out.events.listen((event) {

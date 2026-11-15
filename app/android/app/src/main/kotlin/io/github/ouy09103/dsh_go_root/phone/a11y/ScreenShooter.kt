@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking with a timeout; API 30–33 full-display capture with the overlay
 // hidden; element numbers drawn on the image; near-black frames treated as secure; JPEG, long
 // side ≤ 1300 px.

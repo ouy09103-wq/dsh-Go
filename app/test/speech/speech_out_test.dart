@@ -76,6 +76,23 @@ print('不读');
       expect(pieces.first.length, lessThanOrEqualTo(20));
     });
 
+    test('the first piece goes at a comma once long enough; later ones wait for a sentence', () {
+      final chunker = SpeechChunker(first: 8, target: 20, max: 60);
+      chunker.add('好的，这周末北京以晴为主，周六最高二十度');
+      // 「好的，」 is too short to go alone; the next comma is far enough.
+      expect(chunker.take(), ['好的，这周末北京以晴为主，']);
+      chunker.add('，周日有小雨。');
+      // Later pieces stop at sentence ends only.
+      expect(chunker.take(), isEmpty);
+      expect(chunker.take(final_: true), ['周六最高二十度，周日有小雨。']);
+    });
+
+    test('a number or a time is not a pause', () {
+      final chunker = SpeechChunker(first: 4);
+      chunker.add('门票是1,000元，3:30开门');
+      expect(chunker.take(), ['门票是1,000元，']);
+    });
+
     test('pieces with no letters or digits are dropped', () {
       final chunker = SpeechChunker(first: 1);
       chunker.add('……\n好。');

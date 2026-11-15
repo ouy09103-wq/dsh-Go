@@ -451,7 +451,6 @@ Future<void> shareTavernCards(BuildContext context, WidgetRef ref, List<TavernCh
 }
 
 /// A file name from a character's name: no path or reserved characters.
-@visibleForTesting
 String tavernCardFileName(String name, TavernCardFormat format) {
   final safe = name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_').trim();
   return '${safe.isEmpty ? 'character' : safe}.${format.name}';

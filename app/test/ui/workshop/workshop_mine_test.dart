@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:dsh_app/forum/discourse_client.dart';
-import 'package:dsh_app/forum/forum_auth.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/l10n/l10n.dart';
 import 'package:dsh_app/state/workshop_submissions_state.dart';
 import 'package:dsh_app/ui/common/status_chip.dart';
@@ -42,21 +41,22 @@ Future<void> _askWithdraw(WidgetTester tester, String reason) async {
 }
 
 void main() {
-  testWidgets('没登录论坛：说明投稿记在论坛账号上，给出登录，不去读列表', (tester) async {
+  testWidgets('没登录：说明投稿记在账号上，给出登录，不去读列表', (tester) async {
     usePhoneView(tester);
-    final world = WorkshopPageWorld(account: const ForumAuthState(phase: ForumAuthPhase.signedOut));
+    final world = WorkshopPageWorld(account: authSignedOut);
     await _open(tester, world);
 
     expect(find.text(zh.workshopMineSignInTitle), findsOneWidget);
-    expect(find.text(zh.remoteForumSignIn), findsOneWidget);
+    expect(find.text(zh.workshopSignInTitle), findsOneWidget);
     expect(find.text(zh.workshopMinePublish), findsNothing);
     expect(world.client.pages, isEmpty);
     expectNoCodes(tester);
 
-    // 登录走论坛自己的账号弹层。
-    await tester.tap(find.text(zh.remoteForumSignIn));
+    // 登录走 GitHub 的设备码弹层。
+    await tester.tap(find.text(zh.workshopSignInTitle));
     await settle(tester);
-    expect(find.text(zh.remoteForumSignInBenefits), findsOneWidget);
+    expect(world.accountController.signInStarts, 1);
+    expect(find.text('TEST-CODE'), findsOneWidget);
   });
 
   testWidgets('还没同意交出凭据：先看说明，同意的是说明里那一对来源，之后才读列表', (tester) async {
@@ -73,7 +73,7 @@ void main() {
     await settle(tester);
     expect(find.text(zh.workshopDisclosureTitle), findsOneWidget);
     expect(find.text('workshop.example'), findsOneWidget);
-    expect(find.text('forum.example'), findsOneWidget);
+    expect(find.text('github.com'), findsOneWidget);
     expect(world.preferences.writes, 0);
 
     // 「暂不」什么都不记。
@@ -94,7 +94,7 @@ void main() {
   testWidgets('同意了但没能记在本机：照样读列表，并说明下次可能再问', (tester) async {
     usePhoneView(tester);
     final world = WorkshopPageWorld(consent: false)
-      ..preferences.writeDisclosure = (worker, forum) async => throw StateError('disk');
+      ..preferences.writeDisclosure = (worker, account) async => throw StateError('disk');
     await _open(tester, world);
 
     await tester.tap(find.text(zh.workshopMineConsentAction));
@@ -173,7 +173,7 @@ void main() {
     usePhoneView(tester);
     final world = WorkshopPageWorld();
     world.client
-      ..value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false))
+      ..value = WorkshopCapabilities.fromJson(workshopCaps(account: authAccount.toString(), uploads: false))
       ..readPage = (cursor, status) async => WorkshopSubmissionPage([personalRow()], null);
     await _open(tester, world);
 
@@ -276,9 +276,9 @@ void main() {
 
     final next = Completer<WorkshopSubmissionPage>();
     world.client.readPage = (cursor, status) => next.future;
-    world.forum.emit(
+    world.accountController.emit(
       authSignedIn(
-        credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'),
+        credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'),
         userId: 43,
       ),
     );
@@ -319,7 +319,7 @@ void main() {
     await settle(tester);
     expectNoCodes(tester);
 
-    world.forum.emit(const ForumAuthState(phase: ForumAuthPhase.signedOut));
+    world.accountController.emit(authSignedOut);
     await settle(tester, 4);
     await refreshWorkshopMine(pageRef);
     expect(world.client.pages, hasLength(3));
@@ -379,13 +379,13 @@ void main() {
       usePhoneView(tester);
       final world = WorkshopPageWorld()
         ..client.readPage = ((cursor, status) async => WorkshopSubmissionPage([personalRow()], null))
-        ..client.readSubmission = (id) async => throw const WorkshopException('workshop_forum_unavailable');
+        ..client.readSubmission = (id) async => throw const WorkshopException('workshop_account_unavailable');
       await _open(tester, world);
       await _openDetail(tester);
 
       await tester.tap(find.byTooltip(zh.workshopMineRefreshOne));
       await settle(tester);
-      expect(find.text('${zh.workshopMineDetailStale} ${zh.workshopErrorForumDown}'), findsOneWidget);
+      expect(find.text('${zh.workshopMineDetailStale} ${zh.workshopErrorAccountDown}'), findsOneWidget);
       expect(find.text(zh.workshopMineAboutPending), findsOneWidget);
       expectNoCodes(tester);
     });
@@ -548,9 +548,9 @@ void main() {
       await _openDetail(tester);
 
       world.client.readPage = (cursor, status) async => const WorkshopSubmissionPage([], null);
-      world.forum.emit(
+      world.accountController.emit(
         authSignedIn(
-          credentials: const ForumCredentials(key: 'TEST_ONLY_KEY_B', clientId: 'test-client'),
+          credential: const WorkshopAccountCredential('TEST_ONLY_KEY_B'),
           userId: 43,
         ),
       );

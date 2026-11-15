@@ -17,10 +17,14 @@ import '../../../companion/companion_float.dart';
 import '../../../companion/companion_pack.dart';
 import '../../../companion/companion_state.dart';
 import '../../../l10n/l10n.dart';
+import '../../../speech/speech_audio.dart';
 import '../../../speech/speech_settings.dart';
+import '../../../state/voice_settings.dart';
 import '../../common/app_sheet.dart';
-import '../../common/segmented_pill.dart';
 import '../../companion/companion_stage.dart';
+import '../../companion/companion_voice_page.dart';
+import '../../settings/settings_widgets.dart';
+import '../../settings/voice_settings_page.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 
@@ -168,14 +172,26 @@ class _CompanionBackdropState extends ConsumerState<CompanionBackdrop> {
 // ── Choosing ───────────────────────────────────────────────────────────────
 
 /// The three backdrops side by side; picking one applies it at once.
-Future<void> showCallBackdropSheet(BuildContext context) => showAppSheet<void>(
-  context,
-  isScrollControlled: true,
-  builder: (sheet) => const SafeArea(top: false, child: _BackdropChooser()),
-);
+/// [inCall]: opened from a call, which also offers her voice and the
+/// recognition; [beforeVoice] runs before her voice's page opens.
+Future<void> showCallBackdropSheet(BuildContext context, {bool inCall = false, VoidCallback? beforeVoice}) =>
+    showAppSheet<void>(
+      context,
+      isScrollControlled: true,
+      // Scrolls on a short screen (a phone on its side): the in-call rows are below the fold there.
+      builder: (sheet) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: _BackdropChooser(inCall: inCall, beforeVoice: beforeVoice),
+        ),
+      ),
+    );
 
 class _BackdropChooser extends ConsumerStatefulWidget {
-  const _BackdropChooser();
+  const _BackdropChooser({required this.inCall, this.beforeVoice});
+
+  final bool inCall;
+  final VoidCallback? beforeVoice;
 
   @override
   ConsumerState<_BackdropChooser> createState() => _BackdropChooserState();
@@ -216,7 +232,7 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l10n.speechBackdropTitle, style: theme.textTheme.titleMedium),
+          Text(widget.inCall ? l10n.speechCallSettings : l10n.speechBackdropTitle, style: theme.textTheme.titleMedium),
           const SizedBox(height: 16),
           Row(
             spacing: 12,
@@ -281,13 +297,63 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
           SegmentedPill<CallVisual>(
             key: const ValueKey('call-visual'),
             segments: [
+              PillSegment(CallVisual.glass, l10n.speechCallVisualGlass),
               PillSegment(CallVisual.ring, l10n.speechCallVisualRing),
               PillSegment(CallVisual.mono, l10n.speechCallVisualMono),
-              PillSegment(CallVisual.glass, l10n.speechCallVisualGlass),
             ],
             selected: settings.visual,
             onChanged: (visual) => unawaited(_set(settings.copyWith(visual: visual))),
           ),
+          if (widget.inCall) ...[
+            const SizedBox(height: 20),
+            Text(l10n.speechCallPause, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 10),
+            SegmentedPill<CallPause>(
+              key: const ValueKey('call-pause'),
+              segments: callPauseSegments(l10n),
+              selected: settings.pause,
+              onChanged: (pause) =>
+                  unawaited(ref.read(callSettingsProvider.notifier).edit((saved) => saved.copyWith(pause: pause))),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.speechCallPauseHint,
+              style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+            ),
+            const SizedBox(height: 20),
+            Text(l10n.speechCallSpeechSection, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            SheetGroup(
+              margin: EdgeInsets.zero,
+              children: [
+                SettingsTile(
+                  key: const ValueKey('call-voice'),
+                  title: l10n.speechCallVoice,
+                  value: Text(speechVoiceLabel(l10n, ref.watch(speechVoiceSettingsProvider))),
+                  onTap: () {
+                    widget.beforeVoice?.call();
+                    unawaited(
+                      Navigator.of(context)
+                          .push(MaterialPageRoute<void>(builder: (_) => const CompanionVoicePage(shared: true))),
+                    );
+                  },
+                ),
+                SettingsTile(
+                  key: const ValueKey('call-recognition'),
+                  title: l10n.voiceModeSection,
+                  value: Text(voiceModeLabel(l10n, ref.watch(voiceSettingsProvider))),
+                  onTap: () => unawaited(
+                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const VoiceSettingsPage())),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.speechCallSpeechHint,
+              style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+            ),
+          ],
         ],
       ),
     );
@@ -424,3 +490,10 @@ class _Placeholder extends StatelessWidget {
     child: Center(child: Icon(icon, color: Colors.white70, size: 28)),
   );
 }
+
+/// 快 / 适中 / 耐心, for 停顿多久算说完 here and in the settings.
+List<PillSegment<CallPause>> callPauseSegments(L10n l10n) => [
+  PillSegment(CallPause.quick, l10n.speechCallPauseQuick),
+  PillSegment(CallPause.normal, l10n.speechCallPauseNormal),
+  PillSegment(CallPause.patient, l10n.speechCallPausePatient),
+];

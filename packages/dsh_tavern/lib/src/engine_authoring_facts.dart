@@ -46,6 +46,7 @@ _DirectorPrepared? _prepareDirectorFromFacts(
             authorizationSource: authorizationSource,
             storyState: storyState,
             proofs: proofs,
+            gameplay: turn.gameplay,
           );
     return _directorPreparation(stored, run, reason);
   } catch (_) {
@@ -68,6 +69,7 @@ String? _directorEligibilityFromFacts(
   required Map<String, Object?> authorizationSource,
   required Map<String, Object?> storyState,
   required _AuthoringSecretProofs proofs,
+  _GameplayRuntime? gameplay,
 }) {
   try {
     final pathReason = _directorPathReason(run, parent, contextPath);
@@ -77,7 +79,13 @@ String? _directorEligibilityFromFacts(
     if (source == null) {
       return 'director_source_unavailable';
     }
-    final sourceReason = _directorSourceReason(run, data, persona, source);
+    final sourceReason = _directorSourceReason(
+      run,
+      data,
+      persona,
+      source,
+      effectiveConfigId: gameplay?.effectiveConfigId,
+    );
     if (sourceReason != null) {
       return sourceReason;
     }
@@ -87,6 +95,7 @@ String? _directorEligibilityFromFacts(
       currentSettings,
       authorizationSource,
       proofs,
+      gameplay: gameplay,
     ).policy;
     final prior = stored.result['secretPolicy'];
     final secretReason = current == null && prior == null
@@ -94,7 +103,7 @@ String? _directorEligibilityFromFacts(
         : prior is! Map<String, Object?>
         ? 'director_secret_knowledge_changed'
         : _secretKnowledgeReason(current, prior);
-    return secretReason ?? _storyDirectorEligibilityFromState(stored, data, storyState);
+    return secretReason ?? _storyDirectorEligibilityFromState(stored, data, storyState, gameplay: gameplay);
   } catch (_) {
     return 'director_source_unavailable';
   }
@@ -147,8 +156,9 @@ _SecretInput _ordinarySecretInputFromFacts(
   Map<String, Object?> source,
   _AuthoringSecretProofs proofs, {
   Map<String, Object?>? authorizationSource,
+  _GameplayRuntime? gameplay,
 }) {
-  final prepared = _prepareSecretInput(data, source, authorizationSource: authorizationSource);
+  final prepared = _prepareSecretInput(data, source, authorizationSource: authorizationSource, gameplay: gameplay);
   if (!prepared.active) {
     return _finishSecretInput(prepared, const {}, const []);
   }
@@ -195,6 +205,7 @@ String? _secretDirectorTurnReasonFromFacts(_Turn turn, Map<String, Object?> save
     facts.settings,
     _secretStateSource(saved),
     facts.proofs,
+    gameplay: turn.gameplay,
   ).policy;
   return _secretKnowledgeReason(current, prior);
 }
@@ -204,7 +215,7 @@ List<PromptInjection> _secretTurnInjectionsFromFacts(
   Map<String, Object?> data,
   _AuthoringSecretFacts facts,
 ) {
-  if (turn.kind == _TurnKind.impersonate || !_secretsEnabled(turn.settings)) {
+  if (turn.kind == _TurnKind.impersonate || !_secretsEnabled(turn.settings) || !turn.gameplayValueEligible) {
     return [];
   }
   final reason = _secretContextReasonFromFacts(turn, facts);
@@ -220,7 +231,7 @@ List<PromptInjection> _secretTurnInjectionsFromFacts(
     data,
     facts.settings,
     saved,
-    _SecretProtection(data, saved),
+    _SecretProtection(data, saved, gameplay: turn.gameplay),
     facts.proofs,
   );
   return _secretReleaseInjections(turn, releases);
@@ -249,6 +260,7 @@ TavernTurnInspection? _prepareSecretRequestFromFacts(
       reason != null ||
       !_secretsEnabled(turn.settings) ||
       !_secretsEnabled(facts.settings) ||
+      !turn.gameplayValueEligible ||
       turn.reply == null ||
       currentLeafId != turn.reply!.nodeId) {
     turn.secretIssues.add(_directorIssue(reason ?? 'secret_release_revoked'));
@@ -259,7 +271,7 @@ TavernTurnInspection? _prepareSecretRequestFromFacts(
     data,
     facts.settings,
     replyState,
-    _SecretProtection(data, replyState),
+    _SecretProtection(data, replyState, gameplay: turn.gameplay),
     facts.proofs,
   );
   _checkSecretIncluded(turn, current);
@@ -308,7 +320,13 @@ String? _secretBindingReasonFromFacts(
   if (source == null) {
     throw const TavernAuthoringException('unsupported_preview', 'The secret source was not captured.');
   }
-  return _directorSourceFingerprint(source, _directorCard(data), facts.persona) == proposal.result['sourceFingerprint']
+  return _directorSourceFingerprint(
+            source,
+            _directorCard(data),
+            facts.persona,
+            effectiveConfigId: turn.gameplay?.effectiveConfigId,
+          ) ==
+          proposal.result['sourceFingerprint']
       ? null
       : 'secret_source_changed';
 }

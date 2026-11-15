@@ -91,18 +91,21 @@ internal class BackgroundCoordinateImage {
     }
     data class Result(val ok: Boolean, val attempted: Boolean, val change: String) {
         companion object {
-            fun parse(expected: Receipt, target: PhoneAppIdentity, value: (String) -> Any?): Result? {
+            /**
+             * The reply is tied to its gesture by the observation receipt alone. The app it names is
+             * whichever one the read after the gesture found on top: a tap that opened another app
+             * is still a gesture that went through.
+             */
+            fun parse(expected: Receipt, value: (String) -> Any?): Result? {
                 if (Receipt.parse(value(Proto.BACKGROUND_COORDINATES), value(Proto.COORDINATE_OBSERVATION),
                         value(Proto.COORDINATE_WIDTH), value(Proto.COORDINATE_HEIGHT)) != expected) return null
                 val attempted = value(Proto.ACTION_ATTEMPTED) as? Boolean ?: return null
                 val ok = value(Proto.OK) as? Boolean ?: return null
-                val identity = TargetIdentity.receipt(target, value(Proto.TARGET_IDENTITY_VERSION), value(Proto.PKG), value(Proto.TARGET_UID))
-                if (ok && !attempted || !identity && !attempted) return null
+                if (ok && !attempted) return null
                 val change = (value(Proto.VISUAL_CHANGE) as? String)?.takeIf {
                     it in setOf("changed", "unchanged", "unavailable")
                 } ?: "unavailable"
-                // An already-attempted action cannot be erased by failed identity/postread evidence.
-                return Result(ok && identity, attempted, if (ok && identity) change else "unavailable")
+                return Result(ok, attempted, if (ok) change else "unavailable")
             }
         }
     }

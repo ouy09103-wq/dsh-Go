@@ -1,6 +1,6 @@
 // 举报: tell the reviewers what is wrong with one release.
 //
-// A report is sent as the forum account, so the sheet first asks for the
+// A report is sent as the GitHub account, so the sheet first asks for the
 // sign-in and the credential agreement (workshop_mine_access.dart). It has no
 // request id and can't be looked up afterwards: when the answer is lost on
 // the way, nobody can tell whether it arrived. The sheet then says exactly

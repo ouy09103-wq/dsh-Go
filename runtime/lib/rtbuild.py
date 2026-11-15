@@ -1246,7 +1246,7 @@ def cmd_assemble(args):
     runtime_info = json.loads(args.runtime_info)
     def digest(path):
         with open(path, "rb") as source:
-            return hashlib.file_digest(source, "sha256").hexdigest()
+            return stream_digest(source)[0]
     sources = {"ubuntu": digest(args.base), "debs": [digest(p) for p in args.deb or []],
                "python": digest(args.python) if args.python else None}
     upgrade = upgrade_descriptor(abi, runtime_info["ubuntuVersion"], sources["ubuntu"],

@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 package io.github.ouy09103.dsh_go_root.phone.background
 
 import android.os.Bundle
@@ -17,7 +19,7 @@ object Proto {
     const val OP_REPLAY_NAVIGATION = "replayNavigation"
     const val NAVIGATION = "navigation"
     // A running service whose revision differs is refused at connect and replaced (see the starters).
-    const val REVISION = "dsh-vdisplay-3"
+    const val REVISION = "dsh-vdisplay-4"
 
     // request keys
     const val OP = "op"
@@ -125,7 +127,6 @@ object Proto {
     const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
     const val OP_RELEASE = "release"
     const val OP_DESTROY = "destroy"
-    const val OP_GATE = "gate"
     const val OP_COLLECT_SYSTEM_IME = "collectSystemIme"
     const val IME_PID = "imePid"
     const val IME_REQUESTED_AT = "imeRequestedAt"
@@ -155,6 +156,10 @@ object Proto {
     const val IMAGE_OMITTED = "imageOmitted"
     const val APP_LABEL = "appLabel"
     const val FG_PKG = "foregroundPkg"
+    // The app the task opened (request), and where it is when it is not the one on top (reply:
+    // a TargetIdentity.Placement wire value).
+    const val OPENED_PKG = "openedPkg"
+    const val SHOWN_NOTE = "shownNote"
     const val ACCEPTED = "accepted"
     const val READBACK = "readback"
     const val COUNT = "n"
@@ -232,6 +237,8 @@ object Reasons {
         // l10n:keep privileged protocol
         "notLaunchable" -> "此应用没有可启动的界面"
         // l10n:keep privileged protocol
+        "launchUnconfirmed" -> "已请求在后台屏打开，但 4 秒内后台屏上没有出现应用界面；可以重新读后台屏确认，或再打开一次"
+        // l10n:keep privileged protocol
         "displayUnsupported" -> "此系统不支持所需的独立焦点虚拟屏，未改用主屏"
         // l10n:keep privileged protocol
         "displayReleaseFailed" -> "未收到后台屏资源释放的完整回执"
@@ -245,6 +252,10 @@ object Reasons {
         "targetIdentityChanged" -> "目标应用身份已变化，已停止后续操作。先重新打开应用或结束任务；不要自动重复刚才的输入或动作"
         // l10n:keep agent target identity
         "targetIdentityUnavailable" -> "无法确认目标应用身份，已停止后续操作。先重新打开应用或结束任务；先前动作是否完成需核对，不要自动重试"
+        // l10n:keep agent target identity
+        "foregroundChanged" -> "后台屏上的应用已经换了，这次没有执行。请先重新读后台屏，按新界面再操作"
+        // l10n:keep agent target identity
+        "targetLeftDisplay" -> "应用离开了后台屏，现在在主屏上（它可能已在主屏运行，或不支持在后台屏运行）。可以改在主屏操作，或请用户先在主屏关掉这个应用后再打开"
         // l10n:keep privileged protocol
         "secureWindow" -> "此页面受保护（支付或密码），请交还用户在主屏完成"
         // l10n:keep privileged protocol

@@ -12,6 +12,7 @@ import android.os.SystemClock
 import io.github.ouy09103.dsh_go_root.voice.StreamingPcm
 import io.github.ouy09103.dsh_go_root.nativemedia.SpeechGate
 import io.github.ouy09103.dsh_go_root.nativemedia.TurnGate
+import io.github.ouy09103.dsh_go_root.nativemedia.TurnPause
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -53,6 +54,14 @@ class CallCapture(
             field = value
         }
     @Volatile var bargeIn = true
+
+    /** How long a pause ends what the person says; a change applies from the next frame. */
+    @Volatile var pause = TurnPause.NORMAL
+        set(value) {
+            field = value
+            val g = gate ?: return
+            synchronized(g) { g.pause = value }
+        }
     private var session = 0
 
     /** The platform echo canceller is on for this capture. */
@@ -92,7 +101,7 @@ class CallCapture(
                 runCatching { effect.setEnabled(true) }
             }
         }
-        val g = createGate(echoCancelled)
+        val g = createGate(echoCancelled).also { it.pause = pause }
         val started = runCatching { r.startRecording() }.isSuccess && r.recordingState == AudioRecord.RECORDSTATE_RECORDING
         if (!started) {
             g.close()

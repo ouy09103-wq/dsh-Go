@@ -2,9 +2,9 @@
   "workshopPublishTitle": "投稿",
   "workshopPublishClosedTitle": "工坊暂时不接收投稿",
   "workshopPublishClosedMessage": "已经交上去的仍然可以在「我的投稿」里看。",
-  "workshopPublishSignInTitle": "先登录论坛账号",
-  "workshopPublishSignInMessage": "工坊靠论坛账号确认投稿的人是谁。",
-  "workshopPublishProfileTitle": "还没读到论坛账号资料",
+  "workshopPublishSignInTitle": "先登录 GitHub 账号",
+  "workshopPublishSignInMessage": "工坊靠 GitHub 账号确认投稿的人是谁。",
+  "workshopPublishProfileTitle": "还没读到 GitHub 账号资料",
   "workshopPublishProfileMessage": "要先知道你是哪个账号，才能投稿。",
   "workshopPublishCheckFailedTitle": "没能读出上一次投稿的记录",
   "workshopPublishCheckLocked": "为了不重复投稿，读出来之前不能开始新的。",
@@ -12,7 +12,12 @@
   "workshopPublishChooseTitle": "选一个要投稿的",
   "workshopPublishCompanionCurrent": "现在的伙伴",
   "workshopPublishSourcesEmptyTitle": "还没有可以投稿的",
-  "workshopPublishSourcesEmptyMessage": "自己导入的像素宠物和现在的伙伴可以投稿。",
+  "workshopPublishSourcesEmptyMessage": "自己导入的像素宠物和现在的伙伴可以投稿，也可以直接从文件选一个。",
+  "workshopPublishFromFile": "从文件选择",
+  "workshopPublishFromFileHint": "宠物或伙伴的 zip，不用先导入",
+  "workshopPublishTitleEnHelper": "选填，留空就用中文名称",
+  "workshopPublishAuthorHelper": "选填，留空就用你的 GitHub 用户名",
+  "workshopPublishLicenseHelper": "选填，不选就是「作者授权」",
   "workshopPublishSourcesIssue": "没能读出本机可以投稿的内容。",
   "workshopPublishPetsIssue": "没能读出本机的像素宠物。",
   "workshopPublishCompanionIssue": "没能读出本机的伙伴。",
@@ -24,11 +29,11 @@
   "workshopPublishTitleEn": "英文名称",
   "workshopPublishSectionInfo": "作品信息",
   "workshopPublishId": "作品 ID",
-  "workshopPublishIdHelper": "小写字母、数字和短横线",
+  "workshopPublishIdHelper": "选填，留空按名称自动生成；小写字母、数字和短横线",
   "workshopPublishAuthor": "作者",
   "workshopPublishLicenseAuthor": "作者授权",
   "workshopPublishSourceLink": "来源链接",
-  "workshopPublishSourceHelper": "作品主页或出处，以 https:// 开头",
+  "workshopPublishSourceHelper": "选填，留空就用你的 GitHub 主页；以 https:// 开头",
   "workshopPublishSectionAbout": "介绍（选填）",
   "workshopPublishTags": "标签",
   "workshopPublishTagsHelper": "用逗号分开，最多 8 个",
@@ -109,23 +114,17 @@
   "workshopPublishErrorPreviewUnsupported": "这个工坊现在不收预览图。去掉预览图可以照常投稿。",
   "workshopPublishLetGo": "放下这条记录",
   "workshopPublishLetGoTitle": "放下本机的这条记录？",
-  "workshopPublishLetGoAccount": "只删除这台手机上，论坛 {forum} 的账号在工坊 {worker} 的这条未完成记录。",
+  "workshopPublishLetGoAccount": "只删除这台手机上，这个 GitHub 账号在工坊 {worker} 的这条未完成记录。",
   "@workshopPublishLetGoAccount": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }
     }
   },
-  "workshopPublishLetGoAll": "这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是论坛 {forum} 在工坊 {worker} 的这一条。",
+  "workshopPublishLetGoAll": "这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是这个 GitHub 账号在工坊 {worker} 的这一条。",
   "@workshopPublishLetGoAll": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }

@@ -131,7 +131,10 @@ void main() {
       expect(textOf(package), contains(_apache), reason: package);
     }
     expect(textOf('spake2-android'), allOf(contains(_lgpl), contains(_gpl)));
-    expect(textOf('Phase'), contains("used with the author's permission"));
+    expect(
+      textOf('Phase'),
+      allOf(contains("with the author's permission"), contains('Copyright (c) 2026 CikeSeven'), contains(_mit)),
+    );
     expect(textOf('Bouncy Castle'), contains(_mit));
     expect(textOf('flutter_webrtc'), contains(_mit));
     expect(textOf('WebRTC'), allOf(contains('Neither the name of Google'), contains('Additional IP Rights Grant')));

@@ -1,6 +1,6 @@
 # 创意工坊上线与日常维护
 
-本文给负责上线和审稿的 owner 使用，对应 `services/share-worker` 中的创意工坊（状态层、论坛身份绑定、审核台）。命令在电脑的 **Bash 终端**执行；Windows 用户使用具备下列工具的 WSL/Linux 环境。手机用于打开审核台，不用于执行部署命令。
+本文给负责上线和审稿的 owner 使用，对应 `services/share-worker` 中的创意工坊（状态层、GitHub 账号身份、审核台）。命令在电脑的 **Bash 终端**执行；Windows 用户使用具备下列工具的 WSL/Linux 环境。手机用于打开审核台，不用于执行部署命令。
 
 下文命令里的“Worker 目录”指仓库的 `services/share-worker/`。尚未验证的内容集中写在第 9 节，上线前先读一遍。
 
@@ -13,7 +13,7 @@
 | Cloudflare 账号 ID | 自己 Cloudflare 账号的 Account ID，32 位十六进制 | 放入 `CF_ACCOUNT_ID`；不是 API token |
 | 已托管在该账号的域名 | 自己控制的 zone，例如 `example.com` | 放入 `ZONE_NAME`；脚本选 `go.<zone>`，被占用时试 `s.<zone>` |
 | Cloudflare API token 文件 | Cloudflare 创建有本服务权限的 token，保存到仓库外的私有文件 | 文件路径放入 `CF_TOKEN_FILE`，不要把 token 本身贴进命令或提交到仓库 |
-| 论坛 origin | 自己要让 App 使用的 HTTPS 论坛，例如 `https://forum.example.com` | 写入 `wrangler.jsonc` 的 `vars.WORKSHOP_FORUM_URL` |
+| GitHub OAuth App 的 Client ID | 第 1.4 节建好的 OAuth App 页面上的 Client ID（公开值，不是 client secret） | 写入 `wrangler.jsonc` 的 `vars.WORKSHOP_GITHUB_CLIENT_ID` |
 | 公开下载域名 | 单独公开下载桶所用的 HTTPS 域名，例如 `https://dl.example.com/` | 写入 `vars.DL_BASE_URL`；不要把私有投稿桶接到这个域名 |
 | 管理密钥文件 | 首次开通脚本自动生成；默认 `~/.config/keys/dshgo-share-admin.txt` | 文件路径可用 `ADMIN_FILE` 改，正文采用默认路径 |
 | KV ID | 首次 `apply` 发现或创建后写入 `~/keys/dshgo-cloudflare-kv-quota-id` | 不要填随机值；已有同名 KV 时必须核对其真实 ID |
@@ -59,12 +59,12 @@
 |---|---|---|
 | `WORKSHOP_UPLOAD_ENABLED` | 未设置或恰为字符串 `1` 为开启；**其他任何值（`0`、空串、`true` 等）都按关闭处理**，关闭后工坊新投稿、上传和新的批准都被拒绝 | 正常上线保留 `1`；紧急关闭写 `0`，见第 7 节；不要靠删除变量来关闭 |
 | `WORKSHOP_COMPANION_ENABLED` | 判断规则同上；关闭后伙伴投稿、批准与对应公开目录/下载被拒绝 | 正常保留 `1`；独立于宠物和旧宠物市场 |
-| `WORKSHOP_FORUM_URL` | 受信任的 HTTPS 论坛 origin；未设置时默认 `https://forum.dshtui.com` | 填正确论坛 origin，不带账号密码、额外路径、查询或片段，否则请求返回 `503 / workshop_forum_configuration`；规范值会在 capabilities 中显示 |
+| `WORKSHOP_GITHUB_CLIENT_ID` | GitHub OAuth App 的公开 Client ID；为空或不匹配 `^[A-Za-z0-9._-]{1,64}$` 时 capabilities 给 `clientId: null`，App 不提供登录 | 填第 1.4 节那个 App 的 Client ID；不要填 client secret。`WORKSHOP_GITHUB_API_URL` 只给测试和本地演练用，线上不设 |
 | `ADMIN_KEY` | **Worker secret**，供审核台和既有管理员删除接口使用 | 至少 32 个字符，短于 32 个字符时服务端按未配置处理（`503 / workshop_admin_unavailable`）；`apply` 新建时用 33 随机字节生成 44 字符密钥并设文件权限 600，随后上传 secret；复用已有非空文件不调整其权限 |
 | `PET_MARKET_ENABLED` | 既有宠物市场镜像开关，当前 `1` | 保持现有值；不是工坊紧急关闭开关 |
 | `MARKET_SOURCE_URL` | 既有插件/宠物市场的 HTTPS 上游；未配置沿用项目默认 | 工坊上线不用新增此值；更换上游另按既有市场文档核对 |
 | `UPLOADS_PER_HOUR` | 既有分享链接的每客户端小时额度，当前 `20` | **不能用它关闭工坊投稿**；工坊按操作把计数值设为自己的 5/20 |
-| `MAX_BYTES` | 既有分享 API 大小上限，当前 20 MiB | 不改变工坊固定 20 MiB ZIP 上限 |
+| `MAX_BYTES` | 既有分享 API 大小上限，当前 20 MiB | 不改变工坊固定 50 MiB ZIP 上限 |
 | `DOWNLOAD_ACCESS` | 既有 App 安装包下载方式，当前 `public` | 保持部署方原政策；不是工坊审核/下载开关 |
 | `DL_BASE_URL` | 公开下载桶的 HTTPS 基址，当前 `https://dl.dshtui.com/` | 与你已创建的公开桶域名一致 |
 | `CN_BASE_URL` | 可选香港下载桶基址，当前空 | 未配置该下载线路时保持空 |
@@ -74,20 +74,18 @@
 
 脚本输入与 Worker 配置不同：`CF_TOKEN_FILE` 是 Cloudflare API token 的文件路径；`CF_ACCOUNT_ID` / `CF_ACCOUNT_ID_FILE` 是账号 ID 或其文件；`CF_KV_QUOTA_ID` / `CF_KV_QUOTA_ID_FILE` 是 QUOTA ID 或其文件；`ZONE_NAME` 是自己 zone；`ADMIN_FILE` 是管理员密钥文件；`DSH_ANALYTICS=0` 与 `--no-analytics` 作用相同。这些都在 `provision.sh` 与 `cloudflare.sh` 开头定义。不要设置测试用 `CF_API`，也不要为了跳过占用检查随手设置 `ALLOW_EXISTING_WORKER=1`。
 
-### 1.4 论坛侧设置
+### 1.4 GitHub OAuth App
 
-工坊使用用户在 App 中获得的 **User API Key**，不需要把论坛管理员 API Key 填进 Worker。论坛的设置需包含：
+作者用 GitHub 账号登录，App 自己走 GitHub 的设备码流程，Worker 只拿作者请求里的令牌问 `https://api.github.com/user` 认人，不参与登录、不需要 client secret。需要一个 OAuth App（在 GitHub 的 Settings → Developer settings → OAuth Apps 新建）：
 
-| 设置名 | 仓库配置 | 含义 |
+| 设置 | 填法 | 原因 |
 |---|---|---|
-| `allowed_user_api_auth_redirects` | 加入 `dshgo://forum/auth` | 与 App 登录回调完全一致 |
-| `allow_user_api_key_scopes` | 至少允许 App 当前请求的 `read, write, notifications, session_info` | Worker 验证身份所需的是 read / session_info；不要为工坊另造全权限管理员 key |
-| `user_api_key_allowed_groups` | `1\|2\|10` | 仓库允许管理员、版主和信任等级 0 用户授权；不要用旧的“最低信任等级”设置名代替 |
-| `revoke_user_api_keys_unused_days` | `180` | 长期不用的 key 会失效，用户需重新登录 |
+| Homepage URL / Redirect URI | 工坊域名，例如 `https://go.example.com` | 设备码流程不回跳，这两项只是 GitHub 要求必填 |
+| Enable Device Flow | 勾上 | App 用的就是设备码流程；不勾会报 `device_flow_disabled`，App 显示「这个工坊还没开通 GitHub 登录」 |
+| Expire user access tokens | 不勾 | App 不处理 refresh token；令牌过期后作者只能重新登录 |
+| Client secret | 不生成 | 用不到，生成了反而多一个要保管的密钥 |
 
-这些是 `infra/forum/settings/site_settings.yml` 的实际内容。已有论坛可在 Discourse 管理后台搜索这些设置名逐项核对。整站设置脚本会同时修改社区、登录与其他配置；不要只为四项设置盲跑整站初始化。若本来就在依本仓库部署论坛，按 `docs/forum/deploy.md` 的步骤使用 `infra/forum/scripts/apply.sh`。Discourse 官方 [User API keys 规范](https://meta.discourse.org/t/user-api-keys-specification/48536) 用来核对设置名和授权行为；实际版本界面有差异时，以自己论坛的设置与维护者确认结果为准。
-
-Worker 对用户 key 只请求配置 origin 的 `/session/current.json`，不跟随重定向。App 作者请求还必须发送与 capabilities 中相同的 `X-Workshop-Forum-Origin`；改了论坛地址后不能继续拿旧来源凭据投稿。实现在 `services/share-worker/src/workshop-auth.ts`。这条链路没有对任何真实论坛验证过。
+App 只申请空 scope，令牌只能读公开资料。作者请求必须带 `Authorization: Bearer <token>` 和 `X-Workshop-Account-Origin: https://github.com`。GitHub 回 401 记为 `account_auth_invalid`，其余非 200（含 403 限流）记为 `account_unavailable`。要停掉全部登录，在这个 OAuth App 页面点 Revoke all user tokens。实现在 `services/share-worker/src/workshop-auth.ts`。
 
 ## 2. 一次性准备（以下命令在自己的电脑上执行）
 
@@ -177,7 +175,7 @@ export ADMIN_FILE="$HOME/.config/keys/dshgo-share-admin.txt"
 
 首次没有文件时由脚本生成；如果此路径已有非空文件，脚本会复用它而不会自动加长或调整权限。请确认已有密钥至少 32 字符，文件也只由自己读取（需要时按 C27 设置权限）；不要把一行说明文字或旧 Cloudflare token 当成管理密钥。
 
-现在打开 `wrangler.jsonc`，只按第 1.3 节修改需要改的普通变量，尤其论坛 origin 与公开下载域名。两个功能开关默认保留 `1`；管理密钥不写进这个文件。
+现在打开 `wrangler.jsonc`，只按第 1.3 节修改需要改的普通变量，尤其 `WORKSHOP_GITHUB_CLIENT_ID` 与公开下载域名。两个功能开关默认保留 `1`；管理密钥不写进这个文件。
 
 ## 3. 第一次部署
 
@@ -199,7 +197,7 @@ scripts/provision.sh apply --no-analytics
 
 已明确开启 Analytics Engine、并要保留原统计服务的账号，去掉 `--no-analytics`；不要两条轮流试到“看起来成功”。这个选择需与后面的常规 redeploy 保持一致。
 
-本步会真正改 Cloudflare：创建缺失的私有 R2 桶/KV，设置上述生命周期，生成并上传 `ADMIN_KEY`，部署 Worker/绑定/域名/Cron，执行线上分享链接 e2e（`scripts/e2e.mjs`，范围见 `docs/design/share-links.md`），并在满足条件后设置指定的插件市场重定向规则。**它不是只做工坊健康检查。** 不会替你创建 `dshgo-dl`；也不会自动替你完成论坛授权和人工审稿。
+本步会真正改 Cloudflare：创建缺失的私有 R2 桶/KV，设置上述生命周期，生成并上传 `ADMIN_KEY`，部署 Worker/绑定/域名/Cron，执行线上分享链接 e2e（`scripts/e2e.mjs`，范围见 `docs/design/share-links.md`），并在满足条件后设置指定的插件市场重定向规则。**它不是只做工坊健康检查。** 不会替你创建 `dshgo-dl`；也不会替你建 GitHub OAuth App 或完成人工审稿。
 
 预期可见 `created bucket` / 已有资源信息、`admin key written to …`（仅首次生成时）、Wrangler 部署结果、e2e 成功和市场重定向成功，最终退出 0。不要分享完整终端输出，先人工检查是否含自己账号或密钥信息。
 
@@ -238,13 +236,13 @@ curl -I "https://$WORKSHOP_HOST/workshop/admin"
 
 预期 `200`，HTML 类型，并带审核页的 CSP、`nosniff`、`Cache-Control: no-store` 等响应头。在手机浏览器打开同一 HTTPS 地址，应该只看到未连接的审核界面；没有管理密钥时不应出现投稿列表、举报或审计内容。该地址是公开页面，公开可取不等于管理数据公开。
 
-**C16 — 能力声明与论坛来源正确。**
+**C16 — 能力声明与账号来源正确。**
 
 ```bash
 curl -i "https://$WORKSHOP_HOST/api/workshop/v1/capabilities"
 ```
 
-预期 `200`，JSON 中 `schema: 1`，`features.uploads` / `features.companion` 与你的两个开关一致，`forumOrigin` 是你预期的规范 HTTPS origin；正常默认开关均为 `true`。`limits.archiveBytes` 应是 `20971520`。这个请求不验证真实论坛登录是否成功，只返回服务端配置与能力。
+预期 `200`，JSON 中 `schema: 1`，`features.uploads` / `features.companion` 与你的两个开关一致，`account.origin` 是 `https://github.com`，`account.clientId` 是你填的 Client ID（不是 `null`）；正常默认开关均为 `true`。`limits.archiveBytes` 应是 `20971520`。这个请求不验证真实 GitHub 登录是否成功，只返回服务端配置与能力。
 
 **C17 — 工坊目录可以读取。**
 
@@ -270,7 +268,7 @@ curl -i "https://$WORKSHOP_HOST/market/companions.json"
 
 开关为 `1` 时预期 `200`，同一 `entries` 结构里只出现伙伴；开关不是 `1` 时预期 `503 / workshop_companion_disabled`。不要拿 `HEAD`、Range 或旧 ETag 作为绕过关闭状态的办法。
 
-**看 HTTP 状态与 JSON，不只看 curl 是否退出 0。** 这些公开/未鉴权检查没有发送真实论坛 key 或管理密钥。
+**看 HTTP 状态与 JSON，不只看 curl 是否退出 0。** 这些公开/未鉴权检查没有发送真实 GitHub 令牌或管理密钥。
 
 最后在审核页中输入自己的管理密钥，读取待审、举报和审计列表。首次可以都是空列表；退出后刷新页面应重新要求输入密钥。管理密钥只在这个标签页内存中，不自动保存，关闭或离开页面后需重新输入。不要把已登录页面或密钥输入框截图发给别人。
 
@@ -279,7 +277,7 @@ curl -i "https://$WORKSHOP_HOST/market/companions.json"
 ### 5.1 审一条稿件
 
 1. 打开 `https://你的域名/workshop/admin`，输入 `ADMIN_KEY`。默认查看待审稿件；用宠物/伙伴筛选和“下一页”分批查看，不把当前一页当成全部稿件。
-2. 打开单条详情。核对论坛用户名、作品名称、kind、版本、大小、提交时间、完整元数据、许可与来源、包内路径/大小，以及每条校验提示。元数据中的作品作者字段可以与论坛用户名不同；稳定的投稿身份是论坛 origin 和数值 userId。
+2. 打开单条详情。核对 GitHub 用户名、作品名称、kind、版本、大小、提交时间、完整元数据、许可与来源、包内路径/大小，以及每条校验提示。元数据中的作品作者字段可以与 GitHub 用户名不同；稳定的投稿身份是 `https://github.com` 和数值 GitHub 用户 id。
 3. 按需查看可预览的图片。审核台只显示图片和文字，不执行包中的脚本、模型、motion 或音频。PNG 使用完整校验；JPEG/WebP 的结构/尺寸门不等于完整像素解码或模型加载验收。不可预览的条目仍列文件与原因，不因此把整包称为损坏。
 4. 决定批准前，独立确认你有足够依据判断素材授权、来源与内容。通过验证器仅代表通过它实际覆盖的技术规则，不代表你已经取得许可或在 App 上看过实际效果。
 5. 选择通过或拒绝，填写理由，再检查确认框里的**同一作品、版本和操作**后确认。接口的理由上限是 2000 码点，且审核操作要求非空理由。拒绝必须解释原因。
@@ -301,7 +299,7 @@ curl -i "https://$WORKSHOP_HOST/market/companions.json"
 
 ### 5.4 看审计记录
 
-审核页的审计视图只读，按页查看操作者、时间、目标和动作/理由。作者操作能显示论坛身份；管理操作记录的 actor 是 **`admin`，即持有这把管理密钥的人**。单一 `ADMIN_KEY` 不能区分多个管理员个人，不能把它当作实名操作记录。不要把 key 或 key 的摘要当成“谁”。
+审核页的审计视图只读，按页查看操作者、时间、目标和动作/理由。作者操作能显示 GitHub 身份；管理操作记录的 actor 是 **`admin`，即持有这把管理密钥的人**。单一 `ADMIN_KEY` 不能区分多个管理员个人，不能把它当作实名操作记录。不要把 key 或 key 的摘要当成“谁”。
 
 审计至少保留 186 天（`AUDIT_RETENTION_MS`）；仅在后续写入时清理更老事件。版本归属与撤回账本不是可随意删除的旧日志。
 
@@ -309,26 +307,27 @@ curl -i "https://$WORKSHOP_HOST/market/companions.json"
 
 在 Cloudflare 后台分别查看这个 Worker 的请求/错误/CPU，以及两个 R2 桶的容量和操作量、QUOTA KV 的用量。费用和套餐限额以你账号当时的 Cloudflare 后台为准。工坊没有独立的计费看板，也没有把每个浏览请求写入审计。
 
-工坊公开目录/包读取和论坛身份检查使用 `READ_LIMIT`；需要计数的作者侧写尝试使用 `UPLOAD_BURST`。每个论坛身份每小时新建投稿 5 次，archive 尝试、举报和撤回分别 20 次；archive 校验失败的尝试也计数。KV 跨机房最终一致，计数器故障沿现有逻辑放行，所以这些是近似限制，不能宣称全局严格配额。实现在 `services/share-worker/src/workshop-auth.ts` 与 `services/share-worker/src/limits.ts`。
+工坊公开目录/包读取和 GitHub 身份检查使用 `READ_LIMIT`；需要计数的作者侧写尝试使用 `UPLOAD_BURST`。每个 GitHub 账号每小时新建投稿 5 次，archive 尝试、举报和撤回分别 20 次；archive 校验失败的尝试也计数。KV 跨机房最终一致，计数器故障沿现有逻辑放行，所以这些是近似限制，不能宣称全局严格配额。实现在 `services/share-worker/src/workshop-auth.ts` 与 `services/share-worker/src/limits.ts`。
 
 管理员审核、撤回、举报处理不走上述作者小时配额；不能据该表推断管理 key 每小时只能操作 5 或 20 次。管理详情与图片预览另有 `READ_LIMIT` 门，capabilities 查询没有上述公开目录读取门。
 
 | 看到的结果 | owner 应做什么 |
 |---|---|
-| `401 / workshop_admin_auth_required` | 检查是否使用当前 ADMIN_KEY；不要把 Cloudflare token 或论坛 key 填进审核台 |
+| `401 / workshop_admin_auth_required` | 检查是否使用当前 ADMIN_KEY；不要把 Cloudflare token 或 GitHub 令牌填进审核台 |
 | `503 / workshop_admin_unavailable` | 服务端管理密钥缺失/过短；按第 7.3 节补齐，不能改页面绕过鉴权 |
 | `409 / workshop_state_conflict` 或 `workshop_submission_state` | 可能有另一操作已提交，或这条记录已不能做该操作；刷新目标和审计后再决定 |
 | `429 / workshop_rate_limited` | 按 `Retry-After` 等待；不要自动高速重试或轮换身份绕过限制 |
 | `503 / workshop_upload_disabled` | 投稿/上传/新的批准已关闭；核对当前开关 |
 | `503 / workshop_companion_disabled` | 伙伴能力关闭；宠物、已有本地资源和管理处置不因此全部关闭 |
-| `409 / workshop_forum_origin` | App 凭据来源与 Worker 配置不一致；核配置和登录来源，不把用户 key 转给另一个论坛 |
-| `401 / workshop_forum_auth_invalid` | key 不被论坛接受，或已解析响应中的当前用户 id/用户名字段无效；先核来源/账号，由用户重新登录，owner 不索取其 key |
-| `503 / workshop_forum_unavailable` | 上游其他非 200 响应、超时、响应读取或 JSON 解析失败；核论坛 origin、可达性及站点设置。上游 401/403/404 以及无效当前用户字段按前一行处理 |
+| `401 / workshop_account_auth_required` | 作者请求没带合格的 `Authorization: Bearer` 令牌；让用户在 App 里重新登录 |
+| `409 / workshop_account_origin` | App 声明的账号来源不是 `https://github.com`；多半是旧版 App，请用户更新 |
+| `401 / workshop_account_auth_invalid` | GitHub 不认这个令牌（撤销了授权或令牌失效）；App 会自动登出，请用户重新登录，owner 不索取其令牌 |
+| `503 / workshop_account_unavailable` | GitHub 回了 401 以外的非 200（含 403 限流）、跳转、超时或坏正文；看 GitHub 状态页，稍后重试 |
 | `503 / workshop_capacity` | 权威状态及预留容量达到门槛；停止扩大写入，交维护者按保留规则处理，不删审计/绑定腾空间 |
 | `503 / workshop_state_invalid` | 状态损坏、不兼容 writer 或容量/结构异常；保留数据与版本信息，停止盲目重试或回滚 |
 | `503 / workshop_storage_unavailable` | 存储/摘要/读写异常；写入结果可能未知，先查询目标状态再决定，保留错误码和时间 |
 
-完整错误码以 `services/share-worker/src/workshop-auth.ts`、`workshop-state.ts`、`workshop.ts` 与 `services/share-worker/docs/workshop-api.md` 为准。给维护者的材料只需：时间、Worker 版本、请求路径模板、HTTP 状态、固定错误码、非秘密的 submissionId/reportId；发出前人工检查。不要导出完整请求头、论坛响应、浏览器存储或含 key 的调试日志。
+完整错误码以 `services/share-worker/src/workshop-auth.ts`、`workshop-state.ts`、`workshop.ts` 与 `services/share-worker/docs/workshop-api.md` 为准。给维护者的材料只需：时间、Worker 版本、请求路径模板、HTTP 状态、固定错误码、非秘密的 submissionId/reportId；发出前人工检查。不要导出完整请求头、GitHub 响应、浏览器存储或含 key 的调试日志。
 
 既有 `scripts/stats.sh` 统计的是下载、更新检查和 App 使用报告，**不是工坊投稿计数**。如需要读它，按 `docs/release.md` 的“统计”一节准备 Account Analytics Read 权限；它不能证明审核台的访问量或工坊配额是否生效。
 
@@ -397,7 +396,7 @@ wr secret put ADMIN_KEY < "$ADMIN_FILE"
 
 只在确认文件是自己要使用的、至少 32 字符的管理密钥后执行。预期 Wrangler 显示 secret 写入成功。密钥通过标准输入送入，没有作为命令参数或 URL。不要添加调试跟踪，也不要在命令前打印文件内容。
 
-回审核台退出当前会话，用新 key 连接并读取待审/举报/审计；旧 key 应不能再取得管理数据。若失败，区分 401 与 503；不把失败日志中的完整请求头转发出来。只做本节不会验证论坛 User API Key。
+回审核台退出当前会话，用新 key 连接并读取待审/举报/审计；旧 key 应不能再取得管理数据。若失败，区分 401 与 503；不把失败日志中的完整请求头转发出来。只做本节不会验证 GitHub 登录。
 
 **需要生成新 key 时**，在 C23 之前先执行下列 C24–C27，生成成功后再回 C23。已有密钥的只补传操作跳过这四步。
 
@@ -477,7 +476,7 @@ wr rollback '替换成已确认兼容的Cloudflare-Version-ID'
 
 ## 9. 尚未验证的内容
 
-这套工坊从未部署到真实 Cloudflare 账号，也从未连接过真实论坛，管理员审核台从未在真实浏览器里打开过，没有在任何真机或手机上验证过。仓库里的单测、类型检查、CI 和本地假环境只能说明代码按预期逻辑运行，不能替代下面这些首次上线验收；本文的“预期”输出来自源码，而不是真实运行记录。遇到与“预期”不符的结果，按该步说明停下核对，不把异常当成成功。
+这套工坊从未部署到真实 Cloudflare 账号，也从未用真实 GitHub 账号投过稿，管理员审核台从未在真实浏览器里打开过，没有在任何真机或手机上验证过。仓库里的单测、类型检查、CI 和本地假环境只能说明代码按预期逻辑运行，不能替代下面这些首次上线验收；本文的“预期”输出来自源码，而不是真实运行记录。遇到与“预期”不符的结果，按该步说明停下核对，不把异常当成成功。
 
 以下项目由 owner 在自己的环境首次执行时记录，任何失败都保持“未完成”，不要用本地桩测试的成功填入真实结果。
 
@@ -486,7 +485,7 @@ wr rollback '替换成已确认兼容的Cloudflare-Version-ID'
 | Cloudflare 账号、套餐、资源权限 | 绑定名与脚本行为已对照源码；没有接触过真实账号 | C11、C12 的实际结果以及自己的后台资源核对；重定向规则权限的显示名/范围仍待确认 |
 | 构建、类型检查、Worker 单元测试 | CI 会运行；owner 自己部署前也要执行 | 自己执行 C01–C06 并看实际输出 |
 | 公开域名、TLS、资产路由与 CSP | 路由及配置有源码和单测约束；没有真实部署过 | C15–C19，并在浏览器检查页面无外部请求、同源鉴权与响应头 |
-| 论坛 User API Key | 设置名与 `/session/current.json` 身份链路只按源码和 Discourse 规范核对；没有连过真实论坛 | 在自己的论坛/App 完成授权，确认来源一致，使用自己的测试账号投稿；不要把用户 key 发给维护者 |
+| GitHub 登录 | 设备码流程和 `/user` 身份链路只按源码和 GitHub 文档核对，另在本机向 GitHub 要过一次验证码；没有用真实账号走完投稿 | 在 App 里用自己的 GitHub 账号登录并投一个测试作品；在 GitHub 上撤销授权后确认 App 回到未登录；不要把令牌发给维护者 |
 | 审稿、举报与撤回 | 接口和页面脚本有测试；没有在线上操作过 | 在自己部署的测试作品上逐项操作，核对详情、公开目录和审计；确认网络中断时先查状态的流程 |
 | 手机浏览器 | 审核页是单列、大按钮的中文页；没有在手机真机上用过 | 在实际手机输入 key、翻页、看长文件名/提示、预览、二次确认、切应用再回来、退出后重新连接 |
 | 图片与模型效果 | 图片预览有限制，模型/脚本不执行 | 用自己的合规测试包检查图片可见性；模型实际效果另按固定运行时和真机流程验收 |
@@ -496,4 +495,4 @@ wr rollback '替换成已确认兼容的Cloudflare-Version-ID'
 
 ### 9.1 出错时留下什么
 
-保存这次部署的源码提交、Worker Version ID、操作时间、步骤编号、HTTP 状态和固定错误码；判断错误发生在本地构建、部署、接口还是浏览器。不要删桶、删 state 或改版本号来消除错误；不要把账号 token、管理 key、论坛 key、完整请求头或未脱敏的私有稿件附到公开工单。维护者需要更多证据时，再按具体问题提供最小范围的材料。
+保存这次部署的源码提交、Worker Version ID、操作时间、步骤编号、HTTP 状态和固定错误码；判断错误发生在本地构建、部署、接口还是浏览器。不要删桶、删 state 或改版本号来消除错误；不要把账号 token、管理 key、GitHub 令牌、完整请求头或未脱敏的私有稿件附到公开工单。维护者需要更多证据时，再按具体问题提供最小范围的材料。

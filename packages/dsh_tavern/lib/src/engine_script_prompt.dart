@@ -162,9 +162,12 @@ extension _ScriptPromptPreparation on _ScriptCoordinator {
 /// which ultimately consumes this source; a false filter can exclude its WI
 /// dependency without converting an unused book's failure into a new failure.
 class _ScriptWorldBooksSnapshot {
-  _ScriptWorldBooksSnapshot.loaded(this.books) : error = null, stack = null;
-  _ScriptWorldBooksSnapshot.failed(this.error, this.stack) : books = const [];
+  _ScriptWorldBooksSnapshot.loaded(this.books, {this.resources = const _GameplayResources()})
+    : error = null,
+      stack = null;
+  _ScriptWorldBooksSnapshot.failed(this.error, this.stack) : books = const [], resources = const _GameplayResources();
   final List<WorldInfoBook> books;
+  final _GameplayResources resources;
   final Object? error;
   final StackTrace? stack;
   List<WorldInfoBook> read() {
@@ -215,6 +218,15 @@ Future<_ScriptWorldBooksSnapshot?> _scriptCaptureWorldBooks(
     final activeBookId = activeWorldName is String
         ? _map(capture.chat!.settings['stLorebookIds'])[activeWorldName]
         : null;
+    final gameplayCapture = capture.gameplayCapture;
+    final resources = gameplayCapture == null
+        ? const _GameplayResources()
+        : _resolveGameplayResources(
+            gameplayCapture,
+            capture.settings,
+            actorId: capture.actorId,
+            kinds: const {'lorebook'},
+          );
     final books = await cancellation.wait(
       owner.engine._trackOperation(
         owner.engine._loadBooks(
@@ -223,13 +235,14 @@ Future<_ScriptWorldBooksSnapshot?> _scriptCaptureWorldBooks(
           capture.settings,
           group: capture.groupView,
           personaId: capture.personaId,
+          gameplayResources: resources,
           stWorldNames: {if (activeWorldName is String && activeBookId is String) activeBookId: activeWorldName},
           checkCancelled: cancellation.check,
         ),
       ),
     );
     cancellation.check();
-    return _ScriptWorldBooksSnapshot.loaded(List.unmodifiable(books.loaded));
+    return _ScriptWorldBooksSnapshot.loaded(List.unmodifiable(books.loaded), resources: resources);
   } catch (error, stack) {
     cancellation.check();
     return _ScriptWorldBooksSnapshot.failed(error, stack);
@@ -335,6 +348,7 @@ class _ScriptPromptRun {
       groupNotMuted: capture.groupView?.enabledNames,
       preset: macroPreset,
       regexPresetSettings: capture.contextRegexPresetSettings,
+      gameplayCapture: capture.gameplayCapture,
       macroHistory: capture.chat == null ? unavailableHistory : null,
       onCharacterDependency: capture.actorId == null ? _observeCharacterDependency : null,
       prepareCharacterFieldsOnDemand: raw,
@@ -482,9 +496,21 @@ class _ScriptPromptRun {
       budgetSource: budgetSource,
       injectionUses: uses,
       stateUpdates: stateUpdates,
+      packWorldInfo: evaluated?.packWorldInfo,
       stChatIdHash: environment.chatIdHash,
       hasHashUpdate: capture.chat != null && environment.chatIdHash != initialHash,
-      hookIssues: uses.hookIssues,
+      hookIssues: [
+        ...uses.hookIssues,
+        for (final issue in evaluated?.packIssues ?? const <Map<String, Object?>>[])
+          TavernScriptIssue(
+            code: 'gameplay_world_info_runtime',
+            message: 'A gameplay world-info runtime source could not be used.',
+            committed: false,
+            generationId: capture.generationId,
+            stage: 'worldInfo',
+            details: issue,
+          ),
+      ],
     );
   }
 
@@ -610,6 +636,8 @@ class _ScriptPromptRun {
         characterTags: _characterTags(settings, capture.actorId ?? ''),
         timedWorldInfo: _map(capture.state['timedWorldInfo']),
         decoratorState: _map(capture.state['decoratorState']),
+        packSources: snapshot.resources.packSources,
+        packWorldInfo: _gameplayWorldInfoSnapshot(capture.state, snapshot.resources),
         assistantMessageCount: real.where((node) => node.message.role == TavernRole.character).length,
         greetingIndex: capture.state['greetingIndex'] is int ? capture.state['greetingIndex'] as int : null,
         userIconName: settings['userIconName'] as String?,

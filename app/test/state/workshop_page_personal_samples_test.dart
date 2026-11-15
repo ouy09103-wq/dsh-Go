@@ -17,8 +17,8 @@ void _submissions(WorkshopSubmissionsSample sample) {
   expect(state.items.map((item) => item.id).toSet().length, state.items.length);
   expect(() => state.items.clear(), throwsUnsupportedError);
   for (final item in state.items) {
-    expect(item.ownerOrigin, sample.access.forum);
-    expect(item.ownerId, sample.access.forumUserId);
+    expect(item.ownerOrigin, sample.access.account);
+    expect(item.ownerId, sample.access.accountId);
     if (state.status != null) expect(item.status, state.status);
   }
   if (state.detail != null) expect(state.detail!.id, state.detailId);
@@ -157,7 +157,7 @@ void main() {
         ? WorkshopSubmissionStatus.withdrawn : WorkshopSubmissionStatus.pending);
       if (phase == WorkshopWithdrawalPhase.unknown) expect(state.withdrawal.error!.resultUnknown, isTrue);
       if (name == 'submissionsWithdrawalFailed') {
-        expect(state.withdrawal.error!.code, 'workshop_forum_auth_invalid'); expect(state.withdrawal.error!.status, 401);
+        expect(state.withdrawal.error!.code, 'workshop_account_unavailable'); expect(state.withdrawal.error!.status, 503);
       }
       if (name == 'submissionsWithdrawalInvalidReason') expect(state.withdrawal.error!.code, 'workshop_bad_reason');
     });
@@ -178,7 +178,7 @@ void main() {
       _report(sample); expect(sample.report.phase, phase);
       if (phase == WorkshopReportPhase.idle) expect(sample.report.attempt, isNull);
       if (name == 'reportFailed') {
-        expect(sample.report.error!.code, 'workshop_forum_auth_invalid'); expect(sample.report.error!.status, 401);
+        expect(sample.report.error!.code, 'workshop_account_unavailable'); expect(sample.report.error!.status, 503);
         expect(sample.report.error!.resultUnknown, isFalse);
       }
       if (name == 'reportInvalidReason') expect(sample.report.error!.code, 'workshop_bad_reason');

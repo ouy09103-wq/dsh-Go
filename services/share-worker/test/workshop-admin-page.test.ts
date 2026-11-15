@@ -20,7 +20,7 @@ function thrown(action: () => unknown): any {
 const SID = 'a'.repeat(32), OTHER = 'b'.repeat(32), RID = 'c'.repeat(32), KEY = 'synthetic-admin-key-'.repeat(2);
 const special = '<名字 "引号"> & \'单引号\'';
 function submission(id = SID, status = 'pending'): any {
-  return { submissionId: id, status, owner: { forumOrigin: 'https://forum.example', forumUserId: 42, username: special },
+  return { submissionId: id, status, owner: { accountOrigin: 'https://github.com', accountId: 42, username: special },
     metadata: { kind: 'pet', id: 'ordinary-pet', version: '1.0.0', minApp: '1.0.0', title: { zh: special, en: 'Example' },
       author: special, license: 'CC0-1.0', source: 'https://example.org/source', description: special, tags: [special],
       size: 1234, sha256: 'd'.repeat(64), rightsConfirmed: true },

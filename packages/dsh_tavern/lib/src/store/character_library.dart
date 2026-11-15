@@ -263,6 +263,7 @@ class CharacterLibrary {
     required String sourceFormat,
     AuthoringCardMedia? seedMedia,
     ({String id, AuthoringExpectation expected})? currentSource,
+    ({String id, AuthoringExpectation expected})? requiredSource,
     void Function()? check,
     Future<TavernImportReport> Function(TavernCard card)? inspect,
   }) => _exclusive(() async {
@@ -385,6 +386,7 @@ class CharacterLibrary {
         exactText: rawText,
         actualData: data,
         request: request,
+        requiredSource: requiredSource,
         check: check,
       );
       return authoringSaveAsReceipt(saved.receipt!, result);
@@ -411,6 +413,7 @@ class CharacterLibrary {
     String? exactText,
     Map<String, Object?>? actualData,
     AuthoringWriteRequest? request,
+    ({String id, AuthoringExpectation expected})? requiredSource,
     void Function()? check,
   }) async {
     final rawText = exactText ?? jsonEncode(card.json);
@@ -456,6 +459,18 @@ class CharacterLibrary {
             'The new character target is no longer absent.',
             physicalResourceId: 'character:$id',
           );
+        }
+        if (requiredSource != null) {
+          _checkManagedWriter(requiredSource.id);
+          final fresh = await _readAuthoringResource(requiredSource.id);
+          final revision = owner.observe('character:${requiredSource.id}', fresh);
+          if (revision != requiredSource.expected.revision || !fresh.sameAs(requiredSource.expected.before)) {
+            throw TavernAuthoringException(
+              'authority_conflict',
+              'The captured cast source changed.',
+              physicalResourceId: 'character:${requiredSource.id}',
+            );
+          }
         }
         final after = AuthoringResourceSnapshot(present: true, rawText: rawText, identityText: identityText);
         ticket = AuthoringWriteTicket(

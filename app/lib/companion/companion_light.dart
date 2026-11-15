@@ -63,6 +63,10 @@ class CompanionLightError implements Exception {
 
 /// Her reply to [lines], as text deltas. Cancelling the subscription drops the
 /// request; [client] is the caller's to close.
+///
+/// [onUsage] hears the tokens the API reported for a reply that finished
+/// (input with its cached part, and output), once; a reply that reported none,
+/// or didn't finish, says nothing.
 Stream<String> streamCompanionReply({
   required http.Client client,
   required String apiKey,
@@ -70,6 +74,7 @@ Stream<String> streamCompanionReply({
   required List<CompanionLine> lines,
   CompanionTurnContext? context,
   int maxTokens = 800,
+  void Function(int input, int output)? onUsage,
 }) async* {
   final request = http.Request('POST', Uri.parse(companionLightEndpoint))
     ..headers.addAll({
@@ -109,6 +114,20 @@ Stream<String> streamCompanionReply({
       .transform(const LineSplitter())
       // A reply that stops arriving is a failed one, not a slow one.
       .timeout(const Duration(seconds: 45));
+  // message_start carries the input, message_delta the output so far; each
+  // is a running total, not an increment, so the largest one seen stands.
+  int? input;
+  int? output;
+  void usageFrom(Object? usage) {
+    if (usage is! Map) return;
+    int? n(Object? v) => v is int && v >= 0 ? v : null;
+    if (n(usage['input_tokens']) case final fresh?) {
+      final all = fresh + (n(usage['cache_read_input_tokens']) ?? 0) + (n(usage['cache_creation_input_tokens']) ?? 0);
+      input = max(input ?? 0, all);
+    }
+    if (n(usage['output_tokens']) case final out?) output = max(output ?? 0, out);
+  }
+
   try {
     await for (final line in events) {
       if (!line.startsWith('data:')) continue;
@@ -138,7 +157,13 @@ Stream<String> streamCompanionReply({
           if (delta is Map && delta['type'] == 'text_delta' && delta['text'] is String) {
             yield delta['text'] as String;
           }
+        case 'message_start':
+          final message = event['message'];
+          if (message is Map) usageFrom(message['usage']);
+        case 'message_delta':
+          usageFrom(event['usage']);
         case 'message_stop':
+          if (input != null || output != null) onUsage?.call(input ?? 0, output ?? 0);
           return;
       }
     }

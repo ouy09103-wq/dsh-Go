@@ -16,10 +16,10 @@ import '../workshop/workshop_models.dart';
 import '../workshop/workshop_repository.dart';
 import 'app_info.dart';
 
-/// The owner supplies a deployment, either with this provider or at build time.
-/// An absent deployment is a state error, never an implicit third-party host.
+/// Our own deployment unless the build names another; an empty value builds
+/// without a Workshop. Never an implicit third-party host.
 final workshopOriginProvider = Provider<Uri?>((ref) {
-  const configured = String.fromEnvironment('DSH_WORKSHOP_ORIGIN');
+  const configured = String.fromEnvironment('DSH_WORKSHOP_ORIGIN', defaultValue: 'https://go.dshtui.com');
   if (configured.isEmpty) return null;
   final parsed = Uri.tryParse(configured);
   if (parsed == null) workshopInvalid('workshop_untrusted_origin');

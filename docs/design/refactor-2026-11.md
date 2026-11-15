@@ -2,7 +2,7 @@
 
 > 2026-11-10 起草。基线 `main` = `1c5b220093295f8d069f6bfb06d8b4fc97b9e9c2`。
 > 依据是同日的只读审查（四路读码 + 抽查）。审查没有跑测试、测速、真机，所以下面的行号和计数是「审查时的数」，各包开工先复核，对不上以代码为准。
-> 分工：App 侧（Dart / Flutter）交给 Opus 会话，运行时、桥、Android 原生、CI 交给 GPT Pro（Drive `AI-workspace/dshgo-refactor1/`）。
+> 分工：App 侧（Dart / Flutter）与运行时、桥、Android 原生、CI 分成两组并行推进，文件集合互不相交。
 
 ## 1. 目标
 
@@ -31,28 +31,28 @@
 
 - `feat/roleplay`（酒馆，56 个提交，未推送）改到的既有文件：
   `app/lib/ui/chat/render/markdown_body.dart`、`app/lib/ui/companion/companion_page.dart`、`app/lib/ui/companion/companion_stage.dart`、`app/lib/companion/companion_server.dart`、`app/lib/ui/bots/bot_chat_kit.dart`、`app/lib/ui/shell/home_shell.dart`、`app/lib/ui/shell/sessions_drawer.dart`、`app/lib/ui/shell/system_entry_host.dart`、`app/lib/ui/settings/interface_page.dart`、`app/lib/ui/web/mode_home.dart`、`app/lib/ui/theme/app_icons.dart`、`app/lib/ui/wallpaper/wallpaper_backdrop.dart`、`app/lib/state/wallpaper_state.dart`、`app/lib/links/page_links.dart`、`app/pubspec.yaml`、`.github/workflows/ci.yml`、l10n 合并产物。
-- `app/lib/ui/tavern/**`、`packages/dsh_tavern/**`：酒馆线（Pro `dshgo-tavern2` + 前端会话）。
+- `app/lib/ui/tavern/**`、`packages/dsh_tavern/**`：酒馆线（独立分支）。
 - `app/ios/**`、`app/ohos/**`、`runtime/ohos/**`：`feat/ios-foundation`（长期分支，和 main 分叉很大，重构合入后由那条线自己跟）。
 - l10n：新增文案只改 `app/lib/l10n/parts/*.arb`（中英同步），再跑 `l10n_merge.py`；不手改生成物。
 
 ## 4. 分工总表
 
-| 包 | 谁 | 分支 / 目录 | 独占的文件 | 何时开 |
+| 包 | 分组 | 分支 / 目录 | 独占的文件 | 何时开 |
 |---|---|---|---|---|
-| A 聊天流式性能 | Opus | `refactor/chat-stream-perf` | `app/lib/ui/chat/**`（避让清单除外）、`app/lib/state/chat_state.dart`、`app/lib/state/session_modes.dart`、`packages/dsh_client/lib/src/transcript.dart` | 第一期 |
-| B 依赖方向 + 插件状态拆分 | Opus | `refactor/import-direction` | `app/lib/state/**`（A 的三个文件除外）、`app/lib/plugins/**`、`app/lib/ui_config/**`、`app/lib/links/**`（`page_links.dart` 除外）、`docs/architecture.md` | 第一期 |
-| P 运行时 / 桥 / 原生 / CI | GPT Pro | Drive `AI-workspace/dshgo-refactor1/` | `runtime/**`（ohos 除外）、`app/android/**`、`tooling/**`、`packages/dsh_client/lib/src/dsh_go_api.dart`、`.github/workflows/**`（交补丁，本机合入时处理和酒馆线的冲突） | 第一期 |
-| C 前端一致性 | Opus | 待定 | `app/lib/ui/common/**`、`app/lib/ui/theme/**` 及各页面的调用点 | 第二期（B 合入后） |
-| D 持久化层 + 离线快照 + 日志落盘 | Opus | 待定 | `app/lib/state/**` 的存取部分 | 第二期（B 合入后） |
-| E 聊天控制器 / 聊天页拆分 | Opus | 待定 | `chat_state.dart`、`chat_screen.dart` | 第二期（A 合入后） |
-| F 会话状态按主机取键 | Opus | 待定 | `chat_state.dart`、`sessions_state.dart`、`hosts_state.dart` | 第三期（E 之后） |
-| G 流式正文增量预处理、伙伴小屋页拆分 | Opus | 待定 | `markdown_body.dart`、`companion_page.dart` | 第三期（酒馆合入后） |
+| A 聊天流式性能 | 甲组 | `refactor/chat-stream-perf` | `app/lib/ui/chat/**`（避让清单除外）、`app/lib/state/chat_state.dart`、`app/lib/state/session_modes.dart`、`packages/dsh_client/lib/src/transcript.dart` | 第一期 |
+| B 依赖方向 + 插件状态拆分 | 甲组 | `refactor/import-direction` | `app/lib/state/**`（A 的三个文件除外）、`app/lib/plugins/**`、`app/lib/ui_config/**`、`app/lib/links/**`（`page_links.dart` 除外）、`docs/architecture.md` | 第一期 |
+| P 运行时 / 桥 / 原生 / CI | 乙组 | 待定 | `runtime/**`（ohos 除外）、`app/android/**`、`tooling/**`、`packages/dsh_client/lib/src/dsh_go_api.dart`、`.github/workflows/**`（交补丁，本机合入时处理和酒馆线的冲突） | 第一期 |
+| C 前端一致性 | 甲组 | 待定 | `app/lib/ui/common/**`、`app/lib/ui/theme/**` 及各页面的调用点 | 第二期（B 合入后） |
+| D 持久化层 + 离线快照 + 日志落盘 | 甲组 | 待定 | `app/lib/state/**` 的存取部分 | 第二期（B 合入后） |
+| E 聊天控制器 / 聊天页拆分 | 甲组 | 待定 | `chat_state.dart`、`chat_screen.dart` | 第二期（A 合入后） |
+| F 会话状态按主机取键 | 甲组 | 待定 | `chat_state.dart`、`sessions_state.dart`、`hosts_state.dart` | 第三期（E 之后） |
+| G 流式正文增量预处理、伙伴小屋页拆分 | 甲组 | 待定 | `markdown_body.dart`、`companion_page.dart` | 第三期（酒馆合入后） |
 
 同一时刻一个文件只有一个写手。第一期三条线的文件集合互不相交；A、B 有一处要注意：B 清理 state → ui 的反向依赖时，如果那条边经过 A 的文件，B 不动，只记进报告。
 
 ## 5. 第一期
 
-### A. 聊天流式性能（Opus）
+### A. 聊天流式性能（甲组）
 
 **目标**：流式输出时只有正在写的那一行重建；带排队消息、工具参数流式时不再全量重算行。
 
@@ -74,7 +74,7 @@
 
 **验收**：A0 的计数测试通过（已完成行重建 0 次；有排队消息时 `deriveRows` 不随增量调用）；`app/test/chat`、`app/test/state` 与基线相比没有新失败；`packages/dsh_client` 的测试全过；`flutter analyze` 无新增；golden 不应变化，变了就停下说明。
 
-### B. 依赖方向 + 插件状态拆分（Opus）
+### B. 依赖方向 + 插件状态拆分（甲组）
 
 **目标**：非 ui 目录不再 import `ui/`；`plugins_state.dart` 按现成的缝拆开；架构文档跟上。
 
@@ -90,9 +90,9 @@
 
 **验收**：B1 的测试通过且白名单比开工时短；`flutter analyze` 无新增；受影响目录的测试与基线相比没有新失败；B3 的提交 `git diff --stat` 之外用 `git diff -M` 能看出是搬移。
 
-### P. 运行时 / 桥 / 原生 / CI（GPT Pro，`dshgo-refactor1`）
+### P. 运行时 / 桥 / 原生 / CI（乙组）
 
-题面全文在 Drive 的 `TASK.md`，这里是摘要。编号从 5000 起。
+这里是摘要。编号从 5000 起。
 
 | # | 改什么 | 要点 |
 |---|---|---|
@@ -108,7 +108,7 @@
 | P10 | 被杀后的恢复 | 评估并给方案；开机自启做成选项（默认关） |
 | 兜底 | 查 bug 修 bug | 运行时、桥、原生范围内按角度轮换 |
 
-Pro 的补丁由本机按批合入：只合复核通过的精确字节、全量 CI、合入后做一遍精简。原生层的改动一律标「未真机」。
+乙组的补丁由本机按批合入：只合复核通过的精确字节、全量 CI、合入后做一遍精简。原生层的改动一律标「未真机」。
 
 ## 6. 第二期、第三期（第一期合入后再开，届时按当时的代码重写题面）
 
@@ -121,7 +121,7 @@ Pro 的补丁由本机按批合入：只合复核通过的精确字节、全量 
 
 ## 7. 合入流程
 
-1. 各线在自己的分支或 Drive 目录里交付；Opus 会话本地提交、**不推送、不开 PR**；提交信息不加 AI 署名。
+1. 各线在自己的分支或工作目录里交付；不推送、不开 PR。
 2. 主线读 diff、跑受影响的测试，把结论和要 owner 定的事攒成一批汇报。
 3. owner 点头后开 PR；CI（Linux）全绿再合。golden 只认 CI 的渲染。
 4. 一个包合入后，后续包以新的 main 为基底；清掉本包的工作树和分支。

@@ -37,10 +37,10 @@ class WorkshopPendingSubmission {
 }
 
 /// Only disclosure acknowledgements and non-secret idempotency identifiers.
-/// Forum keys remain exclusively in the existing ForumAuthController/store.
+/// GitHub tokens remain exclusively in workshopAccountProvider's secure store.
 abstract interface class WorkshopPreferences {
-  Future<bool> disclosureAccepted(Uri worker, Uri forum);
-  Future<void> acceptDisclosure(Uri worker, Uri forum);
+  Future<bool> disclosureAccepted(Uri worker, Uri account);
+  Future<void> acceptDisclosure(Uri worker, Uri account);
   /// Atomically keeps the first identifier for these exact account/metadata
   /// bytes. A replacement controller gets the same identifier before sending.
   Future<String> reserveSubmissionRequestId(String fingerprint, String proposed);
@@ -102,18 +102,18 @@ class PrefsWorkshopPreferences implements WorkshopPreferences, WorkshopPendingRe
     return result;
   }
 
-  static String _pair(Uri worker, Uri forum) =>
-      jsonEncode([workshopOrigin(worker).toString(), workshopOrigin(forum).toString()]);
+  static String _pair(Uri worker, Uri account) =>
+      jsonEncode([workshopOrigin(worker).toString(), workshopOrigin(account).toString()]);
 
   @override
-  Future<bool> disclosureAccepted(Uri worker, Uri forum) {
-    final pair = _pair(worker, forum);
+  Future<bool> disclosureAccepted(Uri worker, Uri account) {
+    final pair = _pair(worker, account);
     return _exclusive((prefs) async => prefs.getStringList(_disclosuresKey)?.contains(pair) ?? false);
   }
 
   @override
-  Future<void> acceptDisclosure(Uri worker, Uri forum) {
-    final pair = _pair(worker, forum);
+  Future<void> acceptDisclosure(Uri worker, Uri account) {
+    final pair = _pair(worker, account);
     return _exclusive((prefs) async {
       final pairs = {...?prefs.getStringList(_disclosuresKey), pair}.toList()..sort();
       if (!await prefs.setStringList(_disclosuresKey, pairs)) {

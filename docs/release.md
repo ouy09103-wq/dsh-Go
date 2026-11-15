@@ -442,7 +442,7 @@ App 的签名预检认 lineage：新包的签名历史里含已装版本的签�
 | 部分 | 内容 |
 |---|---|
 | 头（80 字节） | 8 字节 `DSHDLT01` · 32 字节旧 APK 的 SHA-256 · 32 字节新 APK 的 SHA-256 · u64 新 APK 长度 |
-| `0x01` COPY | u64 旧 APK 里的偏移 · u64 长度：照抄旧 APK 的这一段 |
+| `0x01` COPY | u64 旧 APK 里的偏移 · u64 长度：复制旧 APK 的这一段 |
 | `0x02` DATA | u64 长度 · 这么多字节：原样写出 |
 | `0x00` END | 结束；写出的必须正好是头里的长度，SHA-256 也要对上 |
 
@@ -475,6 +475,7 @@ App 这边（`app/lib/update/delta.dart`、`app/lib/state/update_state.dart`）�
 | `DSH_UPDATE_FEED=https://…/update.json` | 只换要问的清单，下载仍先试自有站；空串 = 不问清单 |
 | `DSH_UPDATE_MIRRORS=a,b` | 换掉公共加速镜像列表（前缀 + 完整 GitHub 地址）；空串 = 不用 |
 | `DSH_BETA_CHANNEL_ORIGIN` | 换内测通道的域名 |
+| `DSH_WORKSHOP_ORIGIN=https://…` | 换创意工坊的部署，默认 `https://go.dshtui.com`；空串 = 这个包不带工坊入口 |
 
 公共镜像要定期确认还活着，失效的直接从列表删。
 

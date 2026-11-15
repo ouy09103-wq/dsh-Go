@@ -10,7 +10,7 @@ Pick a pet to keep you company in chats. When a turn finishes, fails, or waits f
 Tap **Pets** in the Appearance group of Settings, or touch and hold the pet in a chat and choose **Pet settings**. Choose a pet first; the other settings appear below it.
 
 - Choose **Deepy**, **Whale girl** or **None**.
-- **Size**: **Small**, **Standard** or **Large**. Standard by default.
+- **Size**: **Small**, **Standard** or **Large**. Standard by default. If a pet looks too small or too big, choose **Custom** and drag the slider to 50–300% of Standard; the preview above follows, and it saves when you let go.
 - **Quiet mode**: animations only, no bubbles.
 
 The pet, size and Quiet mode apply both in and outside the app.
@@ -57,7 +57,7 @@ The microphone uses the phone's installed offline speech model and does not fall
 
 The companion room is a separate full page with an animated Live2D character. It isn't the status pet above: the pet watches the agent for you, and the room is a place to spend a little time.
 
-Open the **Switch host** panel and tap **Companion room**. The first time, import an asset pack (zip). Character assets aren't part of the app and stay on this phone; you can remove them from the menu at the top right of the room.
+Tap the **Switch mode** button at the top of the chat list, then **Companion room**; if you've set a startup mode, the app opens straight into it. The first time, import an asset pack (zip). Character assets aren't part of the app and stay on this phone; you can remove them from the menu at the top right of the room.
 
 What you can do:
 
@@ -89,12 +89,14 @@ The page has three tabs:
 
 - **Browse**: look around, search, and filter by **Pixel pets** or **Companions**. Tap an item for its description, author, license and size, and tap **Get** to download and install it. A pet is added to the pets you can choose, and a companion becomes the character in the room; you're asked first when something already on this phone would be overwritten. Browsing and installing need no sign-in.
 - **Installed**: what came from the Workshop onto this phone. A new version, or an item withdrawn by its author or a reviewer, is marked here; open an item to update or uninstall it. This tab works offline.
-- **My uploads**: what you sent in and where each one stands in review. Sign in to your forum account first.
+- **My uploads**: what you sent in and where each one stands in review. Sign in with your GitHub account first.
 
-To submit: tap **Submit** under **My uploads**, pick a pet you imported or your current companion, fill in the name, author, license and source link, check the packed result, tick **I confirm I have the right to share this** and send it. A pet comes with a preview picture by default, the first frame of its idle animation, and you can turn it off; for a companion you can pick a PNG as its cover (at most 512 pixels a side and 2 MB), or leave it and the first letter of its name is shown. A reviewer looks at it first, and it shows up under **Browse** once approved; a rejection says why, and you can fix it and send it again. To take one back, open it and tap **Withdraw**.
+To submit: tap **Submit** under **My uploads**, pick a pet you imported, your current companion, or tap **Choose a file** to pick a pet or companion zip directly (no need to import it first; a file in the wrong format is turned away right there). Only a name is needed: the English name, ID, author, license and source link are optional, and when left empty they become the other name, an ID made from the name, your GitHub username, Author permission and your GitHub page. Then check the packed result, tick **I confirm I have the right to share this** and send it. A pet comes with a preview picture by default, the first frame of its idle animation, and you can turn it off; for a companion you can pick a PNG as its cover (at most 512 pixels a side and 2 MB), or leave it and the first letter of its name is shown. Once it passes the format checks it is listed right away under **Browse**; if someone reports it, a reviewer looks and takes it down with a reason if needed. To take one back, open it and tap **Withdraw**.
 
 If the phone's record of an unfinished submission can't be read, or keeps failing to clear, that step offers **Let go of this record**. It only deletes the record on this phone (if the phone's submission records can't be read as a whole, it clears the unfinished records of every account on this phone, and the confirmation says so) and doesn't ask the Workshop to cancel anything: if the Workshop already received the submission, it stays under **My uploads**; if not, you'll need to submit again.
 
-The first time you submit, view your uploads or report something, the app asks you to confirm one thing: the Workshop tells who you are by your forum account, by sending your forum sign-in credential to the Workshop service, which asks the forum whose it is. The page shows both addresses, and nothing is sent until you tap **Agree and continue**. You can browse and install without agreeing.
+Submitting, viewing your uploads and reporting need a GitHub account. Tap **Sign in with GitHub** and the app shows a code: open GitHub's verification page, enter the code and authorize, then come back to the app. This sign-in can only read your public GitHub profile (username and account number), not your repositories. It is kept on this phone; you can sign out in **My uploads**, and to withdraw the authorization completely, revoke it under Applications in your GitHub settings.
+
+The first time you submit, view your uploads or report something, the app also asks you to confirm one thing: the Workshop tells who you are by your GitHub account, by sending your GitHub sign-in credential to the Workshop service, which asks GitHub whose it is. The page shows both addresses, the Workshop's and GitHub's, and the credential isn't sent to the Workshop until you tap **Agree and continue**. You can browse and install without agreeing.
 
 If something is wrong with an item (infringement, unsuitable content), tap **Report** in its details and say why. A reviewer handles the report; an item isn't taken down automatically because it was reported.

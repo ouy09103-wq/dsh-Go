@@ -69,6 +69,9 @@ void _commitOrdinaryToolFinal(
       onTiming: onTiming,
       stateSettlements: stateSettlement?.toolSettlements ?? const [],
       action: () {
+        if (successful) {
+          _ensureAdoptedGameplay(engine, turn, state, stateSettlement, storySettlement);
+        }
         final inspectionStarted = turn.profile?.now;
         final extra = engine._inspectionExtra(engine._store.node(turn.chat.id, message.nodeId).extra, inspection);
         extra['dshgo'] = {
@@ -1214,13 +1217,18 @@ _ToolUserAppend _appendOrdinaryToolUser(
         text: text,
         state: turn.currentState,
         variables: _copy(turn.variables),
-        prepare: (message, source) => _ToolUserAppend(
-          message,
-          source,
-          engine._store.node(turn.chat.id, message.nodeId),
-          engine._scripts.captureSent(turn.chat.id, message.nodeId),
-          _runtimeCopy(turn.variables),
-        ),
+        prepare: (message, source) {
+          if (turn.gameplayInitialized) {
+            _ensureGameplayConfig(engine, turn.gameplay);
+          }
+          return _ToolUserAppend(
+            message,
+            source,
+            engine._store.node(turn.chat.id, message.nodeId),
+            engine._scripts.captureSent(turn.chat.id, message.nodeId),
+            _runtimeCopy(turn.variables),
+          );
+        },
         onCommitted: (committed) {
           final prepared = committed.value;
           turn.toolPhase = committed.ownership.phase;
@@ -1276,15 +1284,20 @@ void _bindOrdinaryToolReply(
     firstMessage: turn.firstMessageSource == null
         ? null
         : StoredToolBodyRewrite(source: turn.firstMessageSource!, text: turn.expandedFirstMessage!),
-    prepare: (message, source) => _ToolReplyBinding(
-      message,
-      turn.inspection.copyWith(nodeId: message.nodeId),
-      _runtimeCopy(turn.variables),
-      turn.originalFirstMessage == null
-          ? null
-          : engine._store.sourceToken(turn.chat.id, turn.originalFirstMessage!.message.nodeId),
-      turn.newUserId == null ? null : engine._store.sourceToken(turn.chat.id, turn.newUserId!),
-    ),
+    prepare: (message, source) {
+      if (turn.gameplayInitialized) {
+        _ensureGameplayConfig(engine, turn.gameplay);
+      }
+      return _ToolReplyBinding(
+        message,
+        turn.inspection.copyWith(nodeId: message.nodeId),
+        _runtimeCopy(turn.variables),
+        turn.originalFirstMessage == null
+            ? null
+            : engine._store.sourceToken(turn.chat.id, turn.originalFirstMessage!.message.nodeId),
+        turn.newUserId == null ? null : engine._store.sourceToken(turn.chat.id, turn.newUserId!),
+      );
+    },
     onCommitted: (committed) {
       final prepared = committed.value;
       turn.toolPhase = committed.ownership.phase;

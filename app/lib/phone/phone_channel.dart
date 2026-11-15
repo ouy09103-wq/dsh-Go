@@ -281,7 +281,6 @@ class PhoneBackgroundStatus {
     this.viewport,
     this.previewVersion,
     this.previewEnabled = false,
-    this.selfCheckWarning,
     this.parallelism,
   });
 
@@ -297,7 +296,6 @@ class PhoneBackgroundStatus {
     viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
-    selfCheckWarning: _text(m['selfCheckWarning']),
     parallelism: BackgroundParallelism.parse(m['parallelism']),
   );
 
@@ -318,8 +316,6 @@ class PhoneBackgroundStatus {
   final PhoneBackgroundViewport? viewport;
   final int? previewVersion;
   final bool previewEnabled;
-  /// The settings self-check did not pass. Only a note: the channel stays ready and usable.
-  final String? selfCheckWarning;
   final BackgroundParallelism? parallelism;
 
   PhonePrivilegedMode get effectiveMode =>
@@ -589,10 +585,6 @@ class PhoneStatus {
     this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
-    this.rootShell = false,
-    this.rootShellStrict = false,
-    this.rootShellUntil,
-    this.rootShellOffReason,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
@@ -616,10 +608,6 @@ class PhoneStatus {
       statusRevision = null,
       statusRevisionPresent = false,
       enabled = false,
-      rootShell = false,
-      rootShellStrict = false,
-      rootShellUntil = null,
-      rootShellOffReason = null,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
@@ -641,10 +629,6 @@ class PhoneStatus {
         ? m['statusRevision'] as int : null,
     statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
-    rootShell: _flag(m['rootShell']),
-    rootShellStrict: _flag(m['rootShellStrict']),
-    rootShellUntil: m['rootShellUntil'] is int ? m['rootShellUntil'] as int : null,
-    rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -675,19 +659,6 @@ class PhoneStatus {
 
   /// The master switch 「手机操控」.
   final bool enabled;
-
-  /// 设置 › Root 权限的开关：关着时 `shell` 工具拒绝执行。
-  final bool rootShell;
-
-  /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
-  final bool rootShellStrict;
-
-  /// 授权到期时间（毫秒时间戳）；null 表示没记录。
-  final int? rootShellUntil;
-
-  /// 自动关掉的原因：expired（到期）/ strikes（连续拿不到 root）。
-  final String? rootShellOffReason;
-
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
@@ -713,27 +684,12 @@ class PhoneStatus {
   /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
   bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
 
-  PhoneStatus copyWith({
-    bool? enabled,
-    bool? rootShell,
-    bool? rootShellStrict,
-    int? rootShellUntil,
-    bool clearRootShellUntil = false,
-    String? rootShellOffReason,
-    bool clearRootShellOffReason = false,
-    bool? ready,
-    Object? error = _keepError,
-  }) => PhoneStatus(
+  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
     ready: ready ?? this.ready,
     error: identical(error, _keepError) ? this.error : error as String?,
     statusRevision: statusRevision,
     statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
-    rootShell: rootShell ?? this.rootShell,
-    rootShellStrict: rootShellStrict ?? this.rootShellStrict,
-    rootShellUntil: clearRootShellUntil ? null : (rootShellUntil ?? this.rootShellUntil),
-    rootShellOffReason:
-        clearRootShellOffReason ? null : (rootShellOffReason ?? this.rootShellOffReason),
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,
@@ -755,15 +711,19 @@ class PhoneStatus {
 // ── 悬浮条 ───────────────────────────────────────────────────────────────────
 
 /// 设置 → 手机操控 → 悬浮条 (`overlayPrefs` / `setOverlayPrefs`): how opaque the
-/// pill is when idle, and whether it folds into the ball by itself. A showing
-/// overlay follows changes at once.
+/// ball is when idle, and whether an idle capsule folds into the ball by itself
+/// (on unless the person turned it off, as OverlayPrefs.kt). A showing overlay
+/// follows changes at once.
 class PhoneOverlayPrefs {
-  const PhoneOverlayPrefs({this.idleOpacity = defaultOpacity, this.autoCollapse = false});
+  const PhoneOverlayPrefs({this.idleOpacity = defaultOpacity, this.autoCollapse = defaultAutoCollapse});
 
   factory PhoneOverlayPrefs.fromMap(Map<Object?, Object?> m) => PhoneOverlayPrefs(
     idleOpacity: clampOpacity(m['idleOpacity'] is num ? (m['idleOpacity'] as num).toDouble() : defaultOpacity),
-    autoCollapse: _flag(m['autoCollapse']),
+    autoCollapse: _maybeFlag(m['autoCollapse']) ?? defaultAutoCollapse,
   );
+
+  /// On: the capsule shows what DSH starts doing, then gets out of the way.
+  static const defaultAutoCollapse = true;
 
   /// 70 %: the line reads over light and dark pages alike (see OverlayPrefs.kt).
   static const defaultOpacity = 0.7;
@@ -1426,12 +1386,6 @@ class PhoneChannel {
     }
   }
 
-
-  /// 设置 › Root 权限的开关：只影响之后的 `shell` 调用，不重启引擎。
-  Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
-
-  /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
-  Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

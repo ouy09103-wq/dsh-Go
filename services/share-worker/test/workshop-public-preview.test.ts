@@ -8,12 +8,12 @@ import { PetBucket } from './pet-market-fakes';
 import { companion, metaFor, pet, png, zip } from './workshop-fixtures';
 
 const API = '/api/workshop/v1';
-beforeEach(() => { vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ current_user: { id: 42, username: 'synthetic-preview-author' } }))); });
+beforeEach(() => { vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: 42, login: 'synthetic-preview-author' }))); });
 afterEach(() => vi.restoreAllMocks());
 function setup() {
   const bucket = new PetBucket(), f = makeEnv({ BUCKET: bucket as unknown as R2Bucket });
   const call = (path: string, method = 'GET', body?: object | Uint8Array, admin = false, headers: Record<string, string> = {}) => workshop(new Request('https://example.org' + path, {
-    method, headers: { 'User-Api-Key': 'synthetic-forum-key', 'X-Workshop-Forum-Origin': 'https://forum.dshtui.com',
+    method, headers: { Authorization: 'Bearer synthetic_github_token', 'X-Workshop-Account-Origin': 'https://github.com',
       ...(admin ? { 'X-Admin-Key': f.env.ADMIN_KEY! } : {}), ...(body ? { 'Content-Type': body instanceof Uint8Array ? 'application/zip' : 'application/json' } : {}), ...headers },
     ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
   }), f.env, makeCtx().ctx);

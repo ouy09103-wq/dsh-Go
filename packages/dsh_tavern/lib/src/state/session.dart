@@ -239,7 +239,19 @@ Object? _derive(
 }
 
 class _Rule {
-  _Rule(this.key, this.index, this.once, this.condition, this.actions);
+  _Rule(
+    this.key,
+    this.index,
+    this.once,
+    this.condition,
+    this.actions, {
+    this.source = const StateExecutionSource.legacy(),
+    this.localId,
+    this.actionTargets = const {},
+  });
+  final StateExecutionSource source;
+  final String? localId;
+  final Map<int, StateEventTarget> actionTargets;
   final String key;
   final int index;
   final bool once;
@@ -247,7 +259,12 @@ class _Rule {
   final List<_Json> actions;
 }
 
-void _compileRules(StateDefinition definition) {
+void _compileRules(
+  StateDefinition definition, {
+  int slotLimit = 256,
+  StateExecutionSource source = const StateExecutionSource.legacy(),
+  Map<(int, int), StateEventTarget> actionTargets = const {},
+}) {
   final raw = definition._raw as _Json;
   if (!raw.containsKey('rules')) return;
   final rules = raw['rules'];
@@ -266,7 +283,7 @@ void _compileRules(StateDefinition definition) {
     }
   }
   final occurrences = <String, int>{};
-  for (var i = 0; i < rules.length && i < 256; i++) {
+  for (var i = 0; i < rules.length && i < slotLimit; i++) {
     final path = '/rules/$i', rule = rules[i];
     try {
       if (rule is! _Json ||
@@ -283,6 +300,13 @@ void _compileRules(StateDefinition definition) {
       final id = rule['id'] as String?;
       if (id != null && idCounts[id]! > 1) {
         throw _StateError('rule_duplicate_id', path, 'Every rule sharing this explicit id is disabled.');
+      }
+      if (source.isPack && id == null) {
+        throw _StateError(
+          'rule_source_id',
+          path,
+          'A pack rule requires its original explicit string id as local identity.',
+        );
       }
       final hash = _fingerprint(rule);
       final occurrence = occurrences[hash] ?? 0;
@@ -316,7 +340,19 @@ void _compileRules(StateDefinition definition) {
         actions.add(action);
       }
       definition._rules.add(
-        _Rule(id == null ? 'auto:$hash:$occurrence' : 'id:$id', i, rule['once'] == true, condition, actions),
+        _Rule(
+          id == null ? 'auto:$hash:$occurrence' : 'id:$id',
+          i,
+          rule['once'] == true,
+          condition,
+          actions,
+          source: source,
+          localId: id,
+          actionTargets: {
+            for (final entry in actionTargets.entries)
+              if (entry.key.$1 == i) entry.key.$2: entry.value,
+          },
+        ),
       );
       for (final key in rule.keys) {
         if (!const {'id', 'when', 'once', 'do'}.contains(key)) {
@@ -400,6 +436,8 @@ class StateSession {
     Object? value,
     required bool runtimeExists,
     Object? runtime,
+    required bool packRuntimeExists,
+    Object? packRuntime,
   }) : _exists = valueExists,
        _value = _copy(value),
        _runtimeExists = runtimeExists,
@@ -407,7 +445,8 @@ class StateSession {
        _originalExists = valueExists,
        _original = _copy(value),
        _originalRuntimeExists = runtimeExists,
-       _originalRuntime = _copy(runtime) {
+       _originalRuntime = _copy(runtime),
+       _pack = _PackRuntime(exists: packRuntimeExists, raw: packRuntime) {
     _issues.addAll(_definition.issues);
     final runtimeProblems = _runtimeIssues(runtimeExists, _runtime);
     _issues.addAll(runtimeProblems);
@@ -429,6 +468,7 @@ class StateSession {
     _capabilities = _modelPlan(_definition, _baseline, _baselineExists).capabilities;
   }
   final StateDefinition _definition;
+  final _PackRuntime _pack;
   bool _exists;
   Object? _value;
   bool _runtimeExists;
@@ -460,6 +500,16 @@ class StateSession {
   final List<_Write> _writes = [];
   final Set<String> _structural = {};
 
+  /// Incorporates finalized WI before model operations or event settlement.
+  /// The secret B receipt remains immutable; only this session's external
+  /// pack baseline advances, with the original rule/event candidate retained.
+  ({bool exists, Object? raw, List<Map<String, Object?>> issues}) adoptPackWorldInfo(StatePackWorldInfoDelta delta) {
+    if (_publicApplyStarted || _eventBatch != null || _finishing || _finished != null) {
+      throw StateError('World info must be adopted before state/event settlement.');
+    }
+    return _pack._adoptWorldInfo(delta);
+  }
+
   StateApplyResult apply(Object? ops, {required StateActor actor, String? source}) {
     if (_finished != null || _finishing) {
       throw StateError('The state session is already finished.');
@@ -475,7 +525,13 @@ class StateSession {
   /// Reads the sealed B-to-C phase without applying or finishing again.
   StateResult secretTerminalPhase(StateSecretPrepared prepared) => _secretTerminal(this, prepared);
 
-  StateApplyResult _apply(Object? ops, StateActor actor, String? source) {
+  StateApplyResult _apply(
+    Object? ops,
+    StateActor actor,
+    String? source, {
+    StateExecutionSource? executionSource,
+    String? localId,
+  }) {
     final receipts = <_Json>[], issues = <_Json>[];
     var accepted = 0, rejected = 0;
     if (ops is! List<Object?>) {
@@ -495,6 +551,8 @@ class StateSession {
         final receipt = <String, Object?>{
           'index': _receiptIndex++,
           'source': source,
+          'executionSource': ?executionSource?.toJson(),
+          'localId': ?localId,
           'actor': actor.name,
           'operation': null,
           'accepted': false,
@@ -703,6 +761,8 @@ class StateSession {
       final receipt = <String, Object?>{
         'index': _receiptIndex++,
         'source': source,
+        'executionSource': ?executionSource?.toJson(),
+        'localId': ?localId,
         'actor': actor.name,
         'operation': _auditCopy(operation),
         'accepted': ok,
@@ -731,9 +791,14 @@ class StateSession {
     final result = <String, Object?>{
       'index': _receiptIndex++,
       'source': rule.key,
+      if (rule.source.isPack) ...{
+        'executionSource': rule.source.toJson(),
+        'localId': ?rule.localId,
+        'sourceIndex': rule.index,
+      },
       'actor': 'rules',
       'operation': {'op': 'rule', 'id': rule.key},
-      'accepted': status != 'condition_error',
+      'accepted': status != 'condition_error' && status != 'runtime_error',
       'changed': false,
       'conflict': null,
       'clamps': <Object?>[],
@@ -771,11 +836,26 @@ class StateSession {
     }
     for (final rule in _definition._rules) {
       if (_ruleLimit) break;
-      final runtime = _runtime is _Json ? _runtime! as _Json : null;
-      final fired = runtime?['firedRules'];
-      if (rule.once && fired is List<Object?> && fired.contains(rule.key)) {
-        _ruleReceipt(rule, 'once_skipped');
-        continue;
+      if (rule.once) {
+        if (rule.source.isPack) {
+          final problems = _pack.issues(rule.source, _PackDomain.rules);
+          if (problems.isNotEmpty) {
+            _issues.addAll(problems);
+            _ruleReceipt(rule, 'runtime_error', issues: problems);
+            continue;
+          }
+          if (_pack.ruleFired(rule.source, rule.localId!)) {
+            _ruleReceipt(rule, 'once_skipped');
+            continue;
+          }
+        } else {
+          final runtime = _runtime is _Json ? _runtime! as _Json : null;
+          final fired = runtime?['firedRules'];
+          if (fired is List<Object?> && fired.contains(rule.key)) {
+            _ruleReceipt(rule, 'once_skipped');
+            continue;
+          }
+        }
       }
       try {
         if (!_truthy(rule.condition.evaluate(_value))) {
@@ -804,10 +884,28 @@ class StateSession {
         _actionCount++;
         final action = rule.actions[j];
         if (action['type'] == 'state') {
-          final result = _apply(action['ops'], StateActor.rules, rule.key);
+          final result = _apply(
+            action['ops'],
+            StateActor.rules,
+            rule.key,
+            executionSource: rule.source.isPack ? rule.source : null,
+            localId: rule.source.isPack ? rule.localId : null,
+          );
           successful = successful || result.acceptedCount > 0;
         } else {
-          final effect = <String, Object?>{..._mapCopy(action), 'ruleId': rule.key, 'source': 'rules'};
+          final target = action['type'] == 'event' ? rule.actionTargets[j] : null;
+          final effect = <String, Object?>{
+            ..._mapCopy(action),
+            'ruleId': rule.key,
+            'source': 'rules',
+            if (target != null) 'eventTarget': {'source': target.source.toJson(), 'name': target.name},
+            if (rule.source.isPack) ...{
+              'executionSource': rule.source.toJson(),
+              'localId': ?rule.localId,
+              'sourceIndex': rule.index,
+              'actionIndex': j,
+            },
+          };
           final size = utf8.encode(jsonEncode(effect)).length;
           if (_effectBytes + size > 256 * 1024) {
             _issues.add(
@@ -823,15 +921,23 @@ class StateSession {
           _effectBytes += size;
           _effects.add(effect);
           successful = true;
-          _ensureRuntime();
+          if (!rule.source.isPack) {
+            _ensureRuntime();
+          }
         }
       }
       if (rule.once && successful) {
-        final ledger = _ensureRuntime();
-        final old = ledger['firedRules'];
-        final list = old is List<Object?> ? List<Object?>.of(old) : <Object?>[];
-        if (!list.contains(rule.key)) list.add(rule.key);
-        ledger['firedRules'] = list;
+        if (rule.source.isPack) {
+          _pack.consumeRule(rule.source, rule.localId!);
+        } else {
+          final ledger = _ensureRuntime();
+          final old = ledger['firedRules'];
+          final list = old is List<Object?> ? List<Object?>.of(old) : <Object?>[];
+          if (!list.contains(rule.key)) {
+            list.add(rule.key);
+          }
+          ledger['firedRules'] = list;
+        }
         judgment['consumedOnce'] = true;
       }
       judgment['actionAccepted'] = successful;
@@ -933,13 +1039,16 @@ class StateSession {
       value: _value,
       runtimeExists: _runtimeExists,
       runtime: _runtime,
+      packRuntimeExists: _pack.exists,
+      packRuntime: _pack.raw,
       initialized: _initialized,
       valid: !_readOnly && !_settlementFailed && _exists && validation.isEmpty,
       changed:
           _originalExists != _exists ||
           !_equal(_original, _value) ||
           _originalRuntimeExists != _runtimeExists ||
-          !_equal(_originalRuntime, _runtime),
+          !_equal(_originalRuntime, _runtime) ||
+          _pack.changed,
       changes: changes,
       receipts: _receipts,
       effects: _effects,

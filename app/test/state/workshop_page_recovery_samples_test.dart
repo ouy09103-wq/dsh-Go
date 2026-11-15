@@ -33,7 +33,7 @@ void _offer(WorkshopPublishState state, WorkshopPendingAbandonRange range) {
   final offer = state.abandonOffer;
   expect(offer, isNotNull);
   expect(offer!.range, range);
-  expect((offer.worker, offer.forum, offer.forumUserId), (authWorker, authForum, 42));
+  expect((offer.worker, offer.account, offer.accountId), (authWorker, authAccount, 42));
 }
 
 void main() {

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dsh_app/forum/forum_auth.dart';
 import 'package:dsh_app/state/workshop_report_state.dart';
 import 'package:dsh_app/ui/workshop/workshop_report_sheet.dart';
 import 'package:dsh_app/workshop/workshop_models.dart';
@@ -93,20 +92,20 @@ void main() {
     expect(world.client.reports, isEmpty);
   });
 
-  testWidgets('没登录论坛：说明要账号，给出登录，不给表单', (tester) async {
+  testWidgets('没登录：说明要账号，给出登录，不给表单', (tester) async {
     usePhoneView(tester);
-    final world = WorkshopPageWorld(account: const ForumAuthState(phase: ForumAuthPhase.signedOut));
+    final world = WorkshopPageWorld(account: authSignedOut);
     await _open(tester, world);
 
     expect(find.text(zh.workshopReportSignInTitle), findsOneWidget);
-    expect(find.text(zh.remoteForumSignIn), findsOneWidget);
+    expect(find.text(zh.workshopSignInTitle), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.text(zh.workshopReportSubmit), findsNothing);
     expectNoCodes(tester);
 
-    await tester.tap(find.text(zh.remoteForumSignIn));
+    await tester.tap(find.text(zh.workshopSignInTitle));
     await settle(tester);
-    expect(find.text(zh.remoteForumSignInBenefits), findsOneWidget);
+    expect(find.text('TEST-CODE'), findsOneWidget);
   });
 
   testWidgets('还没同意交出凭据：先看说明，同意后才有表单', (tester) async {
@@ -120,7 +119,7 @@ void main() {
     await tester.tap(find.text(zh.workshopMineConsentAction));
     await settle(tester);
     expect(find.text('workshop.example'), findsOneWidget);
-    expect(find.text('forum.example'), findsOneWidget);
+    expect(find.text('github.com'), findsOneWidget);
     await tester.tap(find.text(zh.workshopDisclosureAccept));
     await settle(tester);
 

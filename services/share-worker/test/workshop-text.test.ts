@@ -42,7 +42,7 @@ describe('shared text nonblankness agrees with Dart VM trim', () => {
     const at = '2026-11-11T00:00:00.000Z';
     const draft = {
       submissionId: 'b'.repeat(32),
-      owner: { forumOrigin: 'https://forum.example', forumUserId: 42, username: 'Author' },
+      owner: { accountOrigin: 'https://github.com', accountId: 42, username: 'Author' },
       metadata: baseMeta, status: 'draft', createdAt: at, updatedAt: at,
     };
     const state = {

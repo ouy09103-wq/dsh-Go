@@ -117,6 +117,29 @@ class LayerPackaging(unittest.TestCase):
             return json.loads((out / 'manifest.json').read_text())
         return result
 
+    def test_assembly_without_file_digest_keeps_archives_and_report(self):
+        # Simulate the missing Python 3.11 API, not a different interpreter.
+        runner = ('import hashlib, runpy, sys; '
+                  'hashlib.__dict__.pop("file_digest", None); '
+                  'sys.argv = sys.argv[1:]; '
+                  'runpy.run_path(sys.argv[0], run_name="__main__")')
+        for name, layered in (('legacy', False), ('layers', True)):
+            with self.subTest(layered=layered):
+                baseline, report = self.build(name + '-baseline', layered=layered)
+                out, command = self.command(name + '-without-file-digest', layered=layered)
+                if layered:
+                    # Exercise a fresh base build, rather than reusing the baseline archive.
+                    command[command.index('--base-cache') + 1] = str(out / 'cache')
+                result = subprocess.run(command[:2] + ['-c', runner] + command[2:],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads((out / 'report.json').read_text()), report)
+                expected = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                            for p in baseline.glob('*.tar.gz')}
+                actual = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                          for p in out.glob('*.tar.gz')}
+                self.assertEqual(actual, expected)
+
     def test_layers_reconstruct_legacy_tree_and_manifest_contract(self):
         old_dir, old_report = self.build('legacy', layered=False)
         out, report = self.build('layers')

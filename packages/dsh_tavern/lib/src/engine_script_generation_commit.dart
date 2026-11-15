@@ -44,6 +44,10 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
             : chat.variables;
         return _scriptRuntimeFingerprint([chat.variables, local]);
       }
+      if (field == 'dshgoPackWorldInfo') {
+        final projected = _gameplayWorldInfoCarrier(state, includeIdentityOnly: false);
+        return _scriptRuntimeFingerprint([projected.exists, projected.raw]);
+      }
       return _scriptRuntimeFingerprint([state.containsKey(field), state[field]]);
     } catch (error) {
       return jsonEncode(['unavailable', error.runtimeType.toString()]);
@@ -179,7 +183,13 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
       selection: stateNeeded && chat != null ? _generationFieldVersion(chat.id, 'selection') : null,
       targets: {
         if (stateNeeded && chat != null)
-          for (final target in const ['local', 'timedWorldInfo', 'decoratorState', 'stChatIdHash'])
+          for (final target in const [
+            'local',
+            'timedWorldInfo',
+            'decoratorState',
+            'stChatIdHash',
+            'dshgoPackWorldInfo',
+          ])
             target: _generationFieldVersion(chat.id, target),
       },
     );
@@ -212,6 +222,15 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
         'The requested actor is not a member of this group.',
       );
     }
+    final gameplayCapture = resourcesNeeded
+        ? _captureGameplayResources(
+            engine,
+            characterId: actorId,
+            chatId: chatId,
+            kinds: const {'regex', 'lorebook'},
+            deferResourceErrors: true,
+          )
+        : null;
     StoredCharacter? actor;
     if ((needs.card || request.speakerCharacterId != null || request is! TavernScriptRawRequest) && actorId != null) {
       actor = await record.cancellation.wait(engine._trackOperation(engine._record(actorId)));
@@ -227,6 +246,7 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
     }
     record.cancellation.check();
     _context(context.value.id);
+    _checkScriptGameplayResources(engine, gameplayCapture, 'generate');
     return _ScriptGenerationCapture(
       generationId: record.id,
       context: context,
@@ -250,6 +270,7 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
       groupView: groupView,
       promptPreset: promptPreset,
       capturedChatState: stateNeeded && chat != null,
+      gameplayCapture: gameplayCapture,
     );
   }
 
@@ -267,6 +288,8 @@ extension _ScriptGenerationCommit on _ScriptCoordinator {
       stateUpdates: prepared.stateUpdates,
       stChatIdHash: prepared.stChatIdHash,
       hasHashUpdate: prepared.hasHashUpdate,
+      gameplayCapture: capture.gameplayCapture,
+      packWorldInfo: prepared.packWorldInfo,
     );
   }
 

@@ -12,8 +12,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:dsh_app/forum/discourse_client.dart' show ForumCredentials;
-import 'package:dsh_app/forum/forum_auth.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/state/workshop_auth_state.dart';
 import 'package:dsh_app/state/workshop_catalog_state.dart';
 import 'package:dsh_app/state/workshop_dependencies.dart';

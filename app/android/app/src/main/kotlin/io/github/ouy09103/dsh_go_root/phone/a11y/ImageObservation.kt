@@ -1,5 +1,7 @@
 // ImageGeometry extracted from ScreenShooter.kt; its existing Phase attribution is retained.
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: value equality for viewport checks, local change summary and monotonic expiry.
 
 package io.github.ouy09103.dsh_go_root.phone.a11y

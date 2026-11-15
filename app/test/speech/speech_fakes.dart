@@ -48,10 +48,14 @@ class FakeAudio extends SpeechAudio {
   Future<void> duck(String id, bool on) async => calls.add('duck:$id:$on');
 
   @override
-  Future<CallStart> startCall({required bool bargeIn}) async {
+  Future<CallStart> startCall({required bool bargeIn, CallPause pause = CallPause.normal}) async {
     calls.add('callStart:bargeIn=$bargeIn');
+    calls.add('callStart:pause=${pause.name}');
     return start;
   }
+
+  @override
+  Future<void> callPause(CallPause pause) async => calls.add('callPause:${pause.name}');
 
   @override
   Future<void> stopCall() async => calls.add('callStop');
@@ -173,12 +177,16 @@ class FakeCloud implements VoiceCloud {
   Object? fail;
   final heard = <Uint8List>[];
 
+  /// Answers once this completes, when set.
+  Future<void>? wait;
+
   @override
   int get maxSeconds => 118;
 
   @override
   Future<String> transcribe(Uint8List wav) async {
     heard.add(wav);
+    if (wait case final gate?) await gate;
     if (fail case final error?) throw error;
     return text;
   }

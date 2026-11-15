@@ -323,6 +323,54 @@ void main() {
     });
   });
 
+  group('an overtaken send', () {
+    test('does not keep waiting as 插话中 after a new follow takes over', () async {
+      client.events.add(const SessionStatusEvent('s1', true));
+      await settle();
+      final gate = Completer<String>();
+      client.promptResult = gate;
+      final sending = chat().send('现在停止');
+      await settle();
+      expect(state().pending.single.mode, SendMode.steer);
+
+      // Back on screen or reconnected: a new follow makes this send the old
+      // one's business. Its answer can never be matched to the bubble again.
+      client.events.add(SessionSyncEvent(SessionFollowEpoch()));
+      await settle();
+
+      gate.completeError(const DshCarrierLostException('gone'));
+      expect(await sending, isFalse);
+      expect(state().pending, isEmpty);
+    });
+
+    test('a prompt the Host never took stops showing as on its way', () async {
+      client.events.add(const SessionStatusEvent('s1', true));
+      await settle();
+      expect(await chat().send('现在停止'), isTrue);
+      await settle();
+      expect(state().pending.single.mode, SendMode.steer);
+
+      // The Host's own baseline says it holds nothing and never echoed it.
+      client.events.add(
+        SessionSnapshotEvent.fromJson('s1', {
+          'header': {'id': 's1'},
+          'cursor': 3,
+          'records': <Object?>[],
+          'projections': {
+            'asOfSeq': 3,
+            'values': {
+              'inbox': {'next-turn': <Object?>[], 'next-step': <Object?>[]},
+            },
+          },
+        }),
+      );
+      await settle();
+      final pending = state().pending.single;
+      expect(pending.failed, isTrue);
+      expect(pending.mode, SendMode.steer);
+    });
+  });
+
   test('approval and answer failures never show an unknown reason', () async {
     client.responseError = const DshRemoteException('x', 'boom');
     await chat().respond(
@@ -532,6 +580,46 @@ void main() {
       ],
       'source': {'kind': 'user', 'rpcId': rpcId},
     };
+
+    test('a fresh snapshot keeps a claimed prompt on its way until its echo', () async {
+      var seq = 0;
+      void emit(String type, Map<String, Object?> data) => client.events.add(
+        SessionLogEvent.fromJson({'seq': ++seq, 'time': 1792700000000 + seq, 'type': type, 'data': data}),
+      );
+      void splice({int removed = 0, List<Map<String, Object?>> inserted = const []}) => emit('agent/inbox/spliced', {
+        'target': 'next-turn',
+        'start': 0,
+        'removedCount': removed,
+        'inserted': inserted,
+      });
+
+      emit('turn/start', {'turn': 1});
+      await settle();
+      await chat().send('接着做', mode: SendMode.queue);
+      final claimed = client.prompts.last.requestId!;
+      splice(inserted: [msg('claimed', '接着做', claimed)]);
+      splice(removed: 1);
+      await settle();
+
+      // Reconnected before the agent wrote it down: the Host's baseline has an
+      // empty inbox, because the claim moved the prompt into the agent.
+      client.events.add(
+        SessionSnapshotEvent.fromJson('s1', {
+          'header': {'id': 's1'},
+          'cursor': seq,
+          'records': <Object?>[],
+          'projections': {
+            'asOfSeq': seq,
+            'values': {
+              'inbox': {'next-turn': <Object?>[], 'next-step': <Object?>[]},
+            },
+          },
+        }),
+      );
+      await settle();
+      expect(state().pending.single.requestId, claimed);
+      expect(state().pending.single.failed, isFalse, reason: 'held by the agent, not lost');
+    });
 
     for (final terminal in ['live', 'resync', 'requeued']) {
       test('a claimed prompt settles without a user echo: $terminal', () async {

@@ -11,6 +11,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../l10n/l10n.dart';
 import '../../share_code/conversation_redact.dart' show redactText;
+import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
 import '../../update/update_config.dart' show updateRepo;
 import '../chat/dsh_ui/dsh_ui.dart';
@@ -819,7 +820,7 @@ UserChatItem? questionFor(List<ChatItem> items, ChatItem reply) {
 /// A prompt on a card: its text and (with [images]) the pictures attached
 /// to it.
 ShareQuestion shareQuestionOf(UserChatItem item, {bool images = true}) => ShareQuestion(
-  shareQuestionText(item.text),
+  shareQuestionText(withoutAppNotes(item.text)),
   images: [
     if (images)
       for (final image in item.images)

@@ -544,15 +544,34 @@ class StateDefinition {
     }
     _compileRules(this);
   }
+
+  factory StateDefinition.compose(
+    Object? state, {
+    Object? version = 1,
+    required String effectiveConfigId,
+    required Iterable<StateRuleSource> sources,
+    required bool compositionEligible,
+  }) => _composeStateDefinition(
+    state,
+    version: version,
+    effectiveConfigId: effectiveConfigId,
+    sources: sources,
+    compositionEligible: compositionEligible,
+  );
+
+  StateDefinition._uncompiled(Map<String, Object?> rawState) : _raw = _copy(rawState), _version = 1;
+
   final Object? _raw;
   final Object? _version;
+  _Json? _compositionIdentity;
+  bool _compositionEligible = true;
   final List<_Json> _issues = [];
   final List<_Rule> _rules = [];
   _Schema? _root;
   bool get hasSchema => _raw is _Json && _raw.containsKey('schema');
   Object? get schema => _raw is _Json ? _copy(_raw['schema']) : null;
-  bool get executable => hasSchema && _version == 1 && _root != null && !_root!.blocked;
-  String get fingerprint => _fingerprint({'version': _version, 'state': _raw});
+  bool get executable => _compositionEligible && hasSchema && _version == 1 && _root != null && !_root!.blocked;
+  String get fingerprint => _fingerprint({'version': _version, 'state': _raw, 'composition': ?_compositionIdentity});
   List<Map<String, Object?>> get issues => _maps(_issues);
 
   StateInitialPreview initialPreview() {
@@ -597,6 +616,20 @@ class StateDefinition {
 
   StateProjection project(Object? value, {bool valueExists = true}) => _project(this, _copy(value), valueExists);
   StateStrictTool strictTool({Object? value, bool valueExists = false}) => _strictTool(this, _copy(value), valueExists);
-  StateSession startSession({required bool valueExists, Object? value, bool runtimeExists = false, Object? runtime}) =>
-      StateSession._(this, valueExists: valueExists, value: value, runtimeExists: runtimeExists, runtime: runtime);
+  StateSession startSession({
+    required bool valueExists,
+    Object? value,
+    bool runtimeExists = false,
+    Object? runtime,
+    bool packRuntimeExists = false,
+    Object? packRuntime,
+  }) => StateSession._(
+    this,
+    valueExists: valueExists,
+    value: value,
+    runtimeExists: runtimeExists,
+    runtime: runtime,
+    packRuntimeExists: packRuntimeExists,
+    packRuntime: packRuntime,
+  );
 }

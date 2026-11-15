@@ -1,4 +1,4 @@
-import 'package:dsh_app/forum/forum_auth.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/workshop/workshop_client.dart';
 import 'package:dsh_app/workshop/workshop_models.dart';
 
@@ -11,9 +11,9 @@ const personalThirdId = '00000000000000000000000000000003';
 
 WorkshopSubmission personalRow({String id = personalFirstId,
   WorkshopSubmissionStatus status = WorkshopSubmissionStatus.pending, int userId = 42,
-  String? forum}) => WorkshopSubmission.fromJson({
+  String? account}) => WorkshopSubmission.fromJson({
     ...workshopSubmissionJson(id: id, status: status.name),
-    'owner': {'forumOrigin': forum ?? authForum.toString(), 'forumUserId': userId, 'username': 'test-user'},
+    'owner': {'accountOrigin': account ?? authAccount.toString(), 'accountId': userId, 'username': 'test-user'},
   });
 
 WorkshopEntry personalEntry() => WorkshopEntry.fromJson(workshopEntryJson());
@@ -21,7 +21,7 @@ WorkshopEntry personalEntry() => WorkshopEntry.fromJson(workshopEntryJson());
 /// These overrides return domain values and never open HTTP or local storage.
 /// Captured call records contain only public inputs, not credentials.
 class PersonalClient extends AuthClient {
-  PersonalClient({super.worker, super.forum});
+  PersonalClient({super.worker, super.account});
   Future<WorkshopSubmissionPage> Function(String? cursor, WorkshopSubmissionStatus? status)? readPage;
   Future<WorkshopSubmission> Function(String id)? readSubmission;
   Future<WorkshopSubmission> Function(String id, String reason)? withdrawSubmission;
@@ -59,10 +59,10 @@ class PersonalClient extends AuthClient {
   }
 }
 
-AuthHarness personalHarness(PersonalClient client, {ForumAuthState? initial, bool consent = true}) {
+AuthHarness personalHarness(PersonalClient client, {WorkshopAccountState? initial, bool consent = true}) {
   final preferences = AuthPreferences();
   if (consent) {
-    preferences.accepted.add(preferences.pair(client.origin, authForum));
+    preferences.accepted.add(preferences.pair(client.origin, authAccount));
   }
   return AuthHarness(client: client, preferences: preferences, initial: initial);
 }

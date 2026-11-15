@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'package:flutter/material.dart';
 
@@ -14,7 +16,7 @@ import '../secret_mask.dart';
 import 'message_actions.dart';
 import 'quote_chip.dart';
 
-/// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的(Claude 式)。
+/// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的。
 ///
 /// 禁配:气泡底上只用主文字 / 次级文字;三级文字(4.32)与主色(4.22)
 /// 不过 AA。
@@ -40,8 +42,8 @@ class UserBubble extends StatelessWidget {
 
   final String text;
 
-  /// Images and file cards, shown right-aligned above the bubble (Claude 式:
-  /// 附件不塞进气泡里)。
+  /// Images and file cards, shown right-aligned above the bubble (附件不塞进
+  /// 气泡里)。
   final Widget? attachments;
 
   /// 非空 = 乐观气泡(还没被 DSH 回显),显示在气泡下方("发送中" / "排队中")。

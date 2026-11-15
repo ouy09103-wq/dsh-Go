@@ -253,6 +253,50 @@ void main() {
     );
   });
 
+  testWidgets('a translucent fill keeps its alpha instead of being thresholded away', (tester) async {
+    const page = Color(0xFF101010);
+    const fill = Color(0x33FFFFFF); // 20% white, as the dark thumb
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: RepaintBoundary(
+            key: const ValueKey('shot'),
+            child: ColoredBox(
+              color: page,
+              child: Liquid(
+                fill: fill,
+                blur: LiquidTabs.blur,
+                child: SizedBox(
+                  width: 200,
+                  height: 40,
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: 20,
+                        top: 5,
+                        child: LiquidItem(
+                          key: const ValueKey('thumb'),
+                          effect: LiquidEffect.move,
+                          radius: BorderRadius.circular(999),
+                          child: const SizedBox(width: 60, height: 30),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final image = await _shot(tester);
+    final got = await _pixel(tester, image, const Offset(50, 20));
+    // 20% white over the near-black page: the thumb is painted, not cut away.
+    expect(got.r, closeTo(0.25, 0.02), reason: '20% white composited on the page');
+    image.dispose();
+  });
+
   testWidgets('an item outside a group is an error', (tester) async {
     await tester.pumpWidget(
       const Directionality(

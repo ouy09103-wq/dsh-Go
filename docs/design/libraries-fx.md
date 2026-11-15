@@ -24,7 +24,7 @@
 | 语音光环 `VoiceRing` | 通话页中央，可选光环、细线、光球（原来的玻璃球）；只有选光球时才保留屏幕边缘光 | `ui/speech/voice_call_page.dart` |
 | 语音辉光 `VoiceBeam` | 听写时，输入框玻璃里、文字下面一层，随声音升起；识别中左右扫 | `ui/chat/composer.dart` |
 | 机器人头像 `BotAvatar` | 没有照片的 DS 机器人（按 id 固定一只，用它自己的颜色）；智能体（按名字固定一只）；运行中会跳。群组头像叠放时仍用首字母 | `ui/bots/bot_avatar.dart`、`ui/agents/agent_widgets.dart` |
-| 边框流光 | 手机操控时沿屏幕四周走一圈，Kotlin 原生实现（`phone/a11y/EdgeBeam.kt`）；截图和注入手势时隐藏。悬浮条同时挪到屏幕中下方 | `docs/design/phone-overlay.md` §12 |
+| 边缘色带（Distortion waves 的 rim） | 手机操控时一圈柔和、不均匀的色带一直贴着屏幕边缘，鼓包缓慢漂移呼吸，Kotlin 原生实现（`phone/a11y/EdgeBeam.kt`，Android 13+ 用 AGSL）；截图和注入手势时隐藏 | `docs/design/phone-overlay.md` §12 |
 | 液态金属 | 欢迎页标题、「新版本」徽章 | `onboarding/welcome_page.dart`、`update/update_tiles.dart` |
 | 粘滴 `Liquid` | 灵动动效开启时，分段选择器的滑块（作者的标签栏参数） | `ui/common/segmented_pill.dart` |
 | 图片 `ImageGeneration` | 生图进行中的占位：主题色的像素马赛克，进度文字在上面 | `chat/media/media_card.dart` |
@@ -34,5 +34,5 @@
 
 - 着色器在 GLES 后端会不会上下颠倒。
 - 中低端机的帧率。
-- 手机操控流光在真实屏幕圆角处的样子。
+- 手机操控边缘色带在真实屏幕圆角处的样子。
 - 波纹截图遇到平台视图（WebView）时的表现。

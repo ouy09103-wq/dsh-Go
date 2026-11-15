@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: the mention rules of `ds-bot/src/shared/mentions.js` (the everyone word, no
 // mention right after an address character) applied to a Flutter `@` picker.
 // The `@` picker of a group chat: the group's members (and 「所有人」) above

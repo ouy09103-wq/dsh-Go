@@ -34,7 +34,7 @@ describe('local rehearsal configuration and result boundaries', () => {
     expect(local).not.toHaveProperty('triggers');
     expect(local).not.toHaveProperty('analytics_engine_datasets');
     expect(local).not.toHaveProperty('build');
-    expect(local.vars).toMatchObject({ WORKSHOP_FORUM_URL: 'https://127.0.0.1:1234', WORKSHOP_UPLOAD_ENABLED: '0', WORKSHOP_COMPANION_ENABLED: '1', DL_BASE_URL: '', CN_BASE_URL: '' });
+    expect(local.vars).toMatchObject({ WORKSHOP_GITHUB_API_URL: 'https://127.0.0.1:1234', WORKSHOP_GITHUB_CLIENT_ID: 'Iv1.local_rehearsal', WORKSHOP_UPLOAD_ENABLED: '0', WORKSHOP_COMPANION_ENABLED: '1', DL_BASE_URL: '', CN_BASE_URL: '' });
     expect(local.dev).toMatchObject({ ip: '127.0.0.1', port: 1235, local_protocol: 'https', inspector_port: 0 });
     expect(local.r2_buckets.every(bucket => bucket.remote === false && bucket.bucket_name.startsWith('local-'))).toBe(true);
     expect(local.kv_namespaces.every(namespace => namespace.remote === false && namespace.id === '0'.repeat(32))).toBe(true);

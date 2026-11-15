@@ -170,6 +170,7 @@ class CompanionSpeaker {
 
   CompanionVoiceSettings _settings = const CompanionVoiceSettings();
   bool _phoneReady = false;
+  Future<void> _phoneLines = Future.value();
   int _generation = 0;
   int _previews = 0;
   bool _pumping = false;
@@ -204,11 +205,22 @@ class CompanionSpeaker {
     return next.configured;
   }
 
+  /// Starts the phone's engine, leaving what is under way alone (a voice
+  /// chosen while she reads: [ready] would cut her off).
+  Future<bool> warmPhone() async => _phoneReady = await _voice.ready();
+
   /// Queues [text] under [id]; [flush] first drops whatever she is saying.
   void speak(String id, String text, {bool flush = false}) {
     if (flush) stop();
     if (_settings.source == CompanionVoiceSource.system) {
-      unawaited(_voice.speak(id, text, flush: flush));
+      // In order, each after the engine is up; a line it won't take ends as
+      // an error, or whoever waits for its end would wait for good.
+      final generation = _generation;
+      _phoneLines = _phoneLines.then((_) async {
+        if (!_phoneReady) await warmPhone();
+        if (generation != _generation || await _voice.speak(id, text, flush: flush)) return;
+        if (!_events.isClosed) _events.add(CompanionVoiceEvent(CompanionVoiceEventType.error, id));
+      });
       return;
     }
     _queue.add(_Line(id, text, _generation, _fetch(_settings, text)));

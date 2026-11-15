@@ -1,9 +1,9 @@
-// 凭据说明: what leaves the phone when the person acts as their forum account
+// 凭据说明: what leaves the phone when the person acts as their GitHub account
 // (投稿, 我的投稿, 举报), shown before anything is sent
 // (docs/design/workshop-app.md「投稿与凭据」).
 //
-// The workshop checks who is asking by receiving the forum sign-in credential
-// (a Discourse User API Key) and asking the forum whose it is. The two
+// The workshop checks who is asking by receiving the GitHub token (no scopes:
+// public profile only) and asking GitHub whose it is. The two
 // addresses on screen are the ones in the offer the state layer made; the
 // very same offer object goes back with 「同意并继续」, so a consent can never
 // land on an address the person did not see.
@@ -98,7 +98,7 @@ class WorkshopDisclosureView extends StatelessWidget {
         ListPageCard(
           children: [
             _Party(label: l10n.workshopDisclosureWorker, host: workshopHostText(offer.worker)),
-            _Party(label: l10n.workshopDisclosureForum, host: workshopHostText(offer.forum)),
+            _Party(label: l10n.workshopDisclosureAccount, host: workshopHostText(offer.account)),
           ],
         ),
         Padding(

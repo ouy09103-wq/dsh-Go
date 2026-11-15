@@ -5,6 +5,27 @@ state_core.StateDefinition _stateDefinition(Map<String, Object?> data) {
   return state_core.StateDefinition.parse(dshgo['state'], version: dshgo.containsKey('v') ? dshgo['v'] : 1);
 }
 
+/// Saved source identity is evidence, never inferred from the current binding.
+state_core.StateExecutionSource? _savedGameplayExecutionSource(Object? raw) {
+  if (raw is! Map<String, Object?>) {
+    return null;
+  }
+  if (raw['kind'] == 'legacy') {
+    return const state_core.StateExecutionSource.legacy();
+  }
+  final installed = raw['installedPackId'], binding = raw['bindingId'], epoch = raw['onceEpoch'];
+  if (raw['kind'] != 'pack' ||
+      installed is! String ||
+      installed.isEmpty ||
+      binding is! String ||
+      binding.isEmpty ||
+      epoch is! int ||
+      epoch < 0) {
+    return null;
+  }
+  return state_core.StateExecutionSource.pack(installedPackId: installed, bindingId: binding, onceEpoch: epoch);
+}
+
 Map<String, Object?> _stateIssue(String code, String path, String message) => {
   'code': code,
   'path': path,
@@ -29,6 +50,8 @@ class _StateInput {
         ),
       );
     }
+    packRuntimeExists = state.containsKey('dshgoPackRuntime');
+    packRuntime = state['dshgoPackRuntime'];
     runtimeExists = state.containsKey('dshgoStateRuntime');
     runtime = state['dshgoStateRuntime'];
     if (!runtimeExists) return;
@@ -78,6 +101,8 @@ class _StateInput {
   Object? value;
   bool runtimeExists = false;
   Object? runtime;
+  bool packRuntimeExists = false;
+  Object? packRuntime;
   final issues = <Map<String, Object?>>[];
   bool get writable => issues.isEmpty;
 }
@@ -89,8 +114,26 @@ Future<TavernStateSnapshot> _readSavedState(TavernEngine engine, String chatId) 
   final extra = leaf == null ? <String, Object?>{} : engine._store.node(chatId, leaf).extra;
   final metadata = engine._chatCodec.metadataForNode(engine._store, chatId);
   final settings = engine._effectiveSettings(chat, metadata);
+  final historical = _gameplayHistoricalConfig(engine, saved);
+  if (historical.referenced) {
+    final config = historical.config;
+    return _statePanel(
+      chatId,
+      leaf,
+      saved,
+      extra,
+      config?.state ?? state_core.StateDefinition.parse(null),
+      settings,
+      dshgoOnly: config == null || config.state.hasSchema || _StateInput(saved).valueExists,
+      allowInitialPreview: false,
+      interpretationIssues: historical.issues,
+      protection: config == null ? null : _SecretProtection(const {}, saved, gameplay: config),
+    );
+  }
   final record = await engine._record(chat.characterId);
-  if (record == null) throw const TavernImportError('角色不存在。');
+  if (record == null) {
+    throw const TavernImportError('角色不存在。');
+  }
   return _statePanel(
     chatId,
     leaf,
@@ -110,12 +153,15 @@ TavernStateSnapshot _statePanel(
   state_core.StateDefinition definition,
   Map<String, Object?> settings, {
   _SecretProtection? protection,
+  bool dshgoOnly = false,
+  bool allowInitialPreview = true,
+  List<Map<String, Object?>> interpretationIssues = const [],
 }) {
   final own = _map(extra['dshgo']);
   final changes = _stateRows(own['stateChanges']);
   final effects = _stateRows(own['stateEffects']);
   final ownIssues = _stateRows(own['stateIssues']);
-  if (!definition.hasSchema) {
+  if (!definition.hasSchema && !dshgoOnly) {
     final exists = saved.containsKey('variables');
     final values = exists ? saved['variables'] : <String, Object?>{};
     return TavernStateSnapshot(
@@ -138,7 +184,9 @@ TavernStateSnapshot _statePanel(
   }
   final input = _StateInput(saved);
   final projection = definition.project(input.value, valueExists: input.valueExists);
-  final initial = input.valueExists ? null : definition.initialPreview();
+  final initial = input.valueExists || !allowInitialPreview || !definition.hasSchema
+      ? null
+      : definition.initialPreview();
   return TavernStateSnapshot(
     chatId: chatId,
     nodeId: leaf,
@@ -155,6 +203,7 @@ TavernStateSnapshot _statePanel(
     changes: changes,
     effects: effects,
     issues: [
+      ...interpretationIssues,
       ...definition.issues,
       ...input.issues,
       ...projection.issues,
@@ -175,16 +224,39 @@ List<Map<String, Object?>> _stateRows(Object? value) => value is List<Object?>
 
 /// Initialization belongs to the caller's existing message SQL operation.
 /// It derives defaults but never executes plot rules or consumes prompts.
-void _initializeDshState(state_core.StateDefinition definition, Map<String, Object?> saved, bool enabled) {
-  if (!enabled || !definition.hasSchema || !definition.executable) return;
+void _initializeDshState(
+  state_core.StateDefinition definition,
+  Map<String, Object?> saved,
+  bool enabled, {
+  _GameplayRuntime? gameplay,
+}) {
+  if (!enabled || !definition.hasSchema || !definition.executable) {
+    return;
+  }
   final input = _StateInput(saved);
-  if (!input.writable || input.valueExists) return;
+  if (!input.writable || input.valueExists || saved.containsKey('dshgoPackDefinitionConfigId')) {
+    return;
+  }
   final result = definition
-      .startSession(valueExists: false, runtimeExists: input.runtimeExists, runtime: input.runtime)
+      .startSession(
+        valueExists: false,
+        runtimeExists: input.runtimeExists,
+        runtime: input.runtime,
+        packRuntimeExists: input.packRuntimeExists,
+        packRuntime: input.packRuntime,
+      )
       .finish(runRules: false);
-  if (!result.valid || !result.valueExists) return;
+  if (!result.valid || !result.valueExists) {
+    return;
+  }
   saved['messageVariables'] = {..._map(saved['messageVariables']), 'dshgo': result.value};
-  if (result.runtimeExists) saved['dshgoStateRuntime'] = result.runtime;
+  if (result.runtimeExists) {
+    saved['dshgoStateRuntime'] = result.runtime;
+  }
+  if (result.packRuntimeExists) {
+    saved['dshgoPackRuntime'] = result.packRuntime;
+  }
+  _stampGameplayConfig(gameplay, saved);
 }
 
 Future<TavernStateEditResult> _editSavedState(
@@ -204,9 +276,23 @@ Future<TavernStateEditResult> _editSavedState(
       final saved = engine._stateAt(chatId, leaf);
       final extra = leaf == null ? <String, Object?>{} : engine._store.node(chatId, leaf).extra;
       final settings = engine._effectiveSettings(chat, engine._chatCodec.metadataForNode(engine._store, chatId));
+      final admission = _captureGameplayAdmission(engine, characterId: chat.characterId, chatId: chatId);
+      final historical = _gameplayHistoricalConfig(engine, saved);
+      final previousConfig = historical.config;
       final record = await engine._record(chat.characterId);
-      if (record == null) throw const TavernImportError('角色不存在。');
-      final definition = _stateDefinition(record.card.data);
+      if (record == null) {
+        throw const TavernImportError('角色不存在。');
+      }
+      final gameplay = admission.hasActivePacks || historical.referenced
+          ? await _prepareGameplayRuntime(engine, admission, hostData: record.card.data, force: historical.referenced)
+          : null;
+      final definition = gameplay?.state ?? _stateDefinition(record.card.data);
+      final stateInput = _StateInput(saved);
+      final legacyDomain =
+          !definition.hasSchema &&
+          ((gameplay == null && !historical.referenced) ||
+              (!stateInput.valueExists &&
+                  (!historical.referenced || (previousConfig != null && !previousConfig.state.hasSchema))));
       final invocation = _newStateId();
       final elapsed = Stopwatch()..start();
       var next = _copy(saved);
@@ -220,6 +306,15 @@ Future<TavernStateEditResult> _editSavedState(
         issues.add(_stateIssue('empty-path', '', 'There is no selected message to edit.'));
       } else if (expectedNodeId != null && expectedNodeId != leaf) {
         issues.add(_stateIssue('stale-node', '', 'The selected message changed before this edit was admitted.'));
+      } else if (!legacyDomain && (gameplay != null || historical.referenced) && !definition.executable) {
+        issues.addAll(definition.issues);
+        issues.add(
+          _stateIssue(
+            'gameplay_state_unavailable',
+            '',
+            'The prospective gameplay state definition is not executable; the saved value is preserved.',
+          ),
+        );
       } else if (!definition.hasSchema) {
         try {
           final edited = _editLegacyValue(
@@ -256,6 +351,8 @@ Future<TavernStateEditResult> _editSavedState(
             value: input.value,
             runtimeExists: input.runtimeExists,
             runtime: input.runtime,
+            packRuntimeExists: input.packRuntimeExists,
+            packRuntime: input.packRuntime,
           );
           final operation = session.apply(
             [
@@ -273,6 +370,7 @@ Future<TavernStateEditResult> _editSavedState(
             changes = result.changes;
             effects = _identifiedEffects(result.effects, invocation);
             next = _stateResultSnapshot(saved, result, effects, const {});
+            _stampGameplayConfig(gameplay, next);
           }
         }
       }
@@ -295,7 +393,13 @@ Future<TavernStateEditResult> _editSavedState(
         'elapsedMs': elapsed.elapsedMilliseconds,
       };
       engine._store.transaction(() {
+        if (!_gameplayAdmissionCurrent(engine, admission)) {
+          _gameplayCaptureConflict();
+        }
         if (applied) {
+          if (gameplay != null && next['dshgoPackDefinitionConfigId'] == gameplay.effectiveConfigId) {
+            _ensureGameplayConfig(engine, gameplay);
+          }
           engine._store.updateMessage(chatId, leaf!, extra: nextExtra);
           engine._store.updateChat(
             chatId,
@@ -323,9 +427,25 @@ Future<TavernStateEditResult> _editSavedState(
           leaf,
           applied ? next : saved,
           nextExtra,
-          definition,
+          applied
+              ? definition
+              : historical.referenced
+              ? historical.config?.state ?? state_core.StateDefinition.parse(null)
+              : _stateDefinition(record.card.data),
           settings,
-          protection: _SecretProtection(record.card.data, applied ? next : saved),
+          dshgoOnly: applied
+              ? gameplay != null && !legacyDomain
+              : historical.referenced &&
+                    (previousConfig == null || previousConfig.state.hasSchema || stateInput.valueExists),
+          allowInitialPreview: !historical.referenced,
+          interpretationIssues: applied ? const [] : historical.issues,
+          protection: !applied && historical.referenced && historical.config == null
+              ? null
+              : _SecretProtection(
+                  record.card.data,
+                  applied ? next : saved,
+                  gameplay: applied ? gameplay : historical.config,
+                ),
         ),
         receipts: receipts,
         issues: issues,
@@ -479,7 +599,12 @@ Map<String, Object?> _stateResultSnapshot(
 ) {
   final next = _copy(previous);
   if (result.valueExists) next['messageVariables'] = {..._map(next['messageVariables']), 'dshgo': result.value};
-  if (result.runtimeExists) next['dshgoStateRuntime'] = result.runtime;
+  if (result.runtimeExists) {
+    next['dshgoStateRuntime'] = result.runtime;
+  }
+  if (result.packRuntimeExists) {
+    next['dshgoPackRuntime'] = result.packRuntime;
+  }
   final input = _StateInput(next);
   if (!input.writable) return next;
   final prompts = effects.where((effect) => effect['type'] == 'prompt' && effect['source'] != 'directorEvent').toList();
@@ -494,6 +619,8 @@ Map<String, Object?> _stateResultSnapshot(
         'text': prompt['text'],
         'invocationId': prompt['invocationId'],
         if (prompt.containsKey('ruleId')) 'ruleId': prompt['ruleId'],
+        if (prompt.containsKey('executionSource')) 'executionSource': _secretCopy(prompt['executionSource']),
+        if (prompt.containsKey('localId')) 'localId': prompt['localId'],
       },
   ];
   next['dshgoStateRuntime'] = runtime;
@@ -502,14 +629,21 @@ Map<String, Object?> _stateResultSnapshot(
 
 void _prepareStateTurn(_Turn turn, Map<String, Object?> data) {
   if (turn.kind == _TurnKind.impersonate) return;
-  turn.secretProtection = _SecretProtection(data, turn.state);
+  turn.secretProtection = _SecretProtection(data, turn.state, gameplay: turn.gameplay);
   turn.secretIssues.addAll(turn.secretProtection!.issues);
-  final definition = _stateDefinition(data);
-  if (!definition.hasSchema) return;
+  final definition = turn.gameplay?.state ?? _stateDefinition(data);
+  if (!definition.hasSchema) {
+    return;
+  }
   turn.stateDefinition = definition;
   turn.stateWatch = Stopwatch()..start();
-  turn.stateAutomatic = turn.settings['stateEnabled'] != false && definition.executable;
-  _initializeDshState(definition, turn.state, turn.stateAutomatic);
+  turn.stateAutomatic = turn.settings['stateEnabled'] != false && definition.executable && turn.gameplayValueEligible;
+  _initializeDshState(
+    definition,
+    turn.state,
+    turn.stateAutomatic && (turn.gameplay == null || turn.gameplayInitializing),
+    gameplay: turn.gameplay,
+  );
   turn.statePreparationIssues.addAll(definition.issues);
   turn.statePreparationIssues.addAll(_StateInput(turn.state).issues);
 }
@@ -539,6 +673,22 @@ List<PromptInjection> _stateTurnInjections(_Turn turn) {
   if (input.writable && input.runtimeExists) {
     final runtime = input.runtime as Map<String, Object?>;
     for (final prompt in _stateRows(runtime['pendingPrompts'])) {
+      if (prompt.containsKey('executionSource')) {
+        final source = _savedGameplayExecutionSource(prompt['executionSource']);
+        if (source == null) {
+          turn.statePreparationIssues.add(
+            _stateIssue(
+              'state_prompt_source',
+              '/dshgoStateRuntime/pendingPrompts',
+              'A saved prompt has an unsupported execution source; it is preserved without injection.',
+            ),
+          );
+          continue;
+        }
+        if (source.isPack && !(turn.gameplay?.activeSources.contains(source) ?? false)) {
+          continue;
+        }
+      }
       final id = prompt['id']! as String;
       // Ledger IDs are imported user data. Keep them out of the assembler's
       // native extension-ID namespace (for example 2_floating_prompt).
@@ -693,6 +843,8 @@ state_core.StateSession? _ordinaryStateSession(_Turn turn) {
     value: input.value,
     runtimeExists: input.runtimeExists,
     runtime: input.runtime,
+    packRuntimeExists: input.packRuntimeExists,
+    packRuntime: input.packRuntime,
   );
 }
 
@@ -840,6 +992,8 @@ _StateSettlement? _settleStateTurn(TavernEngine engine, _Turn turn, {required bo
       value: input.value,
       runtimeExists: input.runtimeExists,
       runtime: input.runtime,
+      packRuntimeExists: input.packRuntimeExists,
+      packRuntime: input.packRuntime,
     );
   }
   final runs = <_StateRun>[];
@@ -908,11 +1062,15 @@ _StateSettlement? _settleStateTurn(TavernEngine engine, _Turn turn, {required bo
     effects,
     normal: normal,
     sharedStateAccepted: result == null || result.valid,
+    sharedSession: session != null,
     conditionIssues: eventConditionIssues,
   );
   if (events != null) {
     next = events.state;
     runs.add(_StateRun(events.runId, 'director.event_apply', events.result));
+  }
+  if (acceptedResult != null) {
+    _stampGameplayConfig(turn.gameplay, next);
   }
   final changes = acceptedResult?.changes ?? <Map<String, Object?>>[];
   final issues = <Map<String, Object?>>[

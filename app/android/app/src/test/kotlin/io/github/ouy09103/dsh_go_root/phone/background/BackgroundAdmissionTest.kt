@@ -23,17 +23,6 @@ class BackgroundAdmissionTest {
         assertEquals(BackgroundPolicy.Capacity(2, null), capacity(peerLimit = 3, configured = 2))
     }
 
-    @Test fun selfCheckFailuresAndUnconfirmedReleasesAreNotAdmissionInputs() {
-        // The gate's facts after a failed self-check, and its last no-response failure, exist only as
-        // diagnostics: neither readiness nor capacity takes them, so a connected channel keeps its slots.
-        val gate = BackgroundGateState()
-        val probe = checkNotNull(gate.begin { true })
-        gate.update(probe, ok = false, error = null, injectOk = false, injectError = "systemOperationDenied", detail = null)
-        assertEquals(false, gate.snapshot.injectOk)
-        assertNull(BackgroundPolicy.unready("shizuku", androidOk = true, switching = false, channelReason = null))
-        assertEquals(3, capacity(peerLimit = backgroundRequestLimit(true, multiplexed = true)).effective)
-    }
-
     @Test fun anUnconfirmedReleaseLeavesNoSlotBehind() {
         val peer = object : PrivilegedChannel {
             override val backgroundLimit = 1

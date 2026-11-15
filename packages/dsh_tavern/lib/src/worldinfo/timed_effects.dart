@@ -4,7 +4,7 @@ part of 'world_info.dart';
 
 /// Per-evaluation state. The caller's metadata and books are never mutated.
 class _TimedEffects {
-  _TimedEffects(this.input, this.entries)
+  _TimedEffects(this.input, this.entries, this.pack)
     : _state = jsonDecode(jsonEncode(input.timedWorldInfo)) as Map<String, Object?>,
       _arrayLengths = {} {
     for (final type in const ['sticky', 'cooldown']) {
@@ -19,6 +19,9 @@ class _TimedEffects {
       _check('cooldown');
     }
     for (final item in entries) {
+      if (item.packSource != null) {
+        continue;
+      }
       final delay = item.entry._fields['delay'];
       if (_truthy(delay) && input.messageCount < _jsNumber(delay)) active['delay']!.add(item.hash);
     }
@@ -26,6 +29,7 @@ class _TimedEffects {
 
   final WorldInfoInput input;
   final List<_RuntimeEntry> entries;
+  final _PackWorldInfoState pack;
   final Map<String, Object?> _state;
   final Map<String, int> _arrayLengths;
   // JS keeps a newly computed NaN/Infinity during this entire evaluation.
@@ -42,15 +46,17 @@ class _TimedEffects {
   }
 
   final active = <String, Set<int>>{'sticky': {}, 'cooldown': {}, 'delay': {}};
-  _TimedEffects._fork(this.input, this.entries, this._state, this._arrayLengths);
-  _TimedEffects fork() => _TimedEffects._fork(
+  _TimedEffects._fork(this.input, this.entries, this.pack, this._state, this._arrayLengths);
+  _TimedEffects fork(_PackWorldInfoState candidate) => _TimedEffects._fork(
     input,
     entries,
+    candidate,
     _copyTimedValue(_state)! as Map<String, Object?>,
     Map<String, int>.of(_arrayLengths),
   );
 
-  bool isActive(String type, _RuntimeEntry entry) => active[type]!.contains(entry.hash);
+  bool isActive(String type, _RuntimeEntry entry) =>
+      entry.packSource == null ? active[type]!.contains(entry.hash) : pack.isActive(type, entry);
   Map<String, Object?> _effects(String type) => _state[type]! as Map<String, Object?>;
   String _key(_RuntimeEntry item) => item.entry.stKey;
 
@@ -65,6 +71,9 @@ class _TimedEffects {
       final value = _object(values[key]);
       _RuntimeEntry? found;
       for (final item in entries) {
+        if (item.packSource != null) {
+          continue;
+        }
         if (_jsString(value['hash']) == '${item.hash}') {
           found = item;
           break;
@@ -100,12 +109,254 @@ class _TimedEffects {
     if (input.dryRun) return;
     for (final hit in hits) {
       final item = entries.firstWhere((item) => item.entry.identity == hit.entry.identity);
+      if (item.packSource != null) {
+        pack.finishTimers(item);
+        continue;
+      }
       for (final type in const ['sticky', 'cooldown']) {
         if (_truthy(item.entry._fields[type]) && !_truthy(_effects(type)[_key(item)])) {
           _effects(type)[_key(item)] = _effect(type, item);
         }
       }
     }
+  }
+}
+
+/// Pack effects share the original scan/finalizer, but never use legacy hashes
+/// as consumption keys. Only loaded sources enter the expiry/count gates.
+class _PackWorldInfoState {
+  _PackWorldInfoState(this.input, this.entries)
+    : _domains = {},
+      _original = {},
+      _invalid = {},
+      issues = [],
+      _active = {'sticky': {}, 'cooldown': {}} {
+    final snapshot = input.packWorldInfo ?? state_core.StatePackWorldInfoSnapshot(exists: false);
+    for (final item in entries) {
+      final source = item.packSource;
+      if (source == null || _domains.containsKey(source.source) || _invalid.contains(source.source)) {
+        continue;
+      }
+      final read = snapshot.read(source.source);
+      if (read.issues.isNotEmpty) {
+        _invalid.add(source.source);
+        issues.addAll(read.issues);
+        continue;
+      }
+      final raw = read.exists ? read.raw! as Map<String, Object?> : null;
+      _original[source.source] = raw;
+      _domains[source.source] = raw == null ? <String, Object?>{} : _copyTimedValue(raw)! as Map<String, Object?>;
+    }
+    for (final item in entries) {
+      final source = item.packSource;
+      if (source != null && !_invalid.contains(source.source)) {
+        _checkEntry(source);
+      }
+    }
+    if (!input.dryRun) {
+      for (final type in const ['sticky', 'cooldown']) {
+        for (final item in entries) {
+          if (item.packSource != null && available(item)) {
+            _checkTimer(type, item);
+          }
+        }
+      }
+    }
+  }
+
+  _PackWorldInfoState._fork(
+    this.input,
+    this.entries,
+    this._domains,
+    this._original,
+    this._invalid,
+    this.issues,
+    this._active,
+  );
+
+  final WorldInfoInput input;
+  final List<_RuntimeEntry> entries;
+  final Map<state_core.StateExecutionSource, Map<String, Object?>> _domains;
+  final Map<state_core.StateExecutionSource, Map<String, Object?>?> _original;
+  final Set<state_core.StateExecutionSource> _invalid;
+  final List<Map<String, Object?>> issues;
+  final Map<String, Set<_PackWorldInfoEntryKey>> _active;
+
+  _PackWorldInfoState fork() => _PackWorldInfoState._fork(
+    input,
+    entries,
+    {for (final row in _domains.entries) row.key: _copyTimedValue(row.value)! as Map<String, Object?>},
+    Map.of(_original),
+    Set.of(_invalid),
+    [for (final issue in issues) _copyTimedValue(issue)! as Map<String, Object?>],
+    {for (final row in _active.entries) row.key: Set.of(row.value)},
+  );
+
+  bool available(_RuntimeEntry item) => item.packSource == null || !_invalid.contains(item.packSource!.source);
+
+  void _bad(WorldInfoPackSource source, String suffix) {
+    _invalid.add(source.source);
+    issues.add({
+      'code': 'pack_world_info_shape',
+      'path': '/dshgoPackRuntime/bindings/${_worldInfoPointerToken(source.source.bindingId!)}/worldInfo$suffix',
+      'message': 'The required saved world-info carrier is malformed and is preserved.',
+      'source': source.source.toJson(),
+      'resourceLocalId': source.resourceLocalId,
+      'entryLocalId': source.entryLocalId,
+    });
+  }
+
+  void _checkEntry(WorldInfoPackSource source) {
+    final domain = _domains[source.source]!;
+    if (!domain.containsKey('entries')) {
+      return;
+    }
+    final resources = domain['entries'];
+    if (resources is! Map<String, Object?>) {
+      _bad(source, '/entries');
+      return;
+    }
+    if (!resources.containsKey(source.resourceLocalId)) {
+      return;
+    }
+    final resourcePath = '/entries/${_worldInfoPointerToken(source.resourceLocalId)}';
+    final resource = resources[source.resourceLocalId];
+    if (resource is! Map<String, Object?>) {
+      _bad(source, resourcePath);
+      return;
+    }
+    if (!resource.containsKey(source.entryLocalId)) {
+      return;
+    }
+    final entryPath = '$resourcePath/${_worldInfoPointerToken(source.entryLocalId)}';
+    final row = resource[source.entryLocalId];
+    if (row is! Map<String, Object?>) {
+      _bad(source, entryPath);
+      return;
+    }
+    if (row.containsKey('matches') && (row['matches'] is! int || (row['matches']! as int) < 0)) {
+      _bad(source, '$entryPath/matches');
+      return;
+    }
+    if (row.containsKey('lastMessageCount') && row['lastMessageCount'] is! int) {
+      _bad(source, '$entryPath/lastMessageCount');
+      return;
+    }
+    for (final type in const ['sticky', 'cooldown']) {
+      if (row.containsKey(type) && row[type] is! Map<String, Object?>) {
+        _bad(source, '$entryPath/$type');
+        return;
+      }
+    }
+  }
+
+  Map<String, Object?>? _entry(WorldInfoPackSource source) {
+    final resources = _domains[source.source]!['entries'] as Map<String, Object?>?;
+    final resource = resources?[source.resourceLocalId] as Map<String, Object?>?;
+    return resource?[source.entryLocalId] as Map<String, Object?>?;
+  }
+
+  Map<String, Object?> _writeEntry(WorldInfoPackSource source) {
+    final resources =
+        _domains[source.source]!.putIfAbsent('entries', () => <String, Object?>{})! as Map<String, Object?>;
+    final resource = resources.putIfAbsent(source.resourceLocalId, () => <String, Object?>{})! as Map<String, Object?>;
+    return resource.putIfAbsent(source.entryLocalId, () => <String, Object?>{})! as Map<String, Object?>;
+  }
+
+  bool isActive(String type, _RuntimeEntry item) {
+    if (!available(item)) {
+      return false;
+    }
+    if (type == 'delay') {
+      final delay = item.entry._fields['delay'];
+      return _truthy(delay) && input.messageCount < _jsNumber(delay);
+    }
+    return _active[type]!.contains(item.packSource!._key);
+  }
+
+  void _checkTimer(String type, _RuntimeEntry item) {
+    final source = item.packSource!;
+    final row = _entry(source);
+    if (row == null || !row.containsKey(type)) {
+      return;
+    }
+    final value = row[type]! as Map<String, Object?>;
+    final start = value.containsKey('start') ? _jsNumber(value['start']) : double.nan;
+    final end = value.containsKey('end') ? _jsNumber(value['end']) : double.nan;
+    if (input.messageCount <= start && !_truthy(value['protected'])) {
+      row.remove(type);
+      return;
+    }
+    if (input.messageCount >= end) {
+      row.remove(type);
+      if (type == 'sticky' && _truthy(value['cooldownOnStickyEnd'])) {
+        final cooldownEnd = end + _jsNumber(value['cooldownOnStickyEnd']);
+        // An inactive interval does not postpone a stored deadline. A fully
+        // expired conversion leaves no shell that could prevent a new hit.
+        if (!(input.messageCount >= cooldownEnd)) {
+          row['cooldown'] = {
+            'start': end,
+            'end': cooldownEnd,
+            'protected': true,
+            'triggeredHash': value['triggeredHash'],
+            'triggeredVersion': value['triggeredVersion'],
+          };
+        }
+      }
+      return;
+    }
+    _active[type]!.add(source._key);
+  }
+
+  Map<String, Object?> _effect(String type, _RuntimeEntry item) => {
+    'start': input.messageCount,
+    'end': input.messageCount + _jsNumber(item.entry._fields[type]),
+    'protected': false,
+    'triggeredHash': item.hash,
+    'triggeredVersion': item.packSource!.packVersion,
+    if (type == 'sticky' && item.entry._fields.containsKey('cooldown'))
+      'cooldownOnStickyEnd': _copyTimedValue(item.entry._fields['cooldown']),
+  };
+
+  void finishTimers(_RuntimeEntry item) {
+    if (!available(item) || input.dryRun) {
+      return;
+    }
+    final source = item.packSource!;
+    for (final type in const ['sticky', 'cooldown']) {
+      if (_truthy(item.entry._fields[type]) && !(_entry(source)?.containsKey(type) ?? false)) {
+        _writeEntry(source)[type] = _effect(type, item);
+      }
+    }
+  }
+
+  int previous(_RuntimeEntry item) => (_entry(item.packSource!)?['matches'] as int?) ?? 0;
+
+  void finishAdmission(_RuntimeEntry item) {
+    if (!available(item) || input.dryRun) {
+      return;
+    }
+    final source = item.packSource!;
+    if (_entry(source)?['lastMessageCount'] == input.messageCount) {
+      return;
+    }
+    final count = previous(item);
+    _writeEntry(source).addAll({'matches': count + 1, 'lastMessageCount': input.messageCount});
+  }
+
+  state_core.StatePackWorldInfoDelta get delta {
+    final replacements = <state_core.StateExecutionSource, Map<String, Object?>>{};
+    for (final row in _domains.entries) {
+      if (_invalid.contains(row.key)) {
+        continue;
+      }
+      final projected = jsonDecode(_jsJson(row.value)) as Map<String, Object?>;
+      final original = _original[row.key];
+      if (original == null ? projected.isNotEmpty : _jsJson(original) != _jsJson(projected)) {
+        replacements[row.key] = projected;
+      }
+    }
+    return state_core.StatePackWorldInfoDelta(replacements);
   }
 }
 

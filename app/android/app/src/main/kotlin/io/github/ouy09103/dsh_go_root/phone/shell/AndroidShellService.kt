@@ -8,7 +8,6 @@ import android.os.IInterface
 import android.os.Parcel
 import android.os.Process
 import io.github.ouy09103.dsh_go_root.phone.background.Bundles
-import io.github.ouy09103.dsh_go_root.root.RootHelperWatchdog
 import java.io.FileDescriptor
 import java.io.FileOutputStream
 import java.util.UUID
@@ -94,14 +93,9 @@ class AndroidShellService(context: Context) : IAndroidShell.Stub() {
 /** Self-ADB stdin/stdout control channel; EOF is an owned-process cancellation, not detachment. */
 @androidx.annotation.Keep
 object AndroidShellMain {
-    private const val OWNER_PID_ARG = 0
-    private const val OWNER_STARTED_ARG = 1
-    private const val WATCHDOG_MS = 1_000L
-
     @JvmStatic
     fun main(args: Array<String>) {
         val host = ShellHost(System.getenv("CLASSPATH") ?: System.getProperty("java.class.path"))
-        startOwnerWatchdog(host, args)
         val output = FileOutputStream(FileDescriptor.out)
         try {
             output.write(ShellWire.magic); output.flush()
@@ -114,40 +108,5 @@ object AndroidShellMain {
         } catch (_: Exception) {
             // Protocol loss retires this host; never print command data into the control stream.
         } finally { host.destroy() }
-    }
-
-    /**
-     * T38, from DSHA v0.2.2: this host runs as uid 0, so the app cannot signal it — closing the
-     * app, or an in-place reinstall, used to leave the host holding root and the control pipe
-     * until something else killed it. The host therefore checks for itself whether the process
-     * that started it is still that process (pid alone can be reused) and leaves when it is not.
-     */
-    private fun startOwnerWatchdog(host: ShellHost, args: Array<String>) {
-        val owner = RootHelperWatchdog.Owner(
-            args.getOrNull(OWNER_PID_ARG)?.toIntOrNull() ?: return,
-            args.getOrNull(OWNER_STARTED_ARG)?.toLongOrNull() ?: return,
-        )
-        if (!owner.known) return
-        Thread({
-            while (true) {
-                val stat = runCatching {
-                    String(
-                        java.nio.file.Files.readAllBytes(
-                            java.nio.file.Paths.get("/proc/" + owner.pid + "/stat"),
-                        ),
-                    )
-                }.getOrNull()
-                // No deadline: a shell session may legitimately live as long as the app does.
-                val verdict = RootHelperWatchdog.check(0L, Long.MAX_VALUE, owner, stat)
-                if (verdict != RootHelperWatchdog.Verdict.CONTINUE) {
-                    runCatching { host.destroy() }
-                    exitProcess(0)
-                }
-                runCatching { Thread.sleep(WATCHDOG_MS) }
-            }
-        }, "dsh-shell-root-watchdog").apply {
-            isDaemon = true
-            start()
-        }
     }
 }

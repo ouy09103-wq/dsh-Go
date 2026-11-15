@@ -42,7 +42,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('rows', () {
-    testWidgets('one group, three rows, in this order; defaults: 70 %, auto off, return on', (tester) async {
+    testWidgets('one group, three rows, in this order; defaults: 70 %, auto on, return on', (tester) async {
       await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: phoneStatus()));
       await openPhoneFold(tester, 'phone-more-options');
       expect(find.text(_group), findsOneWidget);
@@ -52,7 +52,7 @@ void main() {
       expect(ys, orderedEquals([...ys]..sort()));
       expect(find.text('70%'), findsOneWidget);
       expect(tester.widget<Slider>(find.byType(Slider)).value, 70);
-      expect(_switch(tester, _auto).value, isFalse);
+      expect(_switch(tester, _auto).value, isTrue);
       expect(_switch(tester, _return).value, isTrue);
       // The rules card keeps only the rules.
       final rulesBottom = tester.getBottomLeft(find.text('确认方式')).dy;
@@ -111,14 +111,16 @@ void main() {
       final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: phoneStatus()));
       await openPhoneFold(tester, 'phone-more-options');
       await _reveal(tester);
-      await tester.tap(find.text(_auto));
-      await settlePhone(tester);
+      // On until the person turns it off.
       expect(_switch(tester, _auto).value, isTrue);
-      expect(h.native!.overlay['autoCollapse'], isTrue);
-      await tester.tap(find.descendant(of: _row(_auto), matching: find.byType(Switch)));
+      await tester.tap(find.text(_auto));
       await settlePhone(tester);
       expect(_switch(tester, _auto).value, isFalse);
       expect(h.native!.overlay['autoCollapse'], isFalse);
+      await tester.tap(find.descendant(of: _row(_auto), matching: find.byType(Switch)));
+      await settlePhone(tester);
+      expect(_switch(tester, _auto).value, isTrue);
+      expect(h.native!.overlay['autoCollapse'], isTrue);
     });
 
     testWidgets('完成后返回 DSH Go: toggled and kept in the app', (tester) async {
@@ -153,7 +155,7 @@ void main() {
       expect(slider.value, '70%');
       final auto = tester.getSemantics(find.text(_auto)).getSemanticsData();
       expect(auto.label, contains('收成小球，点按展开'));
-      expect(auto.flagsCollection.isToggled, Tristate.isFalse);
+      expect(auto.flagsCollection.isToggled, Tristate.isTrue);
       final back = tester.getSemantics(find.text(_return)).getSemanticsData();
       expect(back.flagsCollection.isToggled, Tristate.isTrue);
       semantics.dispose();
@@ -166,6 +168,10 @@ void main() {
       expect(PhoneOverlayPrefs.clampOpacity(1.3), 1.0);
       expect(PhoneOverlayPrefs.clampOpacity(0.6666), 0.67);
       expect(PhoneOverlayPrefs.fromMap(const {}).idleOpacity, 0.7);
+      // 闲置时自动收起 is on unless the native side says it was turned off.
+      expect(PhoneOverlayPrefs.fromMap(const {}).autoCollapse, isTrue);
+      expect(const PhoneOverlayPrefs().autoCollapse, isTrue);
+      expect(PhoneOverlayPrefs.fromMap(const {'autoCollapse': false}).autoCollapse, isFalse);
       expect(PhoneOverlayPrefs.fromMap(const {'idleOpacity': 0.5, 'autoCollapse': true}).percent, 50);
     });
   });

@@ -4,8 +4,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:dsh_app/forum/forum_auth.dart';
-import 'package:dsh_app/forum/forum_state.dart';
+import 'package:dsh_app/state/workshop_account_state.dart';
 import 'package:dsh_app/l10n/l10n.dart';
 import 'package:dsh_app/state/attachments.dart' show formatBytes;
 import 'package:dsh_app/state/workshop_auth_state.dart';
@@ -31,13 +30,13 @@ import '../../workshop/support.dart' show workshopCaps, workshopPng;
 
 const _companion = WorkshopPublishSource(kind: 'companion', localId: 'companion');
 
-/// The page's world: a signed-in forum account that has already agreed to
+/// The page's world: a signed-in GitHub account that has already agreed to
 /// the disclosure, a workshop that takes uploads, one pet to send.
 class _World {
-  _World({ForumAuthState? account, this.recovery}) : account = account ?? authSignedIn();
+  _World({WorkshopAccountState? account, this.recovery}) : account = account ?? authSignedIn();
 
   final events = <String>[];
-  final ForumAuthState account;
+  final WorkshopAccountState account;
 
   /// With a range, the phone's record can be let go, and that is how much
   /// goes. Without one the preferences cannot do it at all.
@@ -60,7 +59,7 @@ class _World {
   /// for a workshop from before there were any.
   void capabilities({bool uploads = true, bool companion = true, List<String>? previews}) =>
       client.value = WorkshopCapabilities.fromJson({
-        ...workshopCaps(uploads: uploads, companion: companion, forum: authForum.toString()),
+        ...workshopCaps(uploads: uploads, companion: companion, account: authAccount.toString()),
         if (previews != null)
           'preview': {
             'schema': 1,
@@ -74,8 +73,7 @@ class _World {
       });
 
   List<Override> get overrides => [
-    forumAuthProvider.overrideWith(() => AuthForumController(account)),
-    forumBaseUrlProvider.overrideWith(() => AuthBaseController(authForum.toString())),
+    workshopAccountProvider.overrideWith(() => AuthAccountController(account)),
     workshopClientProvider.overrideWith((ref) async => client),
     workshopPreferencesProvider.overrideWithValue(preferences),
     workshopPrepareDraftProvider.overrideWithValue(drafts.prepare),
@@ -238,27 +236,27 @@ void _expectNoCancelClaim(WidgetTester tester) {
 void main() {
   group('gates', () {
     testWidgets('uploads off: says so, and asks for nothing', (tester) async {
-      final world = _World(account: const ForumAuthState(phase: ForumAuthPhase.signedOut))..capabilities(uploads: false);
+      final world = _World(account: authSignedOut)..capabilities(uploads: false);
       await _open(tester, world);
 
       expect(find.text('工坊暂时不接收投稿'), findsOneWidget);
-      expect(find.text('登录论坛'), findsNothing);
+      expect(find.text('用 GitHub 登录'), findsNothing);
       expect(find.byType(FilledButton), findsNothing);
       _expectWords(tester);
     });
 
-    testWidgets('signed out: one line why, and the forum\'s own sign-in', (tester) async {
-      final world = _World(account: const ForumAuthState(phase: ForumAuthPhase.signedOut));
+    testWidgets('signed out: one line why, and the GitHub sign-in sheet', (tester) async {
+      final world = _World(account: authSignedOut);
       await _open(tester, world);
 
-      expect(find.text('先登录论坛账号'), findsOneWidget);
-      expect(find.text('工坊靠论坛账号确认投稿的人是谁。'), findsOneWidget);
+      expect(find.text('先登录 GitHub 账号'), findsOneWidget);
+      expect(find.text('工坊靠 GitHub 账号确认投稿的人是谁。'), findsOneWidget);
       expect(world.preferences.reads, 0);
 
-      await tester.tap(find.text('登录论坛'));
+      await tester.tap(find.text('用 GitHub 登录'));
       await _settle(tester);
-      // The forum account sheet, not a sign-in of this page's own.
-      expect(find.text('发帖、回复、点赞'), findsOneWidget);
+      // The device-flow sheet shows the code to type on GitHub.
+      expect(find.text('TEST-CODE'), findsOneWidget);
     });
 
     testWidgets('the workshop cannot be reached: the reason in words and a retry', (tester) async {
@@ -276,11 +274,11 @@ void main() {
       expect(find.text('选一个要投稿的'), findsOneWidget);
     });
 
-    testWidgets('no forum profile yet: nothing is read or started', (tester) async {
+    testWidgets('no account profile yet: nothing is read or started', (tester) async {
       final world = _World(account: authSignedIn(userId: null));
       await _open(tester, world);
 
-      expect(find.text('还没读到论坛账号资料'), findsOneWidget);
+      expect(find.text('还没读到 GitHub 账号资料'), findsOneWidget);
       expect(world.preferences.reads, 0);
       expect(find.text('选一个要投稿的'), findsNothing);
     });
@@ -291,10 +289,10 @@ void main() {
       final world = _World()..preferences.accepted.clear();
       await _open(tester, world);
 
-      expect(find.text('让工坊核对你的论坛身份'), findsOneWidget);
-      expect(find.textContaining('User API Key'), findsOneWidget);
+      expect(find.text('让工坊核对你的 GitHub 身份'), findsOneWidget);
+      expect(find.textContaining('GitHub 登录凭据'), findsOneWidget);
       expect(find.text(authWorker.host), findsOneWidget);
-      expect(find.text(authForum.host), findsOneWidget);
+      expect(find.text(authAccount.host), findsOneWidget);
       expect(find.text('同意并继续'), findsOneWidget);
       expect(find.text('暂不'), findsOneWidget);
       expect(world.preferences.reads, 0);
@@ -311,7 +309,7 @@ void main() {
       await _settle(tester);
 
       expect(world.preferences.writes, 1);
-      expect(world.preferences.accepted, {world.preferences.pair(authWorker, authForum)});
+      expect(world.preferences.accepted, {world.preferences.pair(authWorker, authAccount)});
       expect(world.events, ['read-pending']);
       expect(find.text('选一个要投稿的'), findsOneWidget);
     });
@@ -469,12 +467,14 @@ void main() {
       await tester.tap(find.text('下一步'));
       await _settle(tester);
 
-      expect(find.text('名称不能为空，最多 120 个字'), findsOneWidget);
+      // Left empty is filled in (the other name, the account, 作者授权); only
+      // what was typed wrong is said.
+      expect(find.text('名称不能为空，最多 120 个字'), findsNothing);
       expect(find.text('只能用小写字母、数字和短横线，最多 40 个字符'), findsOneWidget);
       expect(find.text('写成 1.0.0 这样的版本号'), findsOneWidget);
-      expect(find.text('作者不能为空，最多 256 个字'), findsOneWidget);
-      expect(find.text('选一个许可'), findsOneWidget);
-      expect(find.text('填一个以 https:// 开头的链接'), findsOneWidget);
+      expect(find.text('作者不能为空，最多 256 个字'), findsNothing);
+      expect(find.text('选一个许可'), findsNothing);
+      expect(find.text('填一个以 https:// 开头的链接'), findsNothing);
       expect(world.events, ['read-pending']);
       expect(tester.widget<TextField>(_field('version')).controller!.text, 'one', reason: 'what was typed stays');
       _expectWords(tester);
@@ -1249,7 +1249,7 @@ void main() {
       expect(_letGoDialog, findsOneWidget);
       Finder said(String part) => find.descendant(of: _letGoDialog, matching: find.textContaining(part));
       expect(find.text('放下本机的这条记录？'), findsOneWidget);
-      expect(said(authForum.host), findsOneWidget);
+      expect(said('这个 GitHub 账号'), findsOneWidget);
       expect(said(authWorker.host), findsOneWidget);
       expect(said('只删除这台手机上'), findsOneWidget);
       expect(said('所有账号'), findsNothing);
@@ -1286,7 +1286,7 @@ void main() {
       expect(said('整体读不出来'), findsOneWidget);
       expect(said('所有账号'), findsOneWidget);
       expect(said('只删除这台手机上'), findsNothing);
-      expect(said(authForum.host), findsOneWidget);
+      expect(said('这个 GitHub 账号'), findsOneWidget);
       expect(said(authWorker.host), findsOneWidget);
       expect(said('工坊不会收到取消'), findsOneWidget);
       expect(said('会多出一份'), findsOneWidget);

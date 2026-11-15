@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import '../js_string.dart';
 import '../regex/regex_program.dart' show isNativeRegexLiteral;
 import '../regex/regex_types.dart';
+import '../state/state_engine.dart' as state_core;
 import 'world_info_case.dart';
 
 part 'timed_effects.dart';
@@ -53,7 +54,9 @@ class WorldInfoBook {
       for (final key in _objectKeys(original.keys)) {
         final value = original[key];
         if (value is! Map<String, Object?>) throw FormatException('World info entry $key must be an object.');
-        parsed.add(WorldInfoEntry._(this, _id(value['uid'] ?? key), value, value));
+        parsed.add(
+          WorldInfoEntry._(this, _id(value['uid'] ?? key), value, value, '/entries/${_worldInfoPointerToken(key)}'),
+        );
       }
     } else if (original is List<Object?>) {
       for (var index = 0; index < original.length; index++) {
@@ -63,12 +66,46 @@ class WorldInfoBook {
       }
       for (final uid in _objectKeys(byId.keys)) {
         final item = byId[uid]!;
-        parsed.add(WorldInfoEntry._(this, uid, item.$1, _convertCharacterEntry(item.$1, item.$2)));
+        parsed.add(
+          WorldInfoEntry._(this, uid, item.$1, _convertCharacterEntry(item.$1, item.$2), '/entries/${item.$2}'),
+        );
       }
     } else {
       throw const FormatException('World info must contain an entries object or array.');
     }
     entries = List.unmodifiable(parsed);
+  }
+
+  WorldInfoBook._remapped(WorldInfoBook original, this.id, this.stWorldName, Map<String, String> entryUidsByPointer)
+    : source = original.source,
+      raw = _copyTimedValue(original.raw)! as Map<String, Object?> {
+    final rows = raw['entries'];
+    final copiedRows = <String, Map<String, Object?>>{
+      if (rows is Map<String, Object?>)
+        for (final row in rows.entries)
+          '/entries/${_worldInfoPointerToken(row.key)}': row.value! as Map<String, Object?>,
+      if (rows is List<Object?>)
+        for (var index = 0; index < rows.length; index++) '/entries/$index': rows[index]! as Map<String, Object?>,
+    };
+    final seen = <String>{};
+    final mapped = <WorldInfoEntry>[];
+    for (final entry in original.entries) {
+      final uid = entryUidsByPointer[entry.sourcePointer];
+      if (uid == null || !seen.add(uid)) {
+        throw const FormatException('Every effective pack entry needs a distinct stable uid.');
+      }
+      final value = copiedRows[entry.sourcePointer]!;
+      mapped.add(
+        WorldInfoEntry._(
+          this,
+          uid,
+          value,
+          identical(entry._fields, entry.raw) ? value : _copyTimedValue(entry._fields)! as Map<String, Object?>,
+          entry.sourcePointer,
+        ),
+      );
+    }
+    entries = List.unmodifiable(mapped);
   }
 
   factory WorldInfoBook.fromJson({
@@ -89,11 +126,27 @@ class WorldInfoBook {
 }
 
 class WorldInfoEntry {
-  const WorldInfoEntry._(this.book, this.uid, this.raw, this._fields);
+  const WorldInfoEntry._(this.book, this.uid, this.raw, this._fields, this.sourcePointer);
   final WorldInfoBook book;
   final String uid;
+
+  /// The original object location, before V3 uid deduplication and sorting.
+  final String sourcePointer;
   final Map<String, Object?> raw;
   final Map<String, Object?> _fields;
+
+  /// Actual loader declarations: absence and explicit null remain distinct.
+  Map<String, Object?> get timerDeclarations =>
+      _copyTimedValue({
+            for (final key in const ['sticky', 'cooldown'])
+              if (_fields.containsKey(key)) key: _fields[key],
+          })!
+          as Map<String, Object?>;
+
+  /// Delay is a current-scan threshold, not part of the timer policy.
+  Map<String, Object?> get delayDeclaration =>
+      _copyTimedValue({if (_fields.containsKey('delay')) 'delay': _fields['delay']})! as Map<String, Object?>;
+
   WorldInfoEntryRef get identity => (book.id, uid);
   List<String> get keys => _strings(_fields['key']);
   List<String> get secondaryKeys => _strings(_fields['keysecondary']);
@@ -131,6 +184,216 @@ class WorldInfoEntry {
       '${_fields.containsKey('world') ? _jsString(_fields['world']) : book.stWorldName}.'
       '${_fields.containsKey('uid') ? _jsString(_fields['uid']) : 'undefined'}';
 }
+
+/// Engine-only runtime view. The stored book and all loader fields stay intact.
+WorldInfoBook remapWorldInfoBook(
+  WorldInfoBook book, {
+  required String id,
+  required String stWorldName,
+  required Map<String, String> entryUidsByPointer,
+}) => WorldInfoBook._remapped(book, id, stWorldName, entryUidsByPointer);
+
+/// Exports one selected effective pack entry through the existing loader.
+/// Same-form exports change only the execution id. Cross-form exports retain
+/// unknown fields where they stay inert; callers retain the complete original
+/// entry in export provenance. Runtime identities and saved ledgers do not move.
+Map<String, Object?> exportGameplayWorldInfoEntry(
+  WorldInfoEntry entry, {
+  required String id,
+  required bool characterBook,
+}) {
+  final wasCharacterBook = entry.book.raw['entries'] is List<Object?>;
+  final result = _copyTimedValue(entry.raw)! as Map<String, Object?>;
+  if (wasCharacterBook == characterBook) {
+    result[characterBook ? 'id' : 'uid'] = id;
+    return result;
+  }
+  final fields = entry._fields;
+  if (characterBook) {
+    void copyField(String from, String to) {
+      result.remove(to);
+      if (fields.containsKey(from)) {
+        result[to] = _copyTimedValue(fields[from]);
+      }
+    }
+
+    copyField('key', 'keys');
+    copyField('keysecondary', 'secondary_keys');
+    copyField('order', 'insertion_order');
+    for (final field in const ['comment', 'content', 'constant', 'selective']) {
+      copyField(field, field);
+    }
+    result['id'] = id;
+    result['enabled'] = !entry.disabled;
+    // Native position values belong in the existing V3 extension, not in the
+    // before_char/after_char top-level slot. A missing/nonrepresentable native
+    // position is rejected by the real-loader comparison below.
+    result.remove('position');
+    final extensions = _object(_copyTimedValue(result['extensions']));
+    for (final pair in _gameplayCharacterExtensionFields.entries) {
+      extensions.remove(pair.value);
+      if (fields.containsKey(pair.key)) {
+        extensions[pair.value] = _copyTimedValue(fields[pair.key]);
+      }
+    }
+    // ST's missing/null useProbability is false; V3's nullish default is true.
+    // Preserve that actual gate explicitly instead of enabling a new RNG path.
+    extensions['useProbability'] = entry.useProbability;
+    result['extensions'] = extensions;
+  } else {
+    // A raw V3 row may contain ignored ST-shaped keys. Do not activate those
+    // shadows after changing form (notably characterFilter and disable).
+    for (final field in {
+      'uid',
+      'world',
+      'key',
+      'keysecondary',
+      'comment',
+      'content',
+      'constant',
+      'selective',
+      'order',
+      'position',
+      'disable',
+      'characterFilter',
+      ..._gameplayCharacterExtensionFields.keys,
+    }) {
+      result.remove(field);
+    }
+    result.addAll(_copyTimedValue(fields)! as Map<String, Object?>);
+    result['uid'] = id;
+  }
+  final roundTrip = WorldInfoBook.fromJson(
+    id: entry.book.id,
+    source: entry.book.source,
+    stWorldName: entry.book.stWorldName,
+    json: {
+      'entries': characterBook ? <Object?>[result] : <String, Object?>{id: result},
+    },
+  ).entries.single;
+  final before = _gameplayWorldInfoExecution(entry);
+  final after = _gameplayWorldInfoExecution(roundTrip);
+  for (final field in before.keys) {
+    if (jsonEncode(before[field]) != jsonEncode(after[field])) {
+      throw FormatException('World-info conversion cannot preserve $field at ${entry.sourcePointer}.');
+    }
+  }
+  return result;
+}
+
+/// Names accepted by the existing _convertCharacterEntry loader. Values still
+/// pass through that loader; this table neither parses nor normalizes them.
+const _gameplayCharacterExtensionFields = <String, String>{
+  'position': 'position',
+  'excludeRecursion': 'exclude_recursion',
+  'preventRecursion': 'prevent_recursion',
+  'delayUntilRecursion': 'delay_until_recursion',
+  'displayIndex': 'display_index',
+  'probability': 'probability',
+  'useProbability': 'useProbability',
+  'depth': 'depth',
+  'selectiveLogic': 'selectiveLogic',
+  'outletName': 'outlet_name',
+  'group': 'group',
+  'groupOverride': 'group_override',
+  'groupWeight': 'group_weight',
+  'scanDepth': 'scan_depth',
+  'caseSensitive': 'case_sensitive',
+  'matchWholeWords': 'match_whole_words',
+  'useGroupScoring': 'use_group_scoring',
+  'automationId': 'automation_id',
+  'role': 'role',
+  'vectorized': 'vectorized',
+  'sticky': 'sticky',
+  'cooldown': 'cooldown',
+  'delay': 'delay',
+  'matchPersonaDescription': 'match_persona_description',
+  'matchCharacterDescription': 'match_character_description',
+  'matchCharacterPersonality': 'match_character_personality',
+  'matchCharacterDepthPrompt': 'match_character_depth_prompt',
+  'matchScenario': 'match_scenario',
+  'matchCreatorNotes': 'match_creator_notes',
+  'triggers': 'triggers',
+  'ignoreBudget': 'ignore_budget',
+};
+
+/// Every per-entry value used by selection, scoring, output, decorators and
+/// timer gates. Hash/display order and book/source identity are intentionally
+/// excluded: export creates new identities and does not migrate runtime state.
+Map<String, Object?> _gameplayWorldInfoExecution(WorldInfoEntry entry) {
+  final fields = entry._fields;
+  final filter = fields['characterFilter'];
+  return {
+    'keys': entry.keys,
+    'secondaryKeys': entry.secondaryKeys,
+    'content': entry.content,
+    'comment': entry.comment,
+    'constant': entry.constant,
+    'disabled': entry.disabled,
+    'selective': entry.selective,
+    'selectiveLogic': entry.selectiveLogic,
+    // Activation defaults nullish logic; inclusion-group scoring does not.
+    'secondaryScoringHasLogic':
+        entry.keys.isNotEmpty && entry.secondaryKeys.isNotEmpty && fields['selectiveLogic'] != null,
+    'order': entry.order,
+    'position': entry.position,
+    'depth': entry.depth,
+    'role': entry.role,
+    'outlet': entry.outlet,
+    'ignoreBudget': entry.ignoreBudget,
+    'excludeRecursion': entry.excludeRecursion,
+    'preventRecursion': entry.preventRecursion,
+    'delayUntilRecursion': entry.delayUntilRecursion,
+    'useProbability': entry.useProbability,
+    'probability': entry.probability,
+    'group': entry.group,
+    'groupOverride': entry.groupOverride,
+    'groupWeight': entry.groupWeight,
+    'scanDepth': entry.scanDepth,
+    'caseSensitive': entry.caseSensitive,
+    'useRegex': entry.useRegex,
+    'matchWholeWords': entry.matchWholeWords,
+    'useGroupScoring': entry.useGroupScoring,
+    'triggers': entry.triggers,
+    for (final field in const [
+      'matchPersonaDescription',
+      'matchCharacterDescription',
+      'matchCharacterPersonality',
+      'matchCharacterDepthPrompt',
+      'matchScenario',
+      'matchCreatorNotes',
+    ])
+      field: fields[field] == true,
+    'characterFilter':
+        filter is Map<String, Object?> && (_strings(filter['names']).isNotEmpty || _strings(filter['tags']).isNotEmpty)
+        ? {
+            'isExclude': filter['isExclude'] == true,
+            'names': _strings(filter['names']),
+            'tags': _strings(filter['tags']),
+          }
+        : null,
+    // Timers use JavaScript truthiness/Number on these original JSON values,
+    // including strings, arrays and objects. Do not rebuild integer defaults.
+    for (final field in const ['sticky', 'cooldown', 'delay']) field: fields[field],
+  };
+}
+
+String _worldInfoPointerToken(String value) => value.replaceAll('~', '~0').replaceAll('/', '~1');
+
+/// Typed consumption identity; content version is provenance, never the key.
+final class WorldInfoPackSource {
+  const WorldInfoPackSource({
+    required this.source,
+    required this.resourceLocalId,
+    required this.entryLocalId,
+    required this.packVersion,
+  });
+  final state_core.StateExecutionSource source;
+  final String resourceLocalId, entryLocalId, packVersion;
+  _PackWorldInfoEntryKey get _key => (source, resourceLocalId, entryLocalId);
+}
+
+typedef _PackWorldInfoEntryKey = (state_core.StateExecutionSource, String, String);
 
 /// Static input for import diagnostics. A dynamic pattern must be deferred
 /// until normal runtime expansion. Conditional header inputs are conservatively
@@ -271,7 +534,13 @@ Iterable<({WorldInfoEntry entry, String path})> _regexInspectionEntries(WorldInf
     for (var index = 0; index < entries.length; index++) {
       final value = entries[index]! as Map<String, Object?>;
       yield (
-        entry: WorldInfoEntry._(book, _id(value['id'] ?? index), value, _convertCharacterEntry(value, index)),
+        entry: WorldInfoEntry._(
+          book,
+          _id(value['id'] ?? index),
+          value,
+          _convertCharacterEntry(value, index),
+          '/entries/$index',
+        ),
         path: 'entries[$index]',
       );
     }
@@ -279,7 +548,13 @@ Iterable<({WorldInfoEntry entry, String path})> _regexInspectionEntries(WorldInf
     for (final key in _objectKeys(entries.keys)) {
       final value = entries[key]! as Map<String, Object?>;
       yield (
-        entry: WorldInfoEntry._(book, _id(value['uid'] ?? key), value, value),
+        entry: WorldInfoEntry._(
+          book,
+          _id(value['uid'] ?? key),
+          value,
+          value,
+          '/entries/${_worldInfoPointerToken(key)}',
+        ),
         path: 'entries[${jsonEncode(key)}]',
       );
     }
@@ -359,6 +634,8 @@ class WorldInfoInput {
     this.expand = _identity,
     this.settings = const WorldInfoSettings(),
     this.externalActivations = const <WorldInfoEntryRef>{},
+    this.packSources = const {},
+    this.packWorldInfo,
     this.scanInjections = const [],
     this.personaDescription = '',
     this.characterDescription = '',
@@ -398,6 +675,10 @@ class WorldInfoInput {
   /// await. Gates, groups, probability and budget still apply. A duplicate uid
   /// in one effective book is ambiguous and receives no external privilege.
   final Set<WorldInfoEntryRef> externalActivations;
+
+  /// Engine-only sidecars for the same remapped entries used by every WI consumer.
+  final Map<WorldInfoEntryRef, WorldInfoPackSource> packSources;
+  final state_core.StatePackWorldInfoSnapshot? packWorldInfo;
   final List<String> scanInjections;
   final String personaDescription;
   final String characterDescription;
@@ -606,6 +887,8 @@ class WorldInfoResult {
     required this.scanRounds,
     required this.timedWorldInfo,
     required this.decoratorState,
+    required this.packWorldInfo,
+    required List<Map<String, Object?>> packIssues,
     required List<WorldInfoRegexDiagnostic> regexDiagnostics,
     List<WorldInfoExternalActivation> externalActivations = const [],
     this.externalActivationsOmitted = 0,
@@ -613,7 +896,8 @@ class WorldInfoResult {
   }) : _finalize = finalize,
        activated = List.unmodifiable(hits),
        regexDiagnostics = List.unmodifiable(regexDiagnostics),
-       externalActivations = List.unmodifiable(externalActivations) {
+       externalActivations = List.unmodifiable(externalActivations),
+       packIssues = List.unmodifiable(packIssues) {
     final groups = <(int, int), List<WorldInfoHit>>{};
     for (final hit in _stableSort(hits, (a, b) => _compareWorldOrder(a.order, b.order))) {
       if (hit.disabledUiPrompt case final prompt?) disabledUiPrompts.add(prompt);
@@ -661,6 +945,8 @@ class WorldInfoResult {
   final Map<String, Object?> timedWorldInfo;
   final Map<String, Object?> decoratorState;
   final List<WorldInfoRegexDiagnostic> regexDiagnostics;
+  final state_core.StatePackWorldInfoDelta packWorldInfo;
+  final List<Map<String, Object?>> packIssues;
   final List<WorldInfoExternalActivation> externalActivations;
 
   /// References beyond the bounded input prefix, not evaluated externally.
@@ -688,6 +974,7 @@ class WorldInfoEngine {
     // Capture the bounded request set before awaited work can publish a
     // different director result or mutate the caller's collection.
     final external = _ExternalActivations(input.externalActivations);
+    final packSources = Map<WorldInfoEntryRef, WorldInfoPackSource>.of(input.packSources);
     final settings = input.settings;
     // JS Math.round rounds ties toward +infinity, unlike Dart for negatives.
     var budget = (settings.budgetPercent * input.maxContext / 100 + 0.5).floor();
@@ -695,9 +982,10 @@ class WorldInfoEngine {
     if (settings.budgetCap > 0 && budget > settings.budgetCap) budget = settings.budgetCap;
     final entries = worldInfoExecutionEntries(input.books, strategy: settings.strategy);
     external.resolve(entries);
-    final sorted = entries.map((entry) => _RuntimeEntry(entry, input)).toList();
-    final timed = _TimedEffects(input, sorted);
-    final decoratorHistory = _DecoratorHistory(input);
+    final sorted = entries.map((entry) => _RuntimeEntry(entry, input, packSources[entry.identity])).toList();
+    final pack = _PackWorldInfoState(input, sorted);
+    final timed = _TimedEffects(input, sorted, pack);
+    final decoratorHistory = _DecoratorHistory(input, pack);
     final buffer = _ScanBuffer(input, _worker, external);
     final activated = <(String, String), WorldInfoHit>{};
     final failedProbability = <_RuntimeEntry>{};
@@ -721,6 +1009,10 @@ class WorldInfoEngine {
         if (buffer.skippedEntries.contains(entry.identity)) continue;
         try {
           if (failedProbability.contains(item) || activated.containsKey(entry.identity)) continue;
+          if (!pack.available(item)) {
+            external.reject(entry.identity, 'pack-runtime', 'candidate', phase, rounds);
+            continue;
+          }
           if (entry.disabled) {
             external.reject(entry.identity, 'disabled', 'candidate', phase, rounds);
             continue;
@@ -917,8 +1209,9 @@ class WorldInfoEngine {
     // be removed by the full-prompt budget without repeating this scan or any
     // macro/regex/random side effect, or accidentally retaining their timers.
     WorldInfoResult finalize(List<WorldInfoHit> hits) {
-      final effects = timed.fork()..finish(hits);
-      final history = decoratorHistory.fork();
+      final packCandidate = pack.fork();
+      final effects = timed.fork(packCandidate)..finish(hits);
+      final history = decoratorHistory.fork(packCandidate);
       final retained = hits.map((hit) => hit.entry.identity).toSet();
       history.finish(sorted.where((item) => retained.contains(item.entry.identity)));
       return WorldInfoResult._(
@@ -928,6 +1221,8 @@ class WorldInfoEngine {
         scanRounds: rounds,
         timedWorldInfo: effects.state,
         decoratorState: history.state,
+        packWorldInfo: packCandidate.delta,
+        packIssues: pack.issues,
         regexDiagnostics: buffer.diagnostics,
         externalActivations: external.finish(retained),
         externalActivationsOmitted: external.omitted,
@@ -941,10 +1236,13 @@ class WorldInfoEngine {
 }
 
 class _RuntimeEntry {
-  _RuntimeEntry(this.entry, WorldInfoInput input) : decorators = _Decorators(entry, input), hash = _entryHash(entry) {
+  _RuntimeEntry(this.entry, WorldInfoInput input, this.packSource)
+    : decorators = _Decorators(entry, input),
+      hash = _entryHash(entry) {
     content = decorators.content;
   }
   final WorldInfoEntry entry;
+  final WorldInfoPackSource? packSource;
   final int hash;
   final _Decorators decorators;
   late String content;

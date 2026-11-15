@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking calls with timeouts; clickable-ancestor lookup before the gesture
 // fallback; directional scrolls; IME enter; injected gestures pass through the overlay and are
 // recorded in InjectGuard so its confirm buttons can refuse them.

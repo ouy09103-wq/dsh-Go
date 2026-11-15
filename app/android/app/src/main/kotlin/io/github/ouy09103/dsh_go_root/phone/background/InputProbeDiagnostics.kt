@@ -44,23 +44,4 @@ internal object InputProbeDiagnostics {
         val elapsed = values[3].toLongOrNull()?.takeIf { it <= 60_000 } ?: return null
         return Observation(stage, values[2], elapsed)
     }
-
-    /** One existing gate snapshot: last accepted input/receipt facts, not live connectivity or authorization. */
-    fun snapshot(gate: BackgroundGateState.Snapshot): Map<String, Any?> {
-        val base = linkedMapOf<String, Any?>("v" to 1, "observed" to false,
-            "connectionFailure" to (gate.connectionError != null))
-        if (gate.injectOk == true) {
-            base["observed"] = true
-            base["result"] = "success"
-        } else {
-            val failure = decode(gate.gateDetail) ?: return base
-            if (gate.trustedDisplayOk != false && gate.injectOk != false) return base
-            base["observed"] = true
-            base["result"] = "failure"
-            base["stage"] = failure.stage.wire
-            base["exceptionType"] = failure.exceptionType
-            base["elapsedMs"] = failure.elapsedMs
-        }
-        return base
-    }
 }

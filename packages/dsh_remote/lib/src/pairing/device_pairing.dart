@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Device pairing v1, the phone side: scan the computer's QR code, confirm the
 // computer on the phone, show the 8-digit code that the person types into the
 // computer's Remote plugin, then receive this phone's own device credentials.

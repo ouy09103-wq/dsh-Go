@@ -26,7 +26,7 @@ import zipfile
 HERE = Path(__file__).resolve().parent
 RUNTIME = HERE.parent
 sys.path.insert(0, str(RUNTIME / "lib"))
-from rtbuild import Elf  # noqa: E402
+from rtbuild import Elf, stream_digest  # noqa: E402
 
 
 ABIS = {
@@ -48,7 +48,7 @@ HOSTS = {"linux": "linux-x86_64", "darwin": "darwin-x86_64", "win32": "windows-x
 
 def sha256(path):
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        return stream_digest(stream)[0]
 
 
 def cached_archive(source, cache, supplied=None, offline=False):

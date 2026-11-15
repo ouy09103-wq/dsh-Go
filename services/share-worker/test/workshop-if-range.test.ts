@@ -1,4 +1,4 @@
-// Small original synthetic archive; no real model, forum, credential or load.
+// Small original synthetic archive; no real model, account, credential or load.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { workshop } from '../src/workshop';
 import { assetUrl } from '../src/workshop-common';
@@ -7,7 +7,7 @@ import { PetBucket } from './pet-market-fakes';
 import { metaFor, pet } from './workshop-fixtures';
 
 beforeEach(() => {
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ current_user: { id: 42, username: 'synthetic-user' } }));
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ id: 42, login: 'synthetic-user' }));
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -17,7 +17,7 @@ async function published() {
   bucket.now = () => new Date('2026-11-11T00:00:00.789Z');
   const { env } = makeEnv({ BUCKET: bucket as unknown as R2Bucket }), bytes = pet(), meta = metaFor(bytes);
   const call = (path: string, method = 'GET', body?: object | Uint8Array, admin = false, headers = {}) => workshop(new Request('https://workshop.invalid' + path, {
-    method, headers: { 'User-Api-Key': 'synthetic-forum-key', 'X-Workshop-Forum-Origin': 'https://forum.dshtui.com', ...(admin ? { 'X-Admin-Key': env.ADMIN_KEY! } : {}),
+    method, headers: { Authorization: 'Bearer synthetic_github_token', 'X-Workshop-Account-Origin': 'https://github.com', ...(admin ? { 'X-Admin-Key': env.ADMIN_KEY! } : {}),
       ...(body ? { 'Content-Type': body instanceof Uint8Array ? 'application/zip' : 'application/json' } : {}), ...headers },
     ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
   }), env, makeCtx().ctx);

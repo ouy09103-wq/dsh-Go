@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/adaptive_layout_state.dart';
 import '../../state/agents_state.dart';
+import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
 import '../../state/session_detail_state.dart';
 import '../../state/usage_state.dart';
@@ -416,9 +417,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
           padding: EdgeInsets.symmetric(horizontal: gutter - 16 + column),
           child: TabBarView(
             controller: _controller,
-            children: [
-              for (final tab in _tabs) ConversationPane.ofTab(tab).build(id),
-            ],
+            children: [for (final tab in _tabs) ConversationPane.ofTab(tab).build(id)],
           ),
         ),
       ),
@@ -602,6 +601,11 @@ class GlassSegments extends StatelessWidget {
   final TabController controller;
   final List<String> labels;
 
+  void _select(int i) {
+    if (controller.index != i) HapticFeedback.selectionClick();
+    controller.animateTo(i);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -658,14 +662,11 @@ class GlassSegments extends StatelessWidget {
                                 inMutuallyExclusiveGroup: true,
                                 label: label,
                                 excludeSemantics: true,
+                                // A screen reader's tap, as the finger's below.
+                                onTap: () => _select(i),
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () {
-                                    if (controller.index != i) {
-                                      HapticFeedback.selectionClick();
-                                    }
-                                    controller.animateTo(i);
-                                  },
+                                  onTap: () => _select(i),
                                   child: Center(
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -790,7 +791,7 @@ class TrajectoryTab extends ConsumerWidget {
     String? promptOf(TurnTrace trace) {
       for (final p in prompts) {
         if (p.seq >= trace.startSeq && (trace.endSeq == null || p.seq <= trace.endSeq!)) {
-          return p.text;
+          return withoutAppNotes(p.text);
         }
       }
       return null;

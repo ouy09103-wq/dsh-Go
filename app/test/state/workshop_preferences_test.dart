@@ -9,7 +9,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_platfor
 import '../workshop/support.dart' show workshopMeta;
 
 final _worker = Uri.parse('https://workshop.example');
-final _forum = Uri.parse('https://forum.example');
+final _account = Uri.parse('https://github.com');
 final _scope = '1' * 64, _otherScope = '2' * 64;
 final _fingerprint = 'a' * 64;
 final _firstId = 'a' * 32, _secondId = 'b' * 32;
@@ -43,25 +43,25 @@ void main() {
 
   test('disclosure defaults off and persists only for the normalized source pair', () async {
     final preferences = PrefsWorkshopPreferences();
-    expect(await preferences.disclosureAccepted(_worker, _forum), isFalse);
-    await preferences.acceptDisclosure(Uri.parse('https://workshop.example/'), _forum);
-    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _forum), isTrue);
-    expect(await preferences.disclosureAccepted(Uri.parse('https://elsewhere.example'), _forum), isFalse);
-    expect(await preferences.disclosureAccepted(_worker, Uri.parse('https://another-forum.example')), isFalse);
+    expect(await preferences.disclosureAccepted(_worker, _account), isFalse);
+    await preferences.acceptDisclosure(Uri.parse('https://workshop.example/'), _account);
+    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _account), isTrue);
+    expect(await preferences.disclosureAccepted(Uri.parse('https://elsewhere.example'), _account), isFalse);
+    expect(await preferences.disclosureAccepted(_worker, Uri.parse('https://another-account.example')), isFalse);
     final stored = await SharedPreferences.getInstance();
     final pairs = stored.getStringList('workshop.disclosures.v1')!;
-    expect(pairs.map(jsonDecode), [[_worker.toString(), _forum.toString()]]);
+    expect(pairs.map(jsonDecode), [[_worker.toString(), _account.toString()]]);
   });
 
   test('a failed disclosure setter cannot survive reload in the same or a new instance', () async {
     final store = _failingStore();
     final preferences = PrefsWorkshopPreferences();
-    await expectLater(preferences.acceptDisclosure(_worker, _forum), _error('workshop_preferences'));
-    expect(await preferences.disclosureAccepted(_worker, _forum), isFalse);
-    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _forum), isFalse);
+    await expectLater(preferences.acceptDisclosure(_worker, _account), _error('workshop_preferences'));
+    expect(await preferences.disclosureAccepted(_worker, _account), isFalse);
+    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _account), isFalse);
     store.fail = false;
-    await preferences.acceptDisclosure(_worker, _forum);
-    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _forum), isTrue);
+    await preferences.acceptDisclosure(_worker, _account);
+    expect(await PrefsWorkshopPreferences().disclosureAccepted(_worker, _account), isTrue);
   });
 
   test('concurrent instances reserve one first identifier for identical metadata bytes', () async {

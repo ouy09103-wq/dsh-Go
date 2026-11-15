@@ -117,23 +117,62 @@
   "workshopErrorReadersBusy": "She's in use. Leave the Companion room or close the floating window, then try again.",
   "workshopErrorInstallRecord": "The install record on this phone doesn't match, so nothing was changed.",
   "workshopErrorOtherOrigin": "This was installed from a different Workshop.",
-  "workshopErrorSignIn": "Sign in to the forum first.",
+  "workshopErrorSignIn": "Sign in with GitHub first.",
   "workshopErrorConsent": "Agree to let the Workshop check your sign-in first.",
-  "workshopErrorForumMismatch": "The forum you signed in to isn't the one this Workshop uses. Sign in again.",
-  "workshopErrorForumDown": "The forum can't be reached right now. Try again later.",
+  "workshopErrorAccountMismatch": "The account you signed in with isn't the kind this Workshop uses. Sign in again.",
+  "workshopErrorAccountDown": "Couldn't confirm who you are with GitHub right now. Try again later.",
   "workshopErrorPreferences": "Couldn't save the record on this phone, so this step didn't continue.",
   "workshopErrorBusy": "The previous step is still running. One moment.",
   "workshopErrorCancelled": "Cancelled.",
   "workshopErrorUnknownResult": "It's unclear whether that went through. Refresh and check before trying again.",
   "workshopErrorGeneric": "That didn't work. Try again later.",
-  "workshopDisclosureTitle": "Let the Workshop confirm who you are",
-  "workshopDisclosureLead": "To submit, manage your submissions or report something, the Workshop needs to know who you are. To find out, your forum sign-in credential (a User API Key) is sent to the Workshop service below, which asks the forum which account it belongs to.",
+  "workshopErrorWithCode": "That didn't work. Try again later. ({code})",
+  "@workshopErrorWithCode": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "workshopErrorPackage": "A file in this pack doesn't meet the requirements, so it can't be uploaded ({code}).",
+  "@workshopErrorPackage": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "workshopDisclosureTitle": "Let the Workshop confirm your GitHub identity",
+  "workshopDisclosureLead": "To submit, manage your submissions or report something, the Workshop needs to know who you are. To find out, your GitHub sign-in credential is sent to the Workshop service below, which asks GitHub which account it belongs to.",
   "workshopDisclosureWorker": "Workshop that receives the credential",
-  "workshopDisclosureForum": "Forum that confirms who you are",
-  "workshopDisclosureUse": "It is sent when you submit, view or withdraw your submissions, or report something. The Workshop only uses it to confirm your identity with the forum and does not keep it.",
-  "workshopDisclosureKept": "This phone only remembers that you agreed to these two addresses, with no extra copy of the credential. If either changes, you'll be asked again.",
+  "workshopDisclosureAccount": "Account service that confirms who you are",
+  "workshopDisclosureUse": "It is sent when you submit, view or withdraw your submissions, or report something. The Workshop only uses it to confirm your identity with GitHub and does not keep it.",
+  "workshopDisclosureKept": "The credential stays on this phone, which also remembers that you agreed to these two addresses. If either changes, you'll be asked again.",
   "workshopDisclosureStale": "The addresses just changed. Please confirm the ones shown now.",
   "workshopDisclosureAccept": "Agree and continue",
   "workshopDisclosureDecline": "Not now",
-  "workshopDisclosureUnsaved": "Your consent counts for now, but it couldn't be saved on this phone. You may be asked again."
+  "workshopDisclosureUnsaved": "Your consent counts for now, but it couldn't be saved on this phone. You may be asked again.",
+  "workshopSignInTitle": "Sign in with GitHub",
+  "workshopSignInLead": "The Workshop knows authors by their GitHub account. This sign-in can only read your public profile (username and account number), not your repositories.",
+  "workshopSignInPreparing": "Getting a code from GitHub…",
+  "workshopSignInSteps": "Enter this code on GitHub's verification page and authorize, then come back here.",
+  "workshopSignInOpen": "Copy and open GitHub",
+  "workshopSignInCopied": "Code copied",
+  "workshopSignInWaiting": "Waiting for you to authorize on GitHub…",
+  "workshopSignInExpired": "The code expired.",
+  "workshopSignInDenied": "You cancelled the authorization on GitHub.",
+  "workshopSignInNetwork": "Can't reach GitHub. Check the connection and try again.",
+  "workshopSignInUnconfigured": "This Workshop hasn't set up GitHub sign-in yet.",
+  "workshopSignInAgain": "Get a new code",
+  "workshopAccountLine": "GitHub account {login}",
+  "workshopAccountSignOut": "Sign out",
+  "workshopAccountSignedOut": "Signed out. To withdraw the authorization completely, revoke it under Applications in your GitHub settings.",
+  "workshopAccountSignOutFailed": "Couldn't sign out. Try again later.",
+  "@workshopAccountLine": {
+    "placeholders": {
+      "login": {
+        "type": "String"
+      }
+    }
+  }
 }

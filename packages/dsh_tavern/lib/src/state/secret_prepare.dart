@@ -58,6 +58,8 @@ class StateSecretPrepared {
     required Object? value,
     required this.runtimeExists,
     required Object? runtime,
+    required this.packRuntimeExists,
+    required Object? packRuntime,
     required List<_Json> changes,
     required List<_Json> receipts,
     required List<_Json> issues,
@@ -65,6 +67,7 @@ class StateSecretPrepared {
        _plan = _mapCopy(plan.toJson()),
        _value = _copy(value),
        _runtime = _copy(runtime),
+       _packRuntime = _eventCopy(packRuntime),
        _changes = _maps(changes),
        _receipts = _maps(receipts),
        _issues = _maps(issues),
@@ -76,8 +79,8 @@ class StateSecretPrepared {
   final StateSession _session;
   final _Json _plan;
   final String planId;
-  final bool accepted, valueExists, runtimeExists;
-  final Object? _value, _runtime;
+  final bool accepted, valueExists, runtimeExists, packRuntimeExists;
+  final Object? _value, _runtime, _packRuntime;
   final List<_Json> _changes, _receipts, _issues;
   final int _receiptBoundary, _issueBoundary, _effectBoundary, _writeBoundary;
   final Set<String> _structural;
@@ -85,6 +88,7 @@ class StateSecretPrepared {
   Object? get value => _copy(_value);
   String get valueFingerprint => _fingerprint({'exists': valueExists, 'value': _value});
   Object? get runtime => _copy(_runtime);
+  Object? get packRuntime => _eventCopy(_packRuntime);
   List<Map<String, Object?>> get changes => _maps(_changes);
   List<Map<String, Object?>> get receipts => _maps(_receipts);
   List<Map<String, Object?>> get issues => _maps(_issues);
@@ -96,6 +100,7 @@ class StateSecretPrepared {
     'valueFingerprint': valueFingerprint,
     'runtimeExists': runtimeExists,
     'runtime': runtime,
+    if (packRuntimeExists) ...{'packRuntimeExists': true, 'packRuntime': _auditCopy(_packRuntime)},
     'changes': changes,
     'receipts': receipts,
     'issues': issues,
@@ -299,6 +304,8 @@ StateSecretPrepared _secretPrepare(StateSession session, StateSecretPlan plan) {
     value: session._value,
     runtimeExists: session._runtimeExists,
     runtime: session._runtime,
+    packRuntimeExists: session._pack.exists,
+    packRuntime: session._pack.raw,
     changes: accepted
         ? _secretPrepareChanges(
             before,
@@ -326,13 +333,17 @@ StateResult _secretTerminal(StateSession session, StateSecretPrepared prepared) 
     value: finished._value,
     runtimeExists: finished.runtimeExists,
     runtime: finished._runtime,
+    packRuntimeExists: finished.packRuntimeExists,
+    packRuntime: finished._packRuntime,
     initialized: false,
     valid: finished.valid,
     changed:
         prepared.valueExists != finished.valueExists ||
         !_equal(prepared._value, finished._value) ||
         prepared.runtimeExists != finished.runtimeExists ||
-        !_equal(prepared._runtime, finished._runtime),
+        !_equal(prepared._runtime, finished._runtime) ||
+        session._pack._packOriginalExists != finished.packRuntimeExists ||
+        !_eventEqual(session._pack._packOriginal, finished._packRuntime),
     changes: _secretPrepareChanges(
       prepared._value,
       finished._value,

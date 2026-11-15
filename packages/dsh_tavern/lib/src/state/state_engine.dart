@@ -14,6 +14,8 @@ part 'json_value.dart';
 part 'json_logic.dart';
 part 'schema.dart';
 part 'session.dart';
+part 'composition.dart';
+part 'execution_sources.dart';
 part 'projection.dart';
 part 'card_events.dart';
 part 'secret_prepare.dart';
@@ -105,6 +107,8 @@ class StateResult {
     required Object? value,
     required this.runtimeExists,
     required Object? runtime,
+    this.packRuntimeExists = false,
+    Object? packRuntime,
     required this.initialized,
     required this.valid,
     required this.changed,
@@ -114,23 +118,27 @@ class StateResult {
     required List<_Json> issues,
   }) : _value = _copy(value),
        _runtime = _copy(runtime),
+       _packRuntime = _eventCopy(packRuntime),
        _changes = _maps(changes),
        _receipts = _maps(receipts),
        _effects = _maps(effects),
        _issues = _maps(issues);
   final bool valueExists;
   final bool runtimeExists;
+  final bool packRuntimeExists;
   final bool initialized;
   final bool valid;
   final bool changed;
   final Object? _value;
   final Object? _runtime;
+  final Object? _packRuntime;
   final List<_Json> _changes;
   final List<_Json> _receipts;
   final List<_Json> _effects;
   final List<_Json> _issues;
   Object? get value => _copy(_value);
   Object? get runtime => _copy(_runtime);
+  Object? get packRuntime => _eventCopy(_packRuntime);
   List<Map<String, Object?>> get changes => _maps(_changes);
   List<Map<String, Object?>> get receipts => _maps(_receipts);
   List<Map<String, Object?>> get effects => _maps(_effects);
@@ -141,6 +149,7 @@ class StateResult {
     'value': value,
     'runtimeExists': runtimeExists,
     'runtime': runtime,
+    if (packRuntimeExists) ...{'packRuntimeExists': true, 'packRuntime': _auditCopy(_packRuntime)},
     'initialized': initialized,
     'valid': valid,
     'changed': changed,

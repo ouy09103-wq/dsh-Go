@@ -6,9 +6,6 @@ import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
 import io.github.ouy09103.dsh_go_root.phone.PhoneGuest
-import io.github.ouy09103.dsh_go_root.root.RootEngine
-import io.github.ouy09103.dsh_go_root.root.RootExec
-import io.github.ouy09103.dsh_go_root.root.RootIdentity
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
@@ -22,9 +19,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
- * Runs `dsh web` through proot, the optional direct glibc planner, the optional
- * tawcroot launcher or the optional root launch (su), using the same composed manifest
- * configuration. Reports ready after the token and socket.
+ * Runs `dsh web` through proot, the optional direct glibc planner or the optional
+ * tawcroot launcher, using the same composed manifest configuration. Reports ready
+ * after the token and socket.
  */
 class DshProcess(
     private val context: Context,
@@ -77,13 +74,6 @@ class DshProcess(
     var tawc: Boolean = false
         private set
 
-    /**
-     * This process really is uid 0: the direct plan, started through su. The app cannot read
-     * another uid's /proc entry, so this launch's stop/cleanup asks su instead ([RootEngine]).
-     */
-    var root: Boolean = false
-        private set
-
     val launchDiagnostics = LaunchDiagnostics()
     val executionMode: String? get() = launchDiagnostics.currentMode(process?.isAlive == true)
 
@@ -94,55 +84,28 @@ class DshProcess(
      * [binds] are extra proot `-b host:guest` mounts, inserted before the guest command.
      * [safe] boots the rescue profile instead of `web` (see [SafeMode.profileArg]).
      */
-    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, searchOverlay: Boolean = false, authOverlay: Boolean = false, speechOverlay: Boolean = false, tawcEngine: Boolean = false, tawcFailed: Boolean = false, rootEngine: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
+    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, searchOverlay: Boolean = false, authOverlay: Boolean = false, speechOverlay: Boolean = false, tawcEngine: Boolean = false, tawcFailed: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
         check(process == null) { "already started" }
         // tawcroot wins over Direct when both are on; like Direct it needs PRoot's fake hard links gone.
         val tawcWanted = tawcEngine && !safe
         val tawcMissing = if (tawcWanted) TawcrootLaunch.unavailable(context.applicationInfo.nativeLibraryDir, android.os.Build.VERSION.SDK_INT) else null
         val tawcReady = tawcWanted && !tawcFailed && tawcMissing == null
-        // The root launch runs Direct's prepared plan through su; it needs the same runtime and a su
-        // the kernel actually hands uid 0 to. Asking once is what keeps a manager's refusal from
-        // turning into a silent proot start: the reason is reported, not swallowed.
-        val rootWanted = rootEngine && !safe && !tawcReady
-        val rootSu = if (rootWanted) RootExec.suPath() else null
-        val rootIdentity = if (rootWanted && rootSu != null) RootIdentity.probe() else null
-        val rootReady = rootWanted && rootIdentity?.granted == true
-        // A uid 0 engine is invisible to this app's own /proc sweep: ask su about its pid file
-        // whether or not this launch wants root, or a leftover one would outlive the switch.
-        val previousRoot = RootEngine.touched(rootfs)
-        if (RootEngine.pidFile(rootfs).exists() && RootEngine.reap(rootfs) != null) {
-            listener.onLog("[dsh-app] stopped the previous root engine", "system")
-        }
-        // A root run leaves the guest home and tmp root-owned, and this app has to delete the pid
-        // file and chdir into that home before any launch, root or not: hand both back first.
-        if (previousRoot && RootEngine.reclaim(rootfs)) RootEngine.unmark(rootfs)
-        // Root was asked for and the kernel did not confirm it: say so and stop. Quiety starting
-        // proot instead would hand back a uid 0 that is only a faked one, which is the whole
-        // confusion this launch method exists to end.
-        if (rootWanted && !rootReady) {
-            throw IllegalStateException(rootFailure(rootSu, rootIdentity))
-        }
-        var selection = if (tawcReady || rootReady) DirectLaunch.select(rootfs, requested = true, safe = false)
+        var selection = if (tawcReady) DirectLaunch.select(rootfs, requested = true, safe = false)
             else DirectLaunch.select(rootfs, directEngine, safe, directFailed)
         // Only PRoot's fake hard links stand in the way: tidy them once no runtime process is left.
         val tidy = selection.fallbackReason == DirectLaunch.INCOMPATIBLE
         val cleanup = reapStrays(allowObservationGap = !selection.direct && !tidy)
         if (tidy && cleanup.complete) selection = tidyLinks(binds)
         tawc = tawcReady && selection.direct
-        root = rootReady && selection.direct && !tawc
-        direct = selection.direct && !tawcReady && !root
+        direct = selection.direct && !tawcReady
         directFallbackReason = selection.fallbackReason ?: when {
             tawcWanted && tawcFailed -> TawcrootLaunch.FAILED
             tawcMissing != null -> tawcMissing
-            (directEngine || tawcEngine || rootEngine) && safe -> "safeRecovery"
+            (directEngine || tawcEngine) && safe -> "safeRecovery"
             else -> null
         }
-        launchDiagnostics.selected(
-            if (tawc) "tawcroot" else if (root) "root" else if (direct) "direct" else "proot",
-            directFallbackReason,
-        )
-        val strictLaunch = direct || tawc || root
-        check(cleanup.complete || (!strictLaunch && !cleanup.ownedRemaining)) { "runtime cleanup incomplete; stop the engine and retry" }
+        launchDiagnostics.selected(if (tawc) "tawcroot" else if (direct) "direct" else "proot", directFallbackReason)
+        check(cleanup.complete || (!direct && !tawc && !cleanup.ownedRemaining)) { "runtime cleanup incomplete; stop the engine and retry" }
         if (!cleanup.complete) listener.onLog("[dsh-app] starting proot with incomplete process observation; no captured runtime identities remain", "system")
         val pidFile = File(rootfs, "tmp/dsh-web.pid")
         pidFile.delete() // also removes a stale/dangling symlink; never reuse a previous run's PID
@@ -165,11 +128,11 @@ class DshProcess(
 
         val argv = ArrayList<String>()
         val sameBind = DirectLaunch.samePathBind(rootfs)
-        val launchArgv = DirectLaunch.prootArguments(rootfs, manifest.launchArgv, direct || root)
+        val launchArgv = DirectLaunch.prootArguments(rootfs, manifest.launchArgv, direct)
         val allBinds = binds.filterNot { expand(it) == sameBind }.distinct()
         // PRoot's Node resolves through glibc, which fails A with a refused AAAA (#152): add Direct's resolver.
         val effectiveGuestEnv = guestEnv + ("DSH_GO_RUNTIME_ROOT" to rootfs.canonicalPath) +
-            listOfNotNull(if (direct || root) null else "NODE_OPTIONS" to DirectLaunch.prootNodeOptions(guestEnv["NODE_OPTIONS"]))
+            listOfNotNull(if (direct) null else "NODE_OPTIONS" to DirectLaunch.prootNodeOptions(guestEnv["NODE_OPTIONS"]))
         var guestEnvPlaced = false
         check(manifest.launchArgv.isNotEmpty()) { "runtime manifest has no launch.argv" }
         var bindsPlaced = false
@@ -237,21 +200,6 @@ class DshProcess(
             env.clear()
             env.putAll(plan.environment)
         }
-        if (root) {
-            // The same plan, owned by uid 0 and confined by chroot: absolute paths inside the
-            // guest must not resolve against the device, or a uid 0 engine tidies Android's own
-            // /tmp and /var instead of the rootfs.
-            val plan = DirectLaunch.prepare(rootfs, manifest.abi, argv, env.toMap())
-            RootEngine.mark(rootfs)
-            // The scripts live beside the rootfs, not inside it: su reads them before any mount.
-            val rootDir = RootEngine.marker(rootfs).parentFile
-            val rootPlan = RootLaunch.prepare(rootfs, plan, rootSu ?: error("root engine: su missing"), rootDir)
-            builder.command(rootPlan.argv).directory(rootPlan.cwd)
-            // su and unshare both inherit stdin; a pipe that never closes would stall them.
-            builder.redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
-            env.clear()
-            env.putAll(rootPlan.environment)
-        }
         if (tawcPlan != null) {
             TawcrootLaunch.writeDevView(tawcPlan.devView)
             builder.command(tawcPlan.argv).directory(File(tawcPlan.cwd))
@@ -263,19 +211,14 @@ class DshProcess(
         if (directFallbackReason == DirectLaunch.INCOMPATIBLE) listener.onLog("[dsh-app] direct fallback: proot hard-link backing files need compatible launch; user preference and data retained", "system")
         if (directFallbackReason == DirectLaunch.FAILED) listener.onLog("[dsh-app] direct fallback: direct launch failed before with this runtime; turn Direct on again to retry", "system")
         if (directFallbackReason == TawcrootLaunch.FAILED) listener.onLog("[dsh-app] tawcroot fallback: tawcroot failed to start before with this runtime; turn tawcroot on again to retry", "system")
-        if (directFallbackReason == RootIdentity.SU_MISSING) listener.onLog("[dsh-app] root fallback: no su on this device; turn root on after the root manager grants it", "system")
-        listener.onLog(
-            "[dsh-app] launch method: ${if (tawc) "tawcroot" else if (root) "root" else if (direct) "direct-glibc" else "proot"}" +
-                "${if ((directEngine || tawcEngine || rootEngine) && safe) " (safe recovery)" else ""}",
-            "system",
-        )
+        listener.onLog("[dsh-app] launch method: ${if (tawc) "tawcroot" else if (direct) "direct-glibc" else "proot"}${if ((directEngine || tawcEngine) && safe) " (safe recovery)" else ""}", "system")
         listener.onLog("[dsh-app] launching ${builder.command().joinToString(" ") { redact(it) }}", "system")
         // stop() came in while this was being prepared: don't launch at all.
         if (stopping) {
             listener.onExit(this, 0, true)
             return
         }
-        onLaunchMethod?.invoke(direct || root)
+        onLaunchMethod?.invoke(direct)
         val p = builder.start()
         process = p
         launchDiagnostics.spawned()
@@ -284,11 +227,6 @@ class DshProcess(
         waiter = thread(name = "dsh-wait", isDaemon = true) {
             val code = try { p.waitFor() } catch (_: InterruptedException) { -1 }
             startupSignal.countDown()
-            // A root launch that never got DSH up has its own reasons (no namespace, no mount);
-            // a plain "exit 1" would hide the one piece of advice the user needs.
-            if (root && !readyReported && code != 0) {
-                synchronized(this) { if (process === p && !stopping) startupError = rootExitFailure(code) }
-            }
             // The fatal message is usually the last output: let the pumps drain it before reporting.
             try {
                 out.join(2000)
@@ -318,28 +256,6 @@ class DshProcess(
             }
         }
         if (stopping) stop()
-    }
-
-    /** The one reason root cannot run, as the sentence the failure card shows. */
-    /** A launch that started and died instead of never starting: still a root failure, not a fallback. */
-    private fun rootExitFailure(code: Int): String = when (code) {
-        RootLaunch.EXIT_NO_NAMESPACE -> "root launch: this device cannot give a private mount namespace, so the engine cannot be confined (${RootLaunch.NO_NAMESPACE})"
-        RootLaunch.EXIT_MOUNT_FAILED -> "root launch: could not mount /dev, /proc and /sys into the rootfs"
-        else -> "root launch: the engine exited with code $code"
-    }
-
-    private fun rootFailure(su: String?, identity: RootIdentity.Result?): String {
-        val code = identity?.failure ?: if (su == null) RootIdentity.SU_MISSING else RootIdentity.SU_FAILED
-        val detail = when (code) {
-            RootIdentity.SU_MISSING -> "no su on this device; grant root to this app in the root manager"
-            RootIdentity.SU_NOT_EXECUTABLE -> "su exists but the kernel will not run it (a stale /system/bin/su)"
-            RootIdentity.NOT_GRANTED -> "the root manager did not grant this app"
-            RootIdentity.NOT_ROOT -> "su answered with the app uid, so the child never became root"
-            RootIdentity.DOMAIN_UNKNOWN -> "could not read the SELinux domain, so root is not proven"
-            RootIdentity.WRONG_DOMAIN -> "uid 0 but still in an app SELinux domain"
-            else -> "su did not answer"
-        }
-        return "root launch: $detail ($code)"
     }
 
     /**
@@ -425,28 +341,11 @@ class DshProcess(
         val p = process ?: return
         stopper = thread(name = "dsh-stop", isDaemon = true) {
             try {
-                if (root) {
-                    // A uid 0 engine has no /proc entry this app may read: ask su, and only
-                    // signal a pid that still looks like this runtime's engine.
-                    val pid = RootEngine.pid(rootfs) ?: -1
-                    if (!RootEngine.terminate(rootfs, pid)) {
-                        listener.onLog("[dsh-app] root engine (pid $pid) is still running after SIGKILL", "system")
-                    }
-                    if (p.isAlive) p.destroy()
-                    // Anything the engine wrote as root is unreadable to the app afterwards, and
-                    // the next compatible launch runs as the app uid: give the guest home back,
-                    // off this thread so a large home cannot delay the stop report.
-                    thread(name = "dsh-root-reclaim", isDaemon = true) {
-                        if (RootEngine.reclaim(rootfs)) RootEngine.unmark(rootfs)
-                        else listener.onLog("[dsh-app] could not hand the guest home back to the app uid", "system")
-                    }
-                } else {
-                    val node = if (p.isAlive) guestRecord() else null
-                    val proot = if (direct || tawc) null else node?.let { child -> processSnapshot().records.firstOrNull { it.pid == child.parent && it.proot } }
-                    if (node != null) signalOwned(node, OsConstants.SIGTERM)
-                    else if ((direct || tawc) && p.isAlive) p.destroy() // loader/preload may fail before writing its pid file
-                    if (!waitExit(p, 5000) && proot != null) signalOwned(proot, OsConstants.SIGQUIT)
-                }
+                val node = if (p.isAlive) guestRecord() else null
+                val proot = if (direct || tawc) null else node?.let { child -> processSnapshot().records.firstOrNull { it.pid == child.parent && it.proot } }
+                if (node != null) signalOwned(node, OsConstants.SIGTERM)
+                else if ((direct || tawc) && p.isAlive) p.destroy() // loader/preload may fail before writing its pid file
+                if (!waitExit(p, 5000) && proot != null) signalOwned(proot, OsConstants.SIGQUIT)
                 // Tawcroot needs no extra QUIT grace; retain PRoot and Direct's existing wait.
                 if (!tawc) waitExit(p, 2000)
             } finally {
@@ -560,13 +459,7 @@ class DshProcess(
     }
 
     /** Reap a captured process tree before releasing #17 ownership to another launch. */
-    @Synchronized fun killStrays(): Boolean {
-        if (root) {
-            val pid = RootEngine.pid(rootfs)
-            if (pid != null) RootEngine.terminate(rootfs, pid)
-        }
-        return reapStrays().complete
-    }
+    @Synchronized fun killStrays(): Boolean = reapStrays().complete
 
     internal data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean, val canPruneTemp: Boolean = false)
 

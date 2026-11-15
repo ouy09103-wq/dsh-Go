@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:dsh_tavern/dsh_tavern.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
@@ -259,6 +260,7 @@ void main() {
   _promptTests();
   _stateAndTransactionTests();
   _branchTests();
+  _gameplayEventTests();
 }
 
 void _authorizationTests() {
@@ -1489,4 +1491,483 @@ void _branchTests() {
       expect(_maps(view['pendingPrompts']), _pending(before));
     },
   );
+}
+
+Future<TavernPackVersionRef> _eventPack(
+  T24Harness h, {
+  required String packId,
+  required String version,
+  required List<_Json> handlers,
+  bool withRule = false,
+  List<_Json>? ruleActions,
+  List<_Json> references = const [],
+}) async {
+  final manifest = <String, Object?>{
+    'formatVersion': 1,
+    'packId': packId,
+    'packVersion': version,
+    'resources': <Object?>[],
+    if (references.isNotEmpty) 'references': references,
+    'dshgo': {
+      'v': 1,
+      if (withRule)
+        'state': {
+          'rules': [
+            {
+              'id': 'shared',
+              'when': true,
+              'once': true,
+              'do': ruleActions ?? [_increment()],
+            },
+          ],
+        },
+      'director': {
+        'eventRules': {'v': 1, 'rules': handlers},
+      },
+    },
+  };
+  final bytes = Uint8List.fromList(utf8.encode(jsonEncode(manifest)));
+  final archive = Archive()..addFile(ArchiveFile('pack.json', bytes.length, bytes));
+  return (await h.engine.importGameplayPack(Uint8List.fromList(ZipEncoder().encode(archive)))).ref;
+}
+
+_Json _eventCapabilityFromCall(T24Call call) {
+  final input = _map(jsonDecode(_maps(call.body!['messages']).last['content']! as String));
+  return _map(input['eventCapability']);
+}
+
+String _packEventWire(_Json capability, String bindingId) =>
+    _maps(capability['eventMap']).singleWhere((row) => _map(row['source'])['bindingId'] == bindingId)['wireName']!
+        as String;
+
+_Json _packEventBinding(_Json saved, String bindingId) =>
+    _map(_map(_map(saved['dshgoPackRuntime'])['bindings'])[bindingId]);
+
+void _gameplayEventTests() {
+  test('pack event names and once domains remain separate in one real state settlement', () async {
+    final h = await _open();
+    final created = await _chat(
+      h,
+      state: _state(),
+      handlers: [
+        _handler('shared', [
+          _increment(),
+          {'type': 'prompt', 'text': 'LEGACY-EVENT-LITERAL'},
+        ], once: true),
+      ],
+    );
+    final ref = await _eventPack(
+      h,
+      packId: 'event-domains',
+      version: 'one',
+      withRule: true,
+      handlers: [
+        _handler('shared', [
+          _increment(),
+          {'type': 'prompt', 'text': _literal},
+        ], once: true),
+      ],
+    );
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    final initial = await h.engine.readGameplayBindings(scope);
+    final adopted = await h.engine.updateGameplayBindings(
+      scope,
+      expected: initial.token,
+      operationId: 'two-event-bindings',
+      edits: [
+        TavernPackBindingCreate(clientKey: 'a', packRef: ref),
+        TavernPackBindingCreate(clientKey: 'b', packRef: ref),
+      ],
+    );
+    final a = adopted.createdBindings['a']!;
+    final b = adopted.createdBindings['b']!;
+    await _enable(h);
+    final helper = await _startDirector(h, created.chatId);
+    final capability = _eventCapabilityFromCall(helper.call);
+    expect(capability['version'], 2);
+    final aWire = _packEventWire(capability, a);
+    final bWire = _packEventWire(capability, b);
+    expect(aWire, isNot('fixed'));
+    expect(bWire, isNot(anyOf('fixed', aWire)));
+    expect(
+      _maps(capability['eventMap']).singleWhere((row) => _map(row['source'])['kind'] == 'legacy')['wireName'],
+      'fixed',
+    );
+    final run = await _finishDirector(
+      helper,
+      events: [
+        {'name': 'fixed', 'data': 'legacy proposal'},
+        {'name': aWire, 'data': 'only binding a'},
+      ],
+    );
+    final proposal = _runRaw(h, '${run.id}:event:1');
+    expect(proposal['name'], aWire);
+    expect(_map(_map(proposal['eventTarget'])['source'])['bindingId'], a);
+    expect(_map(proposal['eventTarget'])['name'], 'fixed');
+    await _reply(h, created.chatId);
+    expect(
+      await _count(h, created.chatId),
+      4,
+      reason: 'Two distinct once rules and exactly the legacy/a handlers share the final state session.',
+    );
+    final first = await _saved(h.engine, created.chatId);
+    final aRow = _packEventBinding(first, a);
+    final bRow = _packEventBinding(first, b);
+    expect(aRow['rules'], ['shared']);
+    expect(bRow['rules'], ['shared']);
+    expect(_map(aRow['events'])['once'], ['shared']);
+    expect(_maps(_map(aRow['events'])['consumed']), [
+      {'eventId': '${run.id}:event:1', 'handlerId': 'shared'},
+    ]);
+    expect(bRow.containsKey('events'), isFalse);
+    expect(_maps(_map(aRow['events'])['pendingPrompts']).single['text'], _literal);
+    expect(_pending(first).single['text'], 'LEGACY-EVENT-LITERAL');
+
+    // Removing the current handler does not erase an already adopted prompt
+    // from this still-active binding/epoch.
+    final withoutHandler = await _eventPack(
+      h,
+      packId: 'event-domains',
+      version: 'two',
+      withRule: true,
+      handlers: const [],
+    );
+    await h.engine.updateGameplayBindings(
+      scope,
+      expected: adopted.snapshot.token,
+      operationId: 'remove-current-handler',
+      edits: [TavernPackBindingSelectVersion(bindingId: a, packVersion: withoutHandler.packVersion)],
+    );
+    final next = await _reply(h, created.chatId);
+    expect(_literal.allMatches(_requestText(next.call)), hasLength(1));
+    expect('LEGACY-EVENT-LITERAL'.allMatches(_requestText(next.call)), hasLength(1));
+    expect(h.engine.variables(created.chatId).containsKey('eventMustStayLiteral'), isFalse);
+    expect(await _count(h, created.chatId), 4);
+    final after = await _saved(h.engine, created.chatId);
+    expect(_maps(_map(_packEventBinding(after, a)['events'])['pendingPrompts']), isEmpty);
+    expect(_map(_packEventBinding(after, a)['events'])['consumed'], _map(aRow['events'])['consumed']);
+    expect(_packEventBinding(after, b)['rules'], ['shared']);
+    expect(_packEventBinding(after, b).containsKey('events'), isFalse);
+    expect(_pending(after), isEmpty);
+    final audit = (await _applyRuns(h, created.chatId)).first.result;
+    expect(_maps(audit['packPendingConsumed']).single['source'], _map(proposal['eventTarget'])['source']);
+    expect(
+      _runRaw(h, '${run.id}:event:1'),
+      proposal,
+      reason: 'Consumption never rewrites the original durable proposal or its target.',
+    );
+  });
+
+  test('version and explicit epoch changes do not re-sign an old pack wire proposal', () async {
+    final h = await _open();
+    final created = await _chat(h, state: _state(), handlers: const []);
+    final firstRef = await _eventPack(
+      h,
+      packId: 'event-version',
+      version: 'one',
+      handlers: [
+        _handler('shared', [
+          _increment(),
+          {'type': 'prompt', 'text': 'VERSION-ONE'},
+        ], once: true),
+      ],
+    );
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    final initial = await h.engine.readGameplayBindings(scope);
+    final createdBinding = await h.engine.updateGameplayBindings(
+      scope,
+      expected: initial.token,
+      operationId: 'create-versioned-event',
+      edits: [TavernPackBindingCreate(clientKey: 'event', packRef: firstRef)],
+    );
+    final binding = createdBinding.createdBindings['event']!;
+    await _enable(h);
+    final oldHelper = await _startDirector(h, created.chatId);
+    final oldWire = _packEventWire(_eventCapabilityFromCall(oldHelper.call), binding);
+    final oldRun = await _finishDirector(
+      oldHelper,
+      events: [
+        {'name': oldWire, 'data': 'captured one'},
+      ],
+    );
+    final oldProposal = _runRaw(h, '${oldRun.id}:event:0');
+    final secondRef = await _eventPack(
+      h,
+      packId: 'event-version',
+      version: 'two',
+      handlers: [
+        _handler('shared', [
+          _increment(),
+          {'type': 'prompt', 'text': 'VERSION-TWO'},
+        ], once: true),
+      ],
+    );
+    final upgraded = await h.engine.updateGameplayBindings(
+      scope,
+      expected: createdBinding.snapshot.token,
+      operationId: 'select-event-two',
+      edits: [TavernPackBindingSelectVersion(bindingId: binding, packVersion: secondRef.packVersion)],
+    );
+    final stale = await _reply(h, created.chatId);
+    expect(_requestText(stale.call), isNot(contains('VERSION-ONE')));
+    expect(await _count(h, created.chatId), 0);
+    final staleSaved = await _saved(h.engine, created.chatId);
+    final stalePack = staleSaved['dshgoPackRuntime'];
+    expect(stalePack is _Json && _map(stalePack['bindings']).containsKey(binding), isFalse);
+
+    final freshHelper = await _startDirector(h, created.chatId);
+    final freshWire = _packEventWire(_eventCapabilityFromCall(freshHelper.call), binding);
+    expect(freshWire, oldWire, reason: 'Version changes capability, not the stable local event name.');
+    final freshRun = await _finishDirector(
+      freshHelper,
+      events: [
+        {'name': freshWire, 'data': 'captured two'},
+      ],
+    );
+    await _reply(h, created.chatId);
+    expect(await _count(h, created.chatId), 1);
+    final beforeReset = _packEventBinding(await _saved(h.engine, created.chatId), binding);
+    expect(beforeReset['onceEpoch'], 1);
+    expect(_maps(_map(beforeReset['events'])['pendingPrompts']).single['text'], 'VERSION-TWO');
+
+    await h.engine.updateGameplayBindings(
+      scope,
+      expected: upgraded.snapshot.token,
+      operationId: 'reset-event-once',
+      edits: [TavernPackBindingResetOnce(bindingId: binding)],
+    );
+    final resetReply = await _reply(h, created.chatId);
+    expect(_requestText(resetReply.call), isNot(contains('VERSION-TWO')));
+    expect(await _count(h, created.chatId), 1);
+    expect(
+      _packEventBinding(await _saved(h.engine, created.chatId), binding),
+      beforeReset,
+      reason: 'The old epoch is preserved until an action in the explicit new epoch is accepted.',
+    );
+    final resetHelper = await _startDirector(h, created.chatId);
+    final resetCapability = _eventCapabilityFromCall(resetHelper.call);
+    final resetWire = _packEventWire(resetCapability, binding);
+    expect(resetWire, isNot(freshWire));
+    final resetRun = await _finishDirector(
+      resetHelper,
+      events: [
+        {'name': resetWire, 'data': 'new epoch'},
+      ],
+    );
+    await _reply(h, created.chatId);
+    expect(await _count(h, created.chatId), 2);
+    final resetRow = _packEventBinding(await _saved(h.engine, created.chatId), binding);
+    expect(resetRow['onceEpoch'], 2);
+    expect(_map(resetRow['events'])['once'], ['shared']);
+    expect(_maps(_map(resetRow['events'])['consumed']), [
+      {'eventId': '${resetRun.id}:event:0', 'handlerId': 'shared'},
+    ]);
+    expect(_runRaw(h, '${oldRun.id}:event:0'), oldProposal);
+    expect(_map(_map(_runRaw(h, '${freshRun.id}:event:0')['eventTarget'])['source'])['onceEpoch'], 1);
+    expect(_map(_map(_runRaw(h, '${resetRun.id}:event:0')['eventTarget'])['source'])['onceEpoch'], 2);
+  });
+
+  test('a host director proposal retains its definition identity for a nonhost group continuation', () async {
+    final h = await _open();
+    Future<String> card(String name, int initial) async {
+      final raw = _map(jsonDecode(utf8.decode(t24Card())));
+      final data = _map(raw['data']);
+      data['name'] = name;
+      data['first_mes'] = '$name greeting';
+      data['extensions'] = {
+        'dshgo': {
+          'v': 1,
+          'state': {
+            ..._state(),
+            'init': {'count': initial},
+          },
+          'director': {'every': 1000},
+        },
+      };
+      return (await h.engine.importCard(Uint8List.fromList(utf8.encode(jsonEncode(raw))))).id;
+    }
+
+    final host = await card('Definition host', 0);
+    final actor = await card('Actual speaker', 91);
+    final chat = await h.engine.createGroupChat([actor], hostCharacterId: host);
+    final greeting = (await h.engine.path(chat)).single;
+    expect(greeting.speakerCharacterId, actor);
+    expect(await _count(h, chat), 0);
+    final ref = await _eventPack(
+      h,
+      packId: 'group-definition',
+      version: 'one',
+      handlers: [
+        _handler('group-handler', [_increment()], once: true),
+      ],
+    );
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    final initial = await h.engine.readGameplayBindings(scope);
+    final adopted = await h.engine.updateGameplayBindings(
+      scope,
+      expected: initial.token,
+      operationId: 'group-event-definition',
+      edits: [TavernPackBindingCreate(clientKey: 'group', packRef: ref)],
+    );
+    final binding = adopted.createdBindings['group']!;
+    final hostView = await h.engine.resolveGameplayConfig(TavernGameplayContext(characterId: host, chatId: chat));
+    final actorView = await h.engine.resolveGameplayConfig(
+      TavernGameplayContext(characterId: actor, chatId: chat),
+      validateCurrentState: true,
+    );
+    expect(actorView.effectiveConfigId, hostView.effectiveConfigId);
+    expect(
+      actorView.sources.singleWhere((source) => source['kind'] == 'card' && source['characterId'] == actor)['roles'],
+      contains('actor'),
+    );
+    expect(
+      hostView.sources.singleWhere((source) => source['kind'] == 'card' && source['characterId'] == host)['roles'],
+      contains('actor'),
+    );
+
+    await _enable(h);
+    final helper = await _startDirector(h, chat);
+    final capability = _eventCapabilityFromCall(helper.call);
+    final wire = _packEventWire(capability, binding);
+    final run = await _finishDirector(
+      helper,
+      events: [
+        {'name': wire, 'data': 'host authorized'},
+      ],
+    );
+    final continued = await _startMain(h, h.engine.continueReply(chat, greeting.nodeId));
+    await _finishMain(continued, text: ' continued as actor');
+    expect(_success(continued).nodeId, greeting.nodeId);
+    expect((await h.engine.path(chat)).last.speakerCharacterId, actor);
+    expect(
+      await _count(h, chat),
+      1,
+      reason: 'The host proposal is executable under the identical host definition used by this actor.',
+    );
+    final saved = await _saved(h.engine, chat);
+    expect(saved['dshgoPackDefinitionConfigId'], actorView.effectiveConfigId);
+    expect(_maps(_map(_packEventBinding(saved, binding)['events'])['consumed']), [
+      {'eventId': '${run.id}:event:0', 'handlerId': 'group-handler'},
+    ]);
+    expect((await h.engine.inspectTurn(chat))!.state['admissionConfigId'], actorView.effectiveConfigId);
+
+    final regenerated = await _startMain(h, h.engine.regenerate(chat, greeting.nodeId));
+    await _finishMain(regenerated, text: 'actor sibling');
+    final sibling = _success(regenerated);
+    expect(sibling.nodeId, isNot(greeting.nodeId));
+    expect(sibling.speakerCharacterId, actor);
+    expect((await h.engine.inspectTurn(chat))!.state['admissionConfigId'], actorView.effectiveConfigId);
+  });
+
+  test('enabling the first pack revokes an already admitted legacy response before state adoption', () async {
+    final h = await _open();
+    final created = await _chat(h, state: _state(), handlers: const []);
+    final ref = await _eventPack(
+      h,
+      packId: 'first-pack-revocation',
+      version: 'one',
+      withRule: true,
+      handlers: const [],
+    );
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    final empty = await h.engine.readGameplayBindings(scope);
+    final active = await _startMain(h, h.engine.send(created.chatId, ''));
+    await h.engine.updateGameplayBindings(
+      scope,
+      expected: empty.token,
+      operationId: 'enable-during-legacy-response',
+      edits: [TavernPackBindingCreate(clientKey: 'first', packRef: ref)],
+    );
+    await _finishMain(
+      active,
+      text: 'body already received',
+      ops: [
+        {'op': 'set', 'path': '/count', 'value': 4},
+      ],
+    );
+    expect(active.events.values.whereType<TavernTurnDone>(), isEmpty);
+    expect(active.events.values.whereType<TavernTurnFailed>().single.kind, TavernFailure.cancelled);
+    expect(await _count(h, created.chatId), 0);
+    final saved = await _saved(h.engine, created.chatId);
+    expect(saved.containsKey('dshgoPackDefinitionConfigId'), isFalse);
+    expect(
+      saved.containsKey('dshgoPackRuntime'),
+      isFalse,
+      reason: 'The failed old admission cannot consume the newly enabled rule.',
+    );
+  });
+
+  test('malformed or ambiguous references at real event positions never fall back to an unqualified action', () async {
+    final h = await _open();
+    final created = await _chat(h, state: _state(), handlers: const []);
+    const pointer = '/state/rules/0/do/1/name';
+    final valid = <String, Object?>{'pointer': pointer, 'kind': 'event', 'source': 'self', 'localId': 'fixed'};
+    final cases = <({String version, List<_Json> references, int count})>[
+      (
+        version: 'malformed',
+        references: [
+          {...valid, 'source': null},
+        ],
+        count: 0,
+      ),
+      (version: 'ambiguous', references: [valid, valid], count: 0),
+      (
+        version: 'opaque-position',
+        references: [
+          {...valid, 'pointer': '/unsupported/name'},
+        ],
+        count: 1,
+      ),
+    ];
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    var snapshot = await h.engine.readGameplayBindings(scope);
+    String? binding;
+    for (final item in cases) {
+      final ref = await _eventPack(
+        h,
+        packId: 'reference-position',
+        version: item.version,
+        withRule: true,
+        handlers: [_handler('vocabulary', const [])],
+        ruleActions: [
+          _increment(),
+          {'type': 'event', 'name': 'fixed', 'data': null},
+        ],
+        references: item.references,
+      );
+      final receipt = await h.engine.updateGameplayBindings(
+        scope,
+        expected: snapshot.token,
+        operationId: 'reference-${item.version}',
+        edits: [
+          if (binding == null)
+            TavernPackBindingCreate(clientKey: 'rule', packRef: ref)
+          else
+            TavernPackBindingSelectVersion(bindingId: binding, packVersion: ref.packVersion),
+        ],
+      );
+      binding ??= receipt.createdBindings['rule']!;
+      snapshot = receipt.snapshot;
+      final resolved = await h.engine.resolveGameplayConfig(
+        TavernGameplayContext(characterId: created.characterId, chatId: created.chatId),
+      );
+      expect(resolved.conflicts.map((issue) => issue['code']), contains('unsupported_reference'));
+      final references = _maps(resolved.definitions.singleWhere((row) => row['path'] == '/references')['items']);
+      expect(references.any((row) => row['kind'] == 'event' && row['resolved'] == false), item.count == 0);
+      await _reply(h, created.chatId);
+      expect(await _count(h, created.chatId), item.count);
+      final saved = await _saved(h.engine, created.chatId);
+      if (item.count == 0) {
+        expect(
+          saved.containsKey('dshgoPackRuntime'),
+          isFalse,
+          reason: 'The unresolved supported action cannot execute or consume its once rule.',
+        );
+      } else {
+        expect(_packEventBinding(saved, binding)['rules'], [
+          'shared',
+        ], reason: 'A declaration at an unsupported position is only diagnostic and cannot disable unrelated rules.');
+      }
+    }
+  });
 }

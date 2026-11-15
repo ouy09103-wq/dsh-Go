@@ -93,11 +93,17 @@ class UserPetsController extends AsyncNotifier<List<PetPack>> {
   /// Checks and unpacks [zip] (pet_library.dart). Returns the pet and whether
   /// it replaced one of the same id; throws [PetImportException].
   Future<({PetPack pack, bool replaced})> import(File zip) async {
-    final (:id, :replaced) = await ref.read(petLibraryProvider).install(zip);
-    _changed(id);
-    final pack = await ref.read(petPackProvider(id).future);
-    await _relist((was) => [...was.where((p) => p.id != id), pack]);
-    return (pack: pack, replaced: replaced);
+    final carrying = ref.read(petCarryingProvider.notifier);
+    carrying.set(true);
+    try {
+      final (:id, :replaced) = await ref.read(petLibraryProvider).install(zip);
+      _changed(id);
+      final pack = await ref.read(petPackProvider(id).future);
+      await _relist((was) => [...was.where((p) => p.id != id), pack]);
+      return (pack: pack, replaced: replaced);
+    } finally {
+      if (ref.mounted) carrying.set(false);
+    }
   }
 
   /// Removes a brought pet; when it was the chosen one, the default comes
@@ -549,6 +555,9 @@ final petPendingProvider = Provider<List<PetPending>>((ref) {
   ];
 });
 
+/// A pet pack is being unpacked: the pet carries it in (docs/design/pets.md §4.2).
+final petCarryingProvider = NotifierProvider<FlagController, bool>(() => FlagController(false));
+
 /// All level signals.
 final petSignalsProvider = Provider<PetSignals>((ref) {
   final focus = ref.watch(petFocusProvider);
@@ -558,6 +567,7 @@ final petSignalsProvider = Provider<PetSignals>((ref) {
     runs: ref.watch(petRunsProvider),
     pending: ref.watch(petPendingProvider),
     lastInteraction: ref.watch(petInteractionProvider),
+    carrying: ref.watch(petCarryingProvider),
     quiet: ref.watch(petPrefsProvider.select((p) => p.quiet)),
   );
 });
@@ -658,6 +668,7 @@ final petScopedStateProvider = Provider.family<PetState, PetScope>((ref, scope) 
     foreground: ref.watch(appForegroundProvider),
     packId: prefs.packId,
     size: prefs.size,
+    bodyHeight: prefs.bodyHeight,
     quiet: prefs.quiet,
     reduceMotion: ref.watch(performanceDefaultsProvider.select((p) => p.reduceMotion)),
     canStop: signals.runs.any((r) => PetTarget(r.host, r.root) == petTarget(global, signals) && r.host == activeHost),

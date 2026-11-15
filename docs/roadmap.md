@@ -30,14 +30,14 @@
 | 运行信息：回合脚注（用时、步数、token）、轨迹、步骤详情、改动 diff 页 | ☑️ |
 | 整轮折叠：正常结束的一轮把思考、工具调用、中间消息收成一行「已完成 · N 次工具调用」，回答留在外面（官方 Web 的做法）；停止 / 出错的轮不收；设置 → 外观 可关 | ☑️ |
 | 思考行：官方原子图标；收起时也显示首行预览；展开是 Markdown | ☑️ |
-| 输入框上方的思考胶囊：状态 + 工具目标 + 趣味文案 / 彩蛋（照 working-activity）+ 本轮用时；官方蓝；四档鲸尾指示器按输出速度（TPS）切换，长按看速度 | ☑️ 待真机 |
+| 输入框上方的思考胶囊：状态 + 工具目标 + 趣味文案 / 彩蛋（与 working-activity 一致）+ 本轮用时；官方蓝；四档鲸尾指示器按输出速度（TPS）切换，长按看速度 | ☑️ 待真机 |
 | 产物文件卡 + 官方交付物：一轮末尾「交付了 / 生成了 N 个文件」，App 内预览图片 / PDF / Markdown / 文本，Office 由 Host 转 PDF；打开、分享、存到「下载」、复制路径；会话详情 › 文件 里有全部产出 | ☑️ 待真机 |
 | 会话搜索：抽屉顶部，标题即时匹配，多关键词、高亮；本机引擎开了内容索引（中文只能搜到被标点隔开的词） | ☑️ |
 | 导出会话日志（`/export`）：整个对话打包成 ZIP，分享或存到「下载」 | ☑️ |
-| 凭据遮挡：已发送消息里的 Key / 令牌 / 私钥只显示前 8 位，点眼睛显示（照官方 `dsh-client-ui-secret-mask` 移植） | ☑️ |
+| 凭据遮挡：已发送消息里的 Key / 令牌 / 私钥只显示前 8 位，点眼睛显示（与官方 `dsh-client-ui-secret-mask` 一致） | ☑️ |
 | Markdown 待办清单 `- [ ]` 报错修复 | ☑️ |
 | 可交互回复（dsh-ui）一期：回复里的 ```` ```dsh-ui ```` 画成原生卡片（指标、四种图表、对比卡、步骤、提示、选项、确认），点选后回传、已答 / 失效状态、流式骨架与降级；给模型的说明写进本机 AGENTS.md，设置可关 | ☑️ 待真机、未做模型评测 |
-| 全局改版 v2：五种页面骨架、抽屉身份栏、设置概览卡、模型选择页、胶囊滑块、iOS 式转场、文案与术语统一。规范见 [design/polish-guide.md](design/polish-guide.md)、[design/page-design.md](design/page-design.md) | ☑️ 待真机 |
+| 全局改版 v2：五种页面骨架、抽屉身份栏、设置概览卡、模型选择页、胶囊滑块、系统式转场、文案与术语统一。规范见 [design/polish-guide.md](design/polish-guide.md)、[design/page-design.md](design/page-design.md) | ☑️ 待真机 |
 
 ## P1：官方功能原生化（10-24 第二波）
 
@@ -164,11 +164,11 @@
 - 纯血鸿蒙：Flutter OHOS 版本评估。
 - iOS：只做远程客户端（iOS 不允许本地运行 Linux 环境）。
 
-## 可借鉴的项目
+## 可参考的项目
 
-Agents-Anywhere 的网络与协议对我们没用（全经它自己的服务器中转、无端到端加密、自有 `/api/v2`），可借鉴的是体验细节。按对国内大众用户的价值排：
+Agents-Anywhere 的网络与协议对我们没用（全经它自己的服务器中转、无端到端加密、自有 `/api/v2`），可参考的是体验细节。按对国内大众用户的价值排：
 
-| # | 借鉴点 | 来源 | 归入 |
+| # | 参考点 | 来源 | 归入 |
 |---|---|---|---|
 | 1 | 产物文件卡片：生成的文件可直接打开 / 分享 / 存到"下载" | Whaleness、DSHA | ☑️ 已完成（并对齐官方交付物） |
 | 2 | 附件：相册 / 拍照 / 文件 | AA、saya-ch | ☑️ 已完成 |
@@ -179,7 +179,7 @@ Agents-Anywhere 的网络与协议对我们没用（全经它自己的服务器�
 | 7 | 进度卡：todo / plan / goal，排队消息可编辑 | 官方投影 | ☑️ 会话详情 › 进度；排队消息可改插话 / 撤回 |
 | 8 | 手机文件双向打通：`/root/手机存储` 软链、挂载失败跳过、反方向导出到"下载" | DSHA | P0 #1 补完 |
 
-许可：DSHA、Whaleness、mobile-gateway、201222-L 为 MIT，saya-ch 为 Apache-2.0，可借代码；dsh-pocket 为 GPL-2.0，只参考；Agents-Anywhere、yukiykchen 缺许可文件，需作者授权；ds-harness-remote 的许可见 THIRD_PARTY_NOTICES.md。
+许可：DSHA、Whaleness、mobile-gateway、201222-L 为 MIT，saya-ch 为 Apache-2.0，可按许可证复用；dsh-pocket 为 GPL-2.0，只参考；Agents-Anywhere、yukiykchen 缺许可文件，需作者授权；ds-harness-remote 的许可见 THIRD_PARTY_NOTICES.md。
 
 ## std 联动
 

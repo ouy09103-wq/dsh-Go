@@ -233,15 +233,24 @@ class _Decorators {
 /// guessed. A content hash change starts a fresh record. Same-count previews or
 /// retries cannot increment a record twice.
 class _DecoratorHistory {
-  _DecoratorHistory(this.input) : state = jsonDecode(jsonEncode(input.decoratorState)) as Map<String, Object?>;
+  _DecoratorHistory(this.input, this.pack)
+    : state = jsonDecode(jsonEncode(input.decoratorState)) as Map<String, Object?>;
   final WorldInfoInput input;
+  final _PackWorldInfoState pack;
   final Map<String, Object?> state;
-  _DecoratorHistory._fork(this.input, this.state);
-  _DecoratorHistory fork() => _DecoratorHistory._fork(input, jsonDecode(jsonEncode(state)) as Map<String, Object?>);
-  int previous(_RuntimeEntry entry) => math.max(0, _integer(_object(state['${entry.hash}'])['matches']) ?? 0);
+  _DecoratorHistory._fork(this.input, this.pack, this.state);
+  _DecoratorHistory fork(_PackWorldInfoState candidate) =>
+      _DecoratorHistory._fork(input, candidate, jsonDecode(jsonEncode(state)) as Map<String, Object?>);
+  int previous(_RuntimeEntry entry) => entry.packSource == null
+      ? math.max(0, _integer(_object(state['${entry.hash}'])['matches']) ?? 0)
+      : pack.previous(entry);
   void finish(Iterable<_RuntimeEntry> activated) {
     if (input.dryRun) return;
     for (final entry in activated) {
+      if (entry.packSource != null) {
+        pack.finishAdmission(entry);
+        continue;
+      }
       final old = _object(state['${entry.hash}']);
       if (_integer(old['lastMessageCount']) == input.messageCount) continue;
       state['${entry.hash}'] = {...old, 'matches': previous(entry) + 1, 'lastMessageCount': input.messageCount};

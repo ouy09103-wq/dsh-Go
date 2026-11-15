@@ -182,9 +182,22 @@ final launchNoticeShownProvider = NotifierProvider<FlagController, bool>(() => F
 /// A conversation on a host.
 typedef ChatTarget = ({HostRef host, String sessionId});
 
-/// The conversation the person is looking at right now, or null.
+/// The conversation a voice call is having, while the call is up.
+final callChatProvider = NotifierProvider<CallChat, ChatTarget?>(CallChat.new);
+
+class CallChat extends Notifier<ChatTarget?> {
+  @override
+  ChatTarget? build() => null;
+
+  void set(ChatTarget? target) => state = target;
+}
+
+/// The conversation the person is looking at right now, or null. On a call,
+/// the call's: they hear it and speak to it, though the chat is under the call.
 final viewedChatProvider = Provider<ChatTarget?>((ref) {
-  if (!ref.watch(appForegroundProvider) || !ref.watch(chatOnScreenProvider)) return null;
+  if (!ref.watch(appForegroundProvider)) return null;
+  if (ref.watch(callChatProvider) case final call?) return call;
+  if (!ref.watch(chatOnScreenProvider)) return null;
   final session = ref.watch(currentSessionProvider);
   if (session == null) return null;
   return (host: ref.watch(activeHostProvider), sessionId: session);

@@ -247,11 +247,20 @@ class TavernScriptWire {
         return bridge.stopScript(p.string('executionId'));
       // The regexes in play for this context, as 酒馆助手's getTavernRegexes
       // hands them out, by where each comes from (global, the chat's
-      // character, the preset in use), in the order they apply.
+      // character, the preset in use), in the order they apply. 酒馆助手 has
+      // no chat-scoped type, so a gameplay pack's chat regexes are not asked for.
       case 'getTavernRegexes':
-        final regexes = await bridge.getTavernRegexes(p.string('contextId'), TavernScriptRegexQuery());
+        const helperSources = {
+          TavernScriptRegexSource.global,
+          TavernScriptRegexSource.preset,
+          TavernScriptRegexSource.character,
+        };
+        final regexes = await bridge.getTavernRegexes(
+          p.string('contextId'),
+          TavernScriptRegexQuery(sources: helperSources),
+        );
         return {
-          for (final source in TavernScriptRegexSource.values)
+          for (final source in helperSources)
             source.name: [
               for (final r in regexes)
                 if (r.source == source) tavernHelperRegexJson(r),

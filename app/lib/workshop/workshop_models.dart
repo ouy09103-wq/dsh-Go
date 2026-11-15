@@ -1,8 +1,8 @@
 // The v1 wire contract is services/share-worker/docs/workshop-api.md.
 // Nothing here reads credentials, local preferences or a widget tree.
 
-const workshopArchiveBytes = 20 * 1024 * 1024;
-const workshopExpandedBytes = 64 * 1024 * 1024;
+const workshopArchiveBytes = 50 * 1024 * 1024;
+const workshopExpandedBytes = 256 * 1024 * 1024;
 const workshopPreviewSide = 512;
 const workshopPreviewPixels = 262144;
 const workshopPreviewBytes = 2 * 1024 * 1024;
@@ -169,7 +169,7 @@ class WorkshopMetadata {
         !workshopText(m['author'], 256) || !workshopText(m['license'], 100) || !workshopSource(m['source']) ||
         !workshopHash(m['sha256']) || m['size'] is! int || (m['size'] as int) < 1 ||
         (m['size'] as int) > 9007199254740991 || supported &&
-        (!workshopLicenses.contains(m['license']) || (m['size'] as int) > workshopArchiveBytes) || submission &&
+        (!workshopLicenses.contains(m['license']) || submission && (m['size'] as int) > workshopArchiveBytes) || submission &&
         (m['rightsConfirmed'] != true || !supported) ||
         description != '' && !workshopText(description, 512) || tags is! List || tags.length > 8 ||
         tags.any((tag) => !workshopText(tag, 32)) || tags.toSet().length != tags.length ||
@@ -254,10 +254,13 @@ class WorkshopWithdrawal {
 class WorkshopCatalog {
   WorkshopCatalog._(this.generatedAt, this.features, this.entries, this.withdrawn);
   factory WorkshopCatalog.fromJson(Object? value) {
-    final m = workshopMap(value), rows = m['entries'], gone = m['withdrawn'];
-    if (m['schema'] != 1 || rows is! List || rows.length > 1000 || gone is! List || gone.length > 4000) {
+    // Entries over 20 MiB come in largeEntries, which apps from before the
+    // 50 MiB cap ignore (one such entry made their whole catalog invalid).
+    final m = workshopMap(value), small = m['entries'], large = m['largeEntries'] ?? const <Object?>[], gone = m['withdrawn'];
+    if (m['schema'] != 1 || small is! List || large is! List || small.length + large.length > 1000 || gone is! List || gone.length > 4000) {
       workshopInvalid('workshop_bad_catalog');
     }
+    final rows = [...small, ...large];
     final entries = rows.map(WorkshopEntry.fromJson).toList(), withdrawals = gone.map(WorkshopWithdrawal.fromJson).toList();
     if (entries.map((e) => e.metadata.identity).toSet().length != entries.length ||
         withdrawals.map((e) => e.release).toSet().length != withdrawals.length) {
@@ -279,6 +282,9 @@ class WorkshopCatalog {
     final installedApp = WorkshopVersion.tryParse(appVersion.split('+').first);
     if (installedApp == null) return 'workshop_app_version_unknown';
     if (installedApp.compareTo(WorkshopVersion.tryParse(m.minApp)!) < 0) return 'workshop_min_app';
+    // The server may take larger uploads than this build: such an entry waits
+    // for an update instead of making the whole catalog unreadable.
+    if (m.size > workshopArchiveBytes) return 'workshop_app_too_old';
     return null;
   }
   Map<String, Object?> toJson() => {'schema': 1, 'generatedAt': generatedAt.toUtc().toIso8601String(), 'features': features.toJson(), 'entries': entries.map((e) => e.toJson()).toList(), 'withdrawn': withdrawn.map((e) => e.toJson()).toList()};
@@ -300,27 +306,43 @@ class WorkshopPreviewCapabilities {
   final Set<String> sources;
 }
 
+/// Where authors sign in. A null [clientId] means this deployment has not
+/// registered a GitHub OAuth App, so nobody can sign in to it yet.
+class WorkshopAccountCapabilities {
+  WorkshopAccountCapabilities._(this.origin, this.clientId);
+  factory WorkshopAccountCapabilities.fromJson(Object? value) {
+    final m = workshopMap(value), origin = m['origin'], clientId = m['clientId'];
+    if (origin is! String || clientId != null && (clientId is! String ||
+        !RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(clientId))) {
+      workshopInvalid();
+    }
+    final parsed = Uri.tryParse(origin);
+    if (parsed == null) workshopInvalid();
+    return WorkshopAccountCapabilities._(workshopOrigin(parsed), clientId as String?);
+  }
+  final Uri origin;
+  final String? clientId;
+}
+
 class WorkshopCapabilities {
-  WorkshopCapabilities._(this.features, this.kinds, this.licenses, this.forumOrigin, this.archiveBytes,
+  WorkshopCapabilities._(this.features, this.kinds, this.licenses, this.account, this.archiveBytes,
     this.expandedBytes, this.maxMocVersion, this.preview);
   factory WorkshopCapabilities.fromJson(Object? value) {
     final m = workshopMap(value), limits = workshopMap(m['limits']);
-    final kinds = m['kinds'], licenses = m['licenses'], origin = m['forumOrigin'];
+    final kinds = m['kinds'], licenses = m['licenses'];
     if (m['schema'] != 1 || kinds is! List || kinds.any((k) => !workshopId(k)) || licenses is! List ||
-        licenses.any((k) => !workshopText(k, 100)) || origin is! String || limits['archiveBytes'] is! int ||
+        licenses.any((k) => !workshopText(k, 100)) || limits['archiveBytes'] is! int ||
         (limits['archiveBytes'] as int) < 1 || limits['expandedBytes'] is! int || (limits['expandedBytes'] as int) < 1 ||
         m['maxMocVersion'] is! int || (m['maxMocVersion'] as int) < 1) {
       workshopInvalid();
     }
-    final parsedOrigin = Uri.tryParse(origin);
-    if (parsedOrigin == null) workshopInvalid();
     return WorkshopCapabilities._(WorkshopFeatures.fromJson(m['features']), Set.unmodifiable(kinds.cast<String>()), Set.unmodifiable(licenses.cast<String>()),
-      workshopOrigin(parsedOrigin), limits['archiveBytes'] as int, limits['expandedBytes'] as int, m['maxMocVersion'] as int,
+      WorkshopAccountCapabilities.fromJson(m['account']), limits['archiveBytes'] as int, limits['expandedBytes'] as int, m['maxMocVersion'] as int,
       m.containsKey('preview') ? WorkshopPreviewCapabilities.fromJson(m['preview']) : null);
   }
   final WorkshopFeatures features;
   final Set<String> kinds, licenses;
-  final Uri forumOrigin;
+  final WorkshopAccountCapabilities account;
   final int archiveBytes, expandedBytes, maxMocVersion;
   final WorkshopPreviewCapabilities? preview;
 }
@@ -334,7 +356,7 @@ class WorkshopSubmission {
     final m = workshopMap(value), owner = workshopMap(m['owner']);
     final id = m['submissionId'], status = WorkshopSubmissionStatus.values.asNameMap()[m['status']];
     if (id is! String || !RegExp(r'^[a-f0-9]{32}$').hasMatch(id) || status == null ||
-        owner['forumUserId'] is! int || (owner['forumUserId'] as int) < 1 || !workshopText(owner['username'], 256) || owner['forumOrigin'] is! String) {
+        owner['accountId'] is! int || (owner['accountId'] as int) < 1 || !workshopText(owner['username'], 256) || owner['accountOrigin'] is! String) {
       workshopInvalid();
     }
     String? reason(Object? v) {
@@ -343,11 +365,11 @@ class WorkshopSubmission {
       if (!workshopText(r, 2000)) workshopInvalid();
       return r as String;
     }
-    final origin = Uri.tryParse(owner['forumOrigin'] as String);
+    final origin = Uri.tryParse(owner['accountOrigin'] as String);
     if (origin == null) workshopInvalid();
     final metadata = WorkshopMetadata.fromJson(m['metadata']);
     return WorkshopSubmission._(id, metadata, status, workshopTime(m['createdAt']), workshopTime(m['updatedAt']),
-      workshopOrigin(origin), owner['forumUserId'] as int, owner['username'] as String, reason(m['review']), reason(m['withdrawal']),
+      workshopOrigin(origin), owner['accountId'] as int, owner['username'] as String, reason(m['review']), reason(m['withdrawal']),
       m.containsKey('preview') ? WorkshopPreview.fromJson(m['preview'], metadata: metadata) : null);
   }
   final String id;

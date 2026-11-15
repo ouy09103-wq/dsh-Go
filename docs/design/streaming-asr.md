@@ -37,7 +37,7 @@ WavRecorder 的 48/44.1 kHz 回退来源连续分帧并重采样到 16 kHz / 20 
 
 ## 一份 ORT
 
-精确固定 `sherpa_onnx: 1.12.36`、`sherpa_onnx_android: 1.12.36`，配合 A 的 ORT Android 1.23.2。
+精确固定 `sherpa_onnx: 1.13.4` 和四个 `sherpa_onnx_android_*: 1.13.4`，它们带的 ORT 是 1.27.0，配合 A 的 ORT Android 1.27.0（只打包一份 `libonnxruntime.so`，两边导出的符号一致）。原来的 1.23.2 在骁龙 8 Elite（SM8850/8845）+ Android 16 上会走 CPU 不支持的 SME 指令，进通话就 SIGILL 闪退（microsoft/onnxruntime#27884，1.24.4 修复）。
 实际比较官方 pub 包和 Maven AAR，两种应用 ABI 的 `libonnxruntime.so` 完全相同：
 
 | ABI | SHA256 |

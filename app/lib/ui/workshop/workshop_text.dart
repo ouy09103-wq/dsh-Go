@@ -22,7 +22,6 @@ String workshopErrorLine(L10n l10n, String code) => switch (code) {
   'workshop_state_invalid' ||
   'workshop_state_conflict' ||
   'workshop_capacity' ||
-  'workshop_forum_configuration' ||
   'workshop_moc_policy_unavailable' => l10n.workshopErrorServer,
   'workshop_rate_limited' => l10n.workshopErrorRateLimited,
   'workshop_bad_response' ||
@@ -33,7 +32,7 @@ String workshopErrorLine(L10n l10n, String code) => switch (code) {
   'workshop_catalog_changed' => l10n.workshopErrorCatalogChanged,
   'workshop_not_found' => l10n.workshopErrorNotFound,
   'workshop_version_withdrawn' || 'workshop_version_rewritten' => l10n.workshopErrorWithdrawn,
-  'workshop_min_app' || 'workshop_app_version_unknown' => l10n.workshopErrorMinApp,
+  'workshop_min_app' || 'workshop_app_version_unknown' || 'workshop_app_too_old' => l10n.workshopErrorMinApp,
   'workshop_unsupported_kind' => l10n.workshopErrorUnsupported,
   'workshop_companion_disabled' => l10n.workshopErrorCompanionOff,
   'workshop_upload_disabled' => l10n.workshopErrorUploadOff,
@@ -45,16 +44,22 @@ String workshopErrorLine(L10n l10n, String code) => switch (code) {
   'workshop_readers_busy' => l10n.workshopErrorReadersBusy,
   'workshop_install_record' || 'workshop_install_conflict' => l10n.workshopErrorInstallRecord,
   'workshop_other_origin' => l10n.workshopErrorOtherOrigin,
-  'workshop_forum_auth_required' || 'workshop_forum_auth_invalid' || 'workshop_profile_required' => l10n.workshopErrorSignIn,
+  'workshop_account_auth_required' || 'workshop_account_auth_invalid' || 'workshop_profile_required' => l10n.workshopErrorSignIn,
   'workshop_consent_required' || 'workshop_confirmation_stale' => l10n.workshopErrorConsent,
-  'workshop_forum_origin' => l10n.workshopErrorForumMismatch,
-  'workshop_forum_unavailable' => l10n.workshopErrorForumDown,
+  // The getters keep their old names until the sign-in wording is rewritten.
+  'workshop_account_origin' => l10n.workshopErrorAccountMismatch,
+  'workshop_account_unavailable' => l10n.workshopErrorAccountDown,
   'workshop_preferences' => l10n.workshopErrorPreferences,
   'workshop_busy' => l10n.workshopErrorBusy,
   'workshop_cancelled' => l10n.workshopErrorCancelled,
   'workshop_unconfigured' || 'workshop_untrusted_origin' => l10n.workshopNotOpenMessage,
-  _ => l10n.workshopErrorGeneric,
+  // A pack the phone or the server would not take: the code says which check,
+  // so a person (or whoever they ask) can tell what to fix.
+  _ when _packCode.hasMatch(code) => l10n.workshopErrorPackage(code.substring('workshop_'.length)),
+  _ => l10n.workshopErrorWithCode(code.startsWith('workshop_') ? code.substring('workshop_'.length) : code),
 };
+
+final _packCode = RegExp(r'^workshop_(?:companion|pet|png|sheet|pack|zip|archive|moc)_');
 
 /// As [workshopErrorLine] for an exception: a write whose result is unknown
 /// says so, whatever its code, because retrying it could do the thing twice.

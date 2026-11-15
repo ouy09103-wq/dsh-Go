@@ -1,120 +1,143 @@
-// Portions derived from Libraries.dev Border beam (https://github.com/Jakubantalik/Libraries.dev), MIT, Copyright (c) 2026 Jakub Antalik. See THIRD_PARTY_NOTICES.md.
+// Portions derived from Libraries.dev Border beam and Distortion waves (https://github.com/Jakubantalik/Libraries.dev), MIT, Copyright (c) 2026 Jakub Antalik. See THIRD_PARTY_NOTICES.md.
 
 package io.github.ouy09103.dsh_go_root.phone.a11y
 
+import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-// The screen-edge beam's pure half (EdgeBeamModelTest): the Border beam `md` type (the Dart port
-// is app/lib/ui/fx/beam) with its numbers, scaled from a card to the whole screen. EdgeBeam.kt
+// The screen-edge rim's pure half (EdgeBeamModelTest): the colour Distortion waves leaves on the
+// screen's edges (its shader's rim and WaveRim.lumps), on its own and kept still in place. EdgeBeam.kt
 // draws what these decide.
 
-/** The `md` type's tables and presets (styles.ts), and how they scale to a screen. */
+/** The rim's numbers. */
 internal object EdgeBeamSpec {
-    /** `colorPalettes[*].border`: x and y as fractions of the box, radii in dp. */
-    val BLOBS = arrayOf(
-        floatArrayOf(0.33f, -0.074f, 70f, 40f),
-        floatArrayOf(0.12f, -0.05f, 60f, 35f),
-        floatArrayOf(0.021f, 0.683f, 40f, 70f),
-        floatArrayOf(0.021f, 0.683f, 20f, 35f),
-        floatArrayOf(0.744f, 1f, 180f, 32f),
-        floatArrayOf(0.55f, 1f, 85f, 26f),
-        floatArrayOf(0.939f, 0f, 74f, 32f),
-        floatArrayOf(1f, 0.271f, 26f, 42f),
-        floatArrayOf(1f, 0.271f, 52f, 48f),
-    )
+    /** How far in the colour reaches where the rim is of average thickness: Distortion waves' Edges default (rimWidth 14). */
+    const val WIDTH_DP = 14f
 
-    /** The inner glow's blobs: the border's at 90 % size (rounded) and a flat alpha. */
-    const val INNER_SIZE = 0.9f
-    const val INNER_ALPHA = 0.45f
+    /** The still line the rim settles into while paused: the same falloff, this wide. */
+    const val LINE_DP = 3f
 
-    /** Conic stops: positions (fractions of a turn from the beam angle) and alphas. */
-    val WINDOW_POS = floatArrayOf(0f, 0.30f, 0.36f, 0.44f, 0.52f, 0.80f, 0.86f, 0.92f, 0.95f, 1f)
-    val WINDOW_ALPHA = floatArrayOf(0f, 0f, 0.1f, 0.35f, 1f, 1f, 0.35f, 0.1f, 0f, 0f)
-    val WHITE_POS = floatArrayOf(0f, 0.54f, 0.57f, 0.60f, 0.63f, 0.66f, 0.69f, 0.72f, 0.75f, 0.78f, 1f)
-    val WHITE_ALPHA_DARK = floatArrayOf(0f, 0f, 0.1f, 0.3f, 0.6f, 0.75f, 0.6f, 0.3f, 0.1f, 0f, 0f)
-    val WHITE_ALPHA_LIGHT = floatArrayOf(0f, 0f, 0.08f, 0.2f, 0.4f, 0.55f, 0.4f, 0.2f, 0.08f, 0f, 0f)
-    val BLOOM_POS = floatArrayOf(0f, 0.58f, 0.62f, 0.65f, 0.67f, 0.69f, 0.70f, 0.705f, 0.715f, 0.73f, 0.75f, 0.78f, 0.82f, 1f)
-    val BLOOM_ALPHA_DARK = floatArrayOf(0f, 0f, 0.03f, 0.08f, 0.2f, 0.45f, 0.85f, 0.85f, 0.45f, 0.2f, 0.08f, 0.03f, 0f, 0f)
-    val BLOOM_ALPHA_LIGHT = floatArrayOf(0f, 0f, 0.02f, 0.08f, 0.2f, 0.4f, 0.6f, 0.6f, 0.4f, 0.2f, 0.08f, 0.02f, 0f, 0f)
+    /** Peak opacity on the screen's edge, and the still line's. */
+    class Preset(val rim: Float, val line: Float)
 
-    /** `sizeThemePresets.md`: layer opacities, the inset shadow, the filter. */
-    class Preset(val stroke: Float, val inner: Float, val bloom: Float, val shadow: Int, val saturation: Float, val brightness: Float = 1.3f)
-
-    val DARK = Preset(stroke = 0.26f, inner = 0.42f, bloom = 0.24f, shadow = 0x45FFFFFF, saturation = 1.2f)
-    val LIGHT = Preset(stroke = 0.12f, inner = 0.26f, bloom = 0.34f, shadow = 0x24000000, saturation = 1.5f)
-
-    /** The ring (`padding: 1px`), the inner glow's edge fade, the inset shadow, the bloom's blur, in dp. */
-    const val RING_DP = 1f
-    const val EDGE_FADE_DP = 28f
-    const val SHADOW_BLUR_DP = 9f
-    const val SHADOW_SPREAD_DP = 1f
-    const val BLOOM_BLUR_DP = 8f
-
-    /**
-     * The bloom is the conic ring pattern blurred, then cut to the 1 px ring at the box's edge,
-     * where the blur has half the pattern (transparent outside the box).
-     */
-    const val BLOOM_EDGE = 0.5f
+    val DARK = Preset(rim = 0.42f, line = 0.26f)
+    val LIGHT = Preset(rim = 0.26f, line = 0.16f)
 
     /** Fade in 0.6 s, out 0.5 s, CSS `ease`. */
     const val FADE_IN_MS = 600L
     const val FADE_OUT_MS = 500L
 
-    /** Paused, or 移除动画: the beam settles into a still, faint outline, over this long. */
+    /** Paused: the lumps come to rest and the rim narrows to the still line over this long. */
     const val STILL_MS = 500L
 
-    /** The still outline: the ring's colours all round, at this share of the stroke's opacity. */
-    const val OUTLINE = 0.6f
-
-    /** ± degrees of hue drift over a 12 s ease-in-out ping-pong. */
-    const val HUE_RANGE = 30
-    const val HUE_PERIOD_S = 12.0
-
-    /**
-     * The author's beam rounds a 350×140 card in 1.96 s. A screen takes as much longer as its
-     * perimeter is, and half again: a whole screen edge moving fast reads as an alarm.
-     */
-    const val CARD_LAP_S = 1.96
-    const val CARD_PERIMETER_DP = 2 * (350f + 140f)
-    const val CALM = 1.5
-    const val LAP_MIN_S = 6.0
-    const val LAP_MAX_S = 12.0
-
-    /** The blobs are authored for a 350×140 element and scaled per axis (the author's pulse-outside rule). */
-    const val REF_W_DP = 350f
-    const val REF_H_DP = 140f
-    const val SCALE_MIN = 0.35f
-    const val SCALE_MAX = 4f
+    /** The reference's drift (±22 pt/s) and breath, slowed to this share: the colour sits there, it doesn't flow. */
+    const val CALM = 0.5
 
     /** Corner radius when the display does not report one (before Android 12). */
     const val CORNER_FALLBACK_DP = 28f
 
-    /** One beam frame at most every this many ms: 60 fps on a 120 Hz screen. */
-    const val FRAME_MS = 15L
+    /** One frame at most every this many ms: 30 fps is plenty for colour drifting a few dp a second. */
+    const val FRAME_MS = 33L
+
+    /**
+     * How far in anything is drawn, as a share of [WIDTH_DP]: past it the thickest lump (×[EdgeRim.MAX_THICKNESS])
+     * is under half a step of 8-bit alpha. The shader fades to nothing before it, so two lumps overlapping
+     * never end in a hard edge.
+     */
+    val REACH: Float get() = EdgeRim.MAX_THICKNESS * 2.4f
 
     fun preset(dark: Boolean) = if (dark) DARK else LIGHT
-
-    /** Seconds per lap round a screen [wDp] × [hDp]. */
-    fun lapSeconds(wDp: Float, hDp: Float): Double =
-        (CARD_LAP_S * (2 * (wDp + hDp)) / CARD_PERIMETER_DP * CALM).coerceIn(LAP_MIN_S, LAP_MAX_S)
-
-    /** The blobs' scale on a screen [wDp] × [hDp], per axis, rounded to 3 decimals. */
-    fun blobScale(wDp: Float, hDp: Float): Pair<Float, Float> {
-        fun s(v: Float) = (v.coerceIn(SCALE_MIN, SCALE_MAX) * 1000).roundToInt() / 1000f
-        return s(wDp / REF_W_DP) to s(hDp / REF_H_DP)
-    }
 
     /** The display's corner radius in px, or the fallback. */
     fun cornerPx(reported: Int?, density: Float): Float =
         reported?.takeIf { it > 0 }?.toFloat() ?: (CORNER_FALLBACK_DP * density)
 }
 
+/**
+ * The lumps that make the rim uneven (Distortion waves' WaveRim, `pulse` 0): seven of them round the
+ * screen, each with its own length and depth, drifting along the edge and breathing. Worked out once
+ * a frame, not per pixel; the shader (EdgeBeam.kt) sums them as [thickness] does.
+ */
+internal object EdgeRim {
+    const val COUNT = 7
+
+    /** Floats per lump in [lumps]' output: centre (px along the perimeter, clockwise from the top centre), length (px), depth, unused. */
+    const val STRIDE = 4
+
+    /** Fixed per lump, so the pattern is the same on every run (the reference's hashes). */
+    private val A = DoubleArray(COUNT) { hash(it.toDouble(), 12.9898, 1.3) }
+    private val B = DoubleArray(COUNT) { hash(it.toDouble(), 78.233, 4.1) }
+    private val C = DoubleArray(COUNT) { hash(it.toDouble(), 39.425, 2.7) }
+
+    /** The rim's thickness never gets past this share of [EdgeBeamSpec.WIDTH_DP] (one lump at its deepest breath). */
+    val MAX_THICKNESS: Float = (B.maxOf { (0.2 + 2.6 * it) * 1.25 } + BASE).div(NORM).toFloat()
+
+    /** The length round a [w] × [h] rect with corners of radius [r] (any unit). */
+    fun perimeter(w: Float, h: Float, r: Float): Float {
+        val ex = max(w / 2 - r, 0f)
+        val ey = max(h / 2 - r, 0f)
+        return (4 * (ex + ey + 0.5 * PI * r)).toFloat()
+    }
+
+    /**
+     * The lumps at [time] s of travel round a [perimeter] px edge, [density] px per dp, into [out]
+     * ([COUNT] × [STRIDE] floats). Drift and breath are the reference's at [EdgeBeamSpec.CALM].
+     */
+    fun lumps(time: Double, perimeter: Float, density: Float, out: FloatArray) {
+        val t = time * EdgeBeamSpec.CALM
+        val p = perimeter.toDouble()
+        for (i in 0 until COUNT) {
+            val fi = i.toDouble()
+            val centre = p * (fi + 0.35 * A[i]) / COUNT + t * (-22 + 44 * B[i]) * density
+            val breath = 0.25 * sin(t * (1.1 + 1.2 * A[i]) + fi * 2.4)
+            out[i * STRIDE] = (centre - p * floor(centre / p)).toFloat()
+            out[i * STRIDE + 1] = (p / COUNT * (0.2 + 0.25 * C[i])).toFloat()
+            out[i * STRIDE + 2] = ((0.2 + 2.6 * B[i]) * (1 + breath)).toFloat()
+            out[i * STRIDE + 3] = 0f
+        }
+    }
+
+    /** Drift speed of lump [i], dp per second of travel. */
+    fun driftDpPerS(i: Int): Double = (-22 + 44 * B[i]) * EdgeBeamSpec.CALM
+
+    /**
+     * The rim's thickness at [s] along a [perimeter] edge, as a share of [EdgeBeamSpec.WIDTH_DP]: the
+     * lumps over a thin base, averaging about 1 (the shader's rimThickness, unevenness 1).
+     */
+    fun thickness(s: Float, perimeter: Float, lumps: FloatArray): Float {
+        var t = BASE
+        for (i in 0 until COUNT) {
+            var ds = (s - lumps[i * STRIDE]).toDouble()
+            ds -= perimeter * floor(ds / perimeter + 0.5)
+            val k = ds / lumps[i * STRIDE + 1]
+            t += lumps[i * STRIDE + 2] * exp(-k * k)
+        }
+        return max((t / NORM).toFloat(), 0.04f)
+    }
+
+    /** The rim's opacity (0–1 of the preset's) [inset] px in from the edge where it is [thickness] thick, [widthPx] the average. */
+    fun hug(inset: Float, thickness: Float, widthPx: Float): Float {
+        val k = inset / (widthPx * thickness)
+        return exp(-k * k)
+    }
+
+    private const val BASE = 0.08
+    private const val NORM = 1.0498
+
+    private fun hash(i: Double, a: Double, b: Double): Double {
+        val x = sin(i * a + b) * 43758.5453
+        return x - floor(x)
+    }
+}
+
 /** The theme palette: nine soft tones round the app's accent hue (BeamPalette.fromSeed in the Dart port). */
 internal object EdgeBeamPalette {
-    /** ARGB of the nine border colours for the accent [seed] (ARGB). */
+    /** ARGB of the nine rim colours for the accent [seed] (ARGB). */
     fun fromSeed(seed: Int): IntArray {
         val (hue, s, _) = hsl(seed)
         val sat = (s * 0.85f).coerceIn(0.4f, 0.6f)
@@ -169,7 +192,7 @@ internal object EdgeBeamPalette {
     }
 }
 
-/** CSS timing and filter maths shared by the beam. */
+/** CSS timing shared by the rim's fades. */
 internal object BeamMath {
     /** y at progress [x] on a CSS cubic-bezier curve. */
     fun cubicBezier(x1: Double, y1: Double, x2: Double, y2: Double, x: Double): Double {
@@ -189,42 +212,6 @@ internal object BeamMath {
     }
 
     fun ease(x: Double) = cubicBezier(0.25, 0.1, 0.25, 1.0, x)
-    fun easeInOut(x: Double) = cubicBezier(0.42, 0.0, 0.58, 1.0, x)
-
-    /** The ± [range] hue drift at [t] s: −r → +r → −r over [period], ease-in-out each half. */
-    fun hueDrift(t: Double, range: Double, period: Double): Double {
-        val p = ((t / period) % 1.0 + 1.0) % 1.0
-        return if (p < 0.5) -range + 2 * range * easeInOut(p * 2) else range - 2 * range * easeInOut(p * 2 - 1)
-    }
-
-    /**
-     * `hue-rotate(h) brightness(b) saturate(s)` as one 4×5 colour matrix (W3C feColorMatrix
-     * maths, row-major, as android.graphics.ColorMatrix takes it).
-     */
-    fun filterMatrix(hueDegrees: Double, brightness: Double, saturation: Double): FloatArray {
-        val rad = Math.toRadians(hueDegrees)
-        val c = cos(rad)
-        val s = sin(rad)
-        val hue = doubleArrayOf(
-            0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
-            0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.140, 0.072 - c * 0.072 - s * 0.283,
-            0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072,
-        )
-        val v = saturation
-        val sat = doubleArrayOf(
-            0.213 + 0.787 * v, 0.715 - 0.715 * v, 0.072 - 0.072 * v,
-            0.213 - 0.213 * v, 0.715 + 0.285 * v, 0.072 - 0.072 * v,
-            0.213 - 0.213 * v, 0.715 - 0.715 * v, 0.072 + 0.928 * v,
-        )
-        val m = FloatArray(20)
-        for (row in 0 until 3) for (col in 0 until 3) {
-            var sum = 0.0
-            for (k in 0 until 3) sum += sat[row * 3 + k] * hue[k * 3 + col]
-            m[row * 5 + col] = (sum * brightness).toFloat()
-        }
-        m[18] = 1f
-        return m
-    }
 }
 
 /** A value easing from [from] to [to] over [ms] from [start] (uptime ms), CSS `ease`. */
@@ -243,14 +230,15 @@ internal class BeamRamp(val from: Float, val to: Float, val start: Long, val ms:
 }
 
 /**
- * What the beam shows from moment to moment: [fade] (0 off … 1 on, 0.6 s in, 0.5 s out),
- * [still] (0 the travelling beam … 1 the still outline, while paused or with 移除动画) and the
- * travelled [phase] in seconds, which slows to a stop as the beam goes still. Main thread, times
- * in uptime ms.
+ * What the rim shows from moment to moment: [fadeNow] (0 off … 1 on, 0.6 s in, 0.5 s out),
+ * [stillNow] (0 the rim … 1 the still line, while paused) and the travelled [phase] in seconds,
+ * which slows to a stop as it goes still. Without [motion] (移除动画) nothing travels and every
+ * change is at once: the rim stands as it is, the still line replaces it while paused. Main
+ * thread, times in uptime ms.
  */
 internal class EdgeBeamClock(private val motion: Boolean) {
     private var fade = BeamRamp.still(0f)
-    private var still = BeamRamp.still(if (motion) 0f else 1f)
+    private var still = BeamRamp.still(0f)
     private var last = -1L
 
     var phase = 0.0
@@ -263,9 +251,9 @@ internal class EdgeBeamClock(private val motion: Boolean) {
         fade = BeamRamp(fade.at(now), target, now, if (!motion) 0 else if (on) EdgeBeamSpec.FADE_IN_MS else EdgeBeamSpec.FADE_OUT_MS)
     }
 
-    /** Paused: the beam settles into the outline; resumed: it travels again. */
+    /** Paused: the rim settles into the still line; resumed: it comes back and drifts again. */
     fun pause(paused: Boolean, now: Long) {
-        val target = if (paused || !motion) 1f else 0f
+        val target = if (paused) 1f else 0f
         if (still.to == target) return
         still = BeamRamp(still.at(now), target, now, if (motion) EdgeBeamSpec.STILL_MS else 0)
     }
@@ -273,23 +261,26 @@ internal class EdgeBeamClock(private val motion: Boolean) {
     /** The fade and the stillness at the last [frame]. */
     var fadeNow = 0f
         private set
-    var stillNow = if (motion) 0f else 1f
+    var stillNow = 0f
         private set
 
-    /** Advances to [now]: [fadeNow], [stillNow], and [phase] on by the time the beam was travelling. */
+    /** Advances to [now]: [fadeNow], [stillNow], and [phase] on by the time the rim was drifting. */
     fun frame(now: Long) {
         stillNow = still.at(now)
         fadeNow = fade.at(now)
-        if (last >= 0) phase += (now - last).coerceIn(0, 100) / 1000.0 * (1f - stillNow)
+        if (motion && last >= 0) phase += (now - last).coerceIn(0, 100) / 1000.0 * (1f - stillNow)
         last = now
     }
 
     /** A frame break (hidden, no frames asked for): the next frame doesn't count the gap. */
     fun rest() { last = -1L }
 
-    /** Frames are needed: something ramps, or the beam is on and travelling. */
-    fun animating(now: Long): Boolean =
-        !fade.done(now) || !still.done(now) || (motion && fade.to > 0f && still.to < 1f)
+    /**
+     * Frames are needed: something ramps, or the rim is on and drifting. [drifts] is false for a
+     * renderer whose picture stands still (the band below Android 13): it only needs the ramps.
+     */
+    fun animating(now: Long, drifts: Boolean = true): Boolean =
+        !fade.done(now) || !still.done(now) || (drifts && motion && fade.to > 0f && still.to < 1f)
 
     /** Faded out completely. */
     fun gone(now: Long): Boolean = fade.to == 0f && fade.done(now)
