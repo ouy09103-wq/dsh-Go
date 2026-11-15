@@ -75,6 +75,8 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
 
   // root 那半页的状态：su 能力清单和控制台，和上面「Android Shell 通道」各管各的。
   RootStatus? _rootStatus;
+  /// su 清单读过一次没有：读不到（原生模块不在）和「还在读」要分开说。
+  bool _rootRead = false;
   bool _rootBusy = false;
   bool _rootSwitchBusy = false;
   final _rootCommand = TextEditingController(text: 'id');
@@ -120,7 +122,10 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
       rootStatus = null;
     }
     if (!mounted) return;
-    setState(() => _rootStatus = rootStatus);
+    setState(() {
+      _rootStatus = rootStatus;
+      _rootRead = true;
+    });
   }
 
   Future<void> _run(Future<AndroidShellResult> Function() action) async {
@@ -573,13 +578,13 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
               icon: AppIcons.systemAccess,
               title: l10n.androidShellRootSu,
               titleMaxLines: 2,
-              subtitle: rootStatus == null
+              subtitle: !_rootRead
                   ? l10n.androidShellRootReading
-                  : rootStatus.hasSu
-                  ? '${rootStatus.manager.isEmpty ? 'su' : rootStatus.manager} · ${rootStatus.abi} · '
+                  : rootStatus == null || !rootStatus.hasSu
+                  ? l10n.androidShellRootNoSu
+                  : '${rootStatus.manager.isEmpty ? 'su' : rootStatus.manager} · ${rootStatus.abi} · '
                         'Android ${rootStatus.sdk} · ${l10n.androidShellRootLinux}: '
-                        '${rootStatus.guestRootfs ? l10n.androidShellRootLinuxReady : l10n.androidShellRootLinuxMissing}'
-                  : l10n.androidShellRootNoSu,
+                        '${rootStatus.guestRootfs ? l10n.androidShellRootLinuxReady : l10n.androidShellRootLinuxMissing}',
               subtitleMaxLines: 4,
               value: rootStatus?.su ?? '—',
             ),
