@@ -72,5 +72,17 @@ internal class ShellLink(
                 Bundles.unmarshal(ShellWire.read(input) ?: throw IOException("transportLost"))
             }, { !stream.isClosed }, { stream.close() })
         }
+
+        /** The su-started host speaks the same frames over its own stdio; [synced] skips a second banner read. */
+        fun root(process: Process, synced: Boolean = false): ShellLink {
+            var ready = synced
+            val input = process.inputStream
+            val output = process.outputStream
+            return ShellLink("root", { request ->
+                if (!ready) { ShellWire.sync(input); ready = true }
+                ShellWire.write(output, Bundles.marshal(request))
+                Bundles.unmarshal(ShellWire.read(input) ?: throw IOException("transportLost"))
+            }, { process.isAlive }, { process.destroyForcibly() })
+        }
     }
 }
