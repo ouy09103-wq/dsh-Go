@@ -585,6 +585,10 @@ class PhoneStatus {
     this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
+    this.rootShell = false,
+    this.rootShellStrict = false,
+    this.rootShellUntil,
+    this.rootShellOffReason,
     this.bridgeListening = false,
     this.a11y = const PhoneA11yStatus(),
     this.a11yKeeper = const A11yKeeperStatus(),
@@ -608,6 +612,10 @@ class PhoneStatus {
       statusRevision = null,
       statusRevisionPresent = false,
       enabled = false,
+      rootShell = false,
+      rootShellStrict = false,
+      rootShellUntil = null,
+      rootShellOffReason = null,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
       a11yKeeper = const A11yKeeperStatus(),
@@ -629,6 +637,10 @@ class PhoneStatus {
         ? m['statusRevision'] as int : null,
     statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
+    rootShell: _flag(m['rootShell']),
+    rootShellStrict: _flag(m['rootShellStrict']),
+    rootShellUntil: m['rootShellUntil'] is int ? m['rootShellUntil'] as int : null,
+    rootShellOffReason: m['rootShellOffReason'] as String?,
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
     a11yKeeper: A11yKeeperStatus.fromMap(_map(m['a11yKeeper'])),
@@ -659,6 +671,19 @@ class PhoneStatus {
 
   /// The master switch 「手机操控」.
   final bool enabled;
+
+  /// 设置 › Root 权限的开关：关着时 `shell` 工具拒绝执行。
+  final bool rootShell;
+
+  /// 严格模式：开着时 root 命令逐条按 RootCommandPolicy 判定。
+  final bool rootShellStrict;
+
+  /// 授权到期时间（毫秒时间戳）；null 表示没记录。
+  final int? rootShellUntil;
+
+  /// 自动关掉的原因：expired（到期）/ strikes（连续拿不到 root）。
+  final String? rootShellOffReason;
+
   final bool bridgeListening;
   final PhoneA11yStatus a11y;
   final A11yKeeperStatus a11yKeeper;
@@ -684,12 +709,27 @@ class PhoneStatus {
   /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
   bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
 
-  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
+  PhoneStatus copyWith({
+    bool? enabled,
+    bool? rootShell,
+    bool? rootShellStrict,
+    int? rootShellUntil,
+    bool clearRootShellUntil = false,
+    String? rootShellOffReason,
+    bool clearRootShellOffReason = false,
+    bool? ready,
+    Object? error = _keepError,
+  }) => PhoneStatus(
     ready: ready ?? this.ready,
     error: identical(error, _keepError) ? this.error : error as String?,
     statusRevision: statusRevision,
     statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
+    rootShell: rootShell ?? this.rootShell,
+    rootShellStrict: rootShellStrict ?? this.rootShellStrict,
+    rootShellUntil: clearRootShellUntil ? null : (rootShellUntil ?? this.rootShellUntil),
+    rootShellOffReason:
+        clearRootShellOffReason ? null : (rootShellOffReason ?? this.rootShellOffReason),
     bridgeListening: bridgeListening,
     a11y: a11y,
     a11yKeeper: a11yKeeper,
