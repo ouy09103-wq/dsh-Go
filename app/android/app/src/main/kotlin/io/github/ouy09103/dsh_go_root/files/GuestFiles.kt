@@ -23,14 +23,16 @@ object GuestFiles {
 
     fun rootfs(context: Context): File = File(context.filesDir, "runtime/rootfs")
 
-    /** Host file for an absolute guest [path]; null when it is not a readable regular file. */
+    /** Host file for a guest or physical-rootfs [path]; null unless it is a readable regular file. */
     fun resolve(context: Context, path: String): File? =
         resolve(rootfs(context), path, PhoneStorage.hostRoot())
 
     internal fun resolve(rootfs: File, path: String, phoneRoot: String): File? {
         if (!path.startsWith("/")) return null
         val rootPaths = listOf(rootfs.absolutePath, rootfs.canonicalPath)
-        val pending = ArrayDeque(segments(path))
+        // Direct media results already name the physical rootfs before any symlink is followed.
+        val initialRoot = rootPaths.firstOrNull { path == it || path.startsWith("$it/") }
+        val pending = ArrayDeque(segments(if (initialRoot == null) path else path.removePrefix(initialRoot)))
         val resolved = ArrayList<String>()
         var links = 0
         while (pending.isNotEmpty()) {

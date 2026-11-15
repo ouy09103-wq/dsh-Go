@@ -105,7 +105,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         control.selfCheck.stop(promptOwner)
-        control.background.changeGateIntent { attached = false }
+        attached = false
         skillSelectionRequest = Any()
         skillInspection = null
         skillClient?.let { control.skillReplaySelections.retireClient(it); control.skillDrafts.retireClient(it) }
@@ -272,7 +272,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 val enabled = call.argument<Boolean>("enabled") == true
                 if (!enabled) {
                     control.selfCheck.stop()
-                        control.background.changeGateIntent { privilegedActions.select() }
+                    privilegedActions.select()
                     val cleared = control.background.clearKeep()
                     controlIo.execute { control.background.saveKeep(cleared) }
                     control.background.cancelRootSelection()
@@ -291,7 +291,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "setBackgroundMode" -> {
                 val mode = call.argument<String>("mode") ?: "off"
                 control.selfCheck.stop()
-                val live = stillWanted(control.background.changeGateIntent { privilegedActions.select() })
+                val live = stillWanted(privilegedActions.select())
                 // A mode intent revokes keep before it waits behind any older long operation.
                 control.background.clearKeepForMode(mode)?.let { cleared ->
                     controlIo.execute { control.background.saveKeep(cleared) }
@@ -305,7 +305,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 async(result) { live() && control.background.requestShizukuPermission(provider) }
             }
             "prepareRoot" -> {
-                val live = stillWanted(control.background.changeGateIntent { privilegedActions.select() })
+                val live = stillWanted(privilegedActions.select())
                 control.background.cancelUnwantedPending()
                 async(result) { if (live()) control.background.prepareRoot(live) else cancelledSelection() }
             }

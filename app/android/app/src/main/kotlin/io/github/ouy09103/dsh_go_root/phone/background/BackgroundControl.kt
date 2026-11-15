@@ -27,9 +27,9 @@ import io.github.ouy09103.dsh_go_root.phone.PhoneTasks
  * `adbPair`, `adbConnect`. It owns the shared Shizuku/Sui, self-ADB and explicit root starters.
  *
  * Admission is only: a mode other than off, Android 14+, and the selected channel connected and
- * authorized ([BackgroundPolicy.capacity]), minus real momentary occupancy. The input self-check
- * is a diagnostic for the settings page; real display/input failures come back from the task's
- * own operation with their error codes. A release that is not confirmed disconnects that channel:
+ * authorized ([BackgroundPolicy.capacity]), minus real momentary occupancy. Choosing a channel
+ * connects it and nothing more; real display/input failures come back from the task's own
+ * operation with their error codes. A release that is not confirmed disconnects that channel:
  * screens belong to the privileged process, and the system reclaims them when it exits. Nothing
  * waits on a cleanup receipt. Method names match the `dsh/phone` channel.
  */
@@ -129,7 +129,7 @@ class BackgroundControl private constructor(context: Context) {
     private val networkGuard = Any()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
-    // Null capabilities mean not probed; only an actual failed attempt records a transport error.
+    // Only an actual failed attempt records a transport error.
     private val gate = BackgroundGateState()
     private val shizuku = ShizukuStarter(app, {
         synchronized(keepGuard) { if (mode == "shizuku" || mode == "sui") gate.reset() }
@@ -191,17 +191,26 @@ class BackgroundControl private constructor(context: Context) {
     // upgraded install must not keep a stuck record around. Deleting a missing file is a no-op.
     init { recovery.execute { runCatching { app.deleteSharedPreferences("phone-background-resources") } } }
 
-    /** Pure memory intent change; transport, callbacks and disk stay outside. */
-    internal fun <T> changeGateIntent(change: () -> T): T = gate.changeIntent(change)
-
     /**
      * Drops [peer] after a release it could not confirm: its screens may still exist, and they
      * belong to that privileged process. Disconnecting ends the process, the system reclaims
      * them, and the next use connects again. Never blocks later use, success or not.
+     *
+     * Every other task record still on [peer] leaves its slot too: its screen goes with the
+     * process, and a record left behind would pin [peer] as the bound channel, so no new task
+     * could connect until that task ended. Its sealed driver fails its next call with the
+     * usual "admission was stopped" error; that task's next driver lookup starts a fresh record.
      */
     internal fun discardPeer(peer: PrivilegedChannel) {
-        val changed = synchronized(this) { synchronized(keepGuard) { channel === peer && replaceChannel(null) } }
-        if (changed) onPreviewChanged()
+        var withdrawn = false
+        val changed = synchronized(this) {
+            for (record in taskResource.evict(peer)) {
+                record.driver.seal()
+                withdrawn = withdrawPreviewTarget(record.driver) || withdrawn
+            }
+            synchronized(keepGuard) { channel === peer && replaceChannel(null) }
+        }
+        if (changed || withdrawn) onPreviewChanged()
         shizuku.disconnectIfCurrent(peer)
         adb.disconnectIfCurrent(peer)
         root.disconnectIfCurrent(peer)
@@ -215,16 +224,12 @@ class BackgroundControl private constructor(context: Context) {
 
     // ---- status ------------------------------------------------------------
 
-    /** Last accepted self-check facts only: no connection, permission query or fresh self-test. */
-    fun inputProbeDiagnostics(): Map<String, Any?> = InputProbeDiagnostics.snapshot(gate.snapshot)
-
     /** The `background` sub-map of the `dsh/phone` `status` method. */
     fun status(): Map<String, Any?> {
         val reason = readiness()
         val shizukuStatus = shizuku.status()
         val adbStatus = adb.status()
         val rootStatus = root.status()
-        val cached = gate.snapshot
         return mapOf(
             "mode" to PrivilegedPathPolicy.legacyMode(mode),
             "ready" to PrivilegedPathPolicy.legacyReady(mode, reason == null),
@@ -233,9 +238,6 @@ class BackgroundControl private constructor(context: Context) {
             ),
             "androidOk" to androidOk(),
             "viewport" to mapOf("v" to 1, "preset" to viewport.preset),
-            "trustedDisplay" to cached.trustedDisplayOk,
-            "inject" to cached.injectOk,
-            "selfCheckWarning" to if (reason == null && mode != "off") selfCheckWarning() else null,
             "shizuku" to shizukuStatus.map(),
             "adb" to adbStatus.map(),
             "root" to rootStatus.map(),
@@ -258,8 +260,6 @@ class BackgroundControl private constructor(context: Context) {
             ),
         )
     }
-
-    private val UNSUPPORTED: String get() = AppStrings.get(app, R.string.background_unsupported)
 
     /** Only the new model's facts: mode, Android version, the channel's own state, a switch in progress. */
     private fun readiness(): String? {
@@ -292,28 +292,6 @@ class BackgroundControl private constructor(context: Context) {
         if (keep.connectionUnavailable(false)) return AppStrings.get(app, R.string.background_not_ready)
         return gate.snapshot.connectionError?.let { AppStrings.get(app, it) }
     }
-
-    /** The self-check's failure, as a non-blocking note: the channel stays usable. */
-    private fun selfCheckWarning(): String? {
-        val cached = gate.snapshot
-        val detail = when {
-            cached.trustedDisplayOk == false -> Reasons.withDetail(UNSUPPORTED, cached.gateDetail)
-            cached.injectOk != true && cached.injectError != null -> Reasons.withDetail(inputFailureReason(
-                BackgroundGateState.InjectFailure.fromWire(cached.injectError)), cached.gateDetail)
-            else -> return null
-        }
-        return AppStrings.get(app, R.string.background_self_check_warning, detail)
-    }
-
-    private fun inputFailureReason(reason: BackgroundGateState.InjectFailure): String = AppStrings.get(app, when (reason) {
-        BackgroundGateState.InjectFailure.API_UNAVAILABLE -> R.string.background_input_api_unavailable
-        BackgroundGateState.InjectFailure.PERMISSION_DENIED -> R.string.background_input_permission_denied
-        BackgroundGateState.InjectFailure.WINDOW_NOT_READY -> R.string.background_input_window_not_ready
-        BackgroundGateState.InjectFailure.UNCONFIRMED -> R.string.background_input_unconfirmed
-        BackgroundGateState.InjectFailure.CLEANUP_FAILED -> R.string.background_input_cleanup_failed
-        BackgroundGateState.InjectFailure.CANCELLED -> R.string.background_input_cancelled
-        BackgroundGateState.InjectFailure.OTHER -> R.string.background_injection_denied
-    })
 
     /** A failed connection attempt: the starter's own stage, never a capability verdict. */
     private fun setupFailureResource(code: String?): Int = when (code) {
@@ -459,8 +437,8 @@ class BackgroundControl private constructor(context: Context) {
                 }
                 notifyChanged()
                 if (!allowed()) return keepFailure("selectionChanged")
-                // Connect now so a missing grant or a dead service shows at once. The self-check after
-                // it only feeds the settings page's note; it never fails this choice.
+                // Connect now so a missing grant or a dead service shows at once. Choosing the channel
+                // already in use is the settings page's recheck: the same connect and one round trip.
                 val failure = connectAndCheck(selection, allowed)
                 return mapOf("ok" to (failure == null), "reason" to failure)
             } finally {
@@ -509,8 +487,7 @@ class BackgroundControl private constructor(context: Context) {
 
     /** Detach invalidates only the caller's unpublished UI attempt, not borrowed healthy channels. */
     fun cancelUnwantedPending() {
-        // Seal the original lane before revoking its presentation probe. Published peers stay pinned.
-        gate.cancelUnwantedPending()
+        // Published peers stay pinned.
         root.cancelUnwantedPending()
         shizuku.cancelUnwantedPending()
         adb.cancelUnwantedPending()
@@ -797,7 +774,7 @@ class BackgroundControl private constructor(context: Context) {
         var changed = false
         synchronized(this) {
             interruptStopping = true
-            gate.changeIntent { interruptRequested = true }
+            interruptRequested = true
             for (record in taskResource.seal()) {
                 record.driver.seal()
                 changed = withdrawPreviewTarget(record.driver) || changed
@@ -859,7 +836,7 @@ class BackgroundControl private constructor(context: Context) {
             if (cached?.alive() == true) return synchronized(this) {
                 synchronized(keepGuard) {
                     if (!allowed() || channel !== cached) null
-                    else { gate.connected(observed, cached); cached }
+                    else { gate.connected(observed); cached }
                 }
             }
             // A live task's peer is never replaced under it; that task's end releases the slot.
@@ -889,7 +866,7 @@ class BackgroundControl private constructor(context: Context) {
                 synchronized(keepGuard) {
                     if (!allowed()) null else {
                         previewChanged = replaceChannel(connected)
-                        gate.connected(observed, connected)
+                        gate.connected(observed)
                         connected
                     }
                 }
@@ -915,8 +892,10 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     /**
-     * Settings owns one outer transport use. Connects the selected channel; a failure here is the
-     * only result. The input self-check after it is a diagnostic for the settings page.
+     * Settings owns one outer transport use; no task holds the channel (a same-mode recheck is
+     * refused while one does). Connects the selected channel and sends it one OP_PROBE. A channel
+     * that does not answer is dropped and connected once more; a failure here is the only result.
+     * Success means the channel is published and just answered.
      */
     private fun connectAndCheck(selection: PrivilegedKeepState.Ticket, mayStart: () -> Boolean): String? {
         when (mode) {
@@ -925,60 +904,43 @@ class BackgroundControl private constructor(context: Context) {
             "adb" -> adb.reason()
             else -> AppStrings.get(app, R.string.background_off)
         }?.let { return it }
-        var peer = activeChannel(mayStart, explicit = true, transportReserved = true)
-        if (peer != null && !peer.alive() && selection.mode == "root" && mayStart()) {
-            // Reached only from the user's explicit setBackgroundMode: a dead root peer restarts here.
-            root.start(mayStart)?.let { fresh ->
-                val changed = synchronized(this) {
-                    synchronized(keepGuard) { mayStart() && replaceChannel(fresh) }
-                }
-                if (changed) onPreviewChanged()
-            }
-            peer = activeChannel(mayStart, explicit = true, transportReserved = true)
+        var peer = connectSelected(selection, mayStart)
+        var silent = false
+        if (peer != null && !answers(peer)) {
+            discardPeer(peer)
+            peer = if (mayStart()) connectSelected(selection, mayStart) else null
+            if (peer != null && !answers(peer)) { discardPeer(peer); peer = null }
+            silent = peer == null
         }
+        if (!mayStart()) return AppStrings.get(app, R.string.background_selection_cancelled)
         if (peer == null) {
-            val reason = setupFailureResource(
+            val reason = if (silent) R.string.background_no_response else setupFailureResource(
                 if (selection.mode == "shizuku" || selection.mode == "sui") shizuku.connectReasonCode else null)
             gate.connectionFailed(reason, mayStart)
             notifyChanged()
             return AppStrings.get(app, reason)
         }
-        selfCheck(peer, mayStart)
         return null
     }
 
-    /**
-     * One input self-check on its own owner scope. Its outcome only updates [gate]'s snapshot. A
-     * release that is not confirmed discards the channel; no state waits for a cleanup receipt.
-     */
-    private fun selfCheck(peer: PrivilegedChannel, mayStart: () -> Boolean) {
-        val probe = gate.begin(mayStart) ?: return
-        val io = BackgroundDisplayIo<PrivilegedChannel>()
-        try {
-            io.call {
-                val reply = OwnerScopeProtocol.first(io, peer, Bundle().apply {
-                    putString(Proto.OP, Proto.OP_SELF_CHECK_PROBE)
-                    putString(Proto.OWNER, io.owner)
-                    putInt(Proto.SELF_CHECK_PROBE_VERSION, 1)
-                    putInt(Proto.RELEASE_RECEIPT, 1)
-                }) { commit -> gate.admit(probe, commit) }
-                if (io.wasNotAdmitted()) return@call
-                val result = gate.updateStrict(probe, io.owner, reply.get(Proto.OWNER),
-                    reply.get(Proto.SELF_CHECK_PROBE_VERSION), reply.get(Proto.OK),
-                    reply.get(Proto.SELF_CHECK_DISPLAY_READY), reply.get(Proto.INJECT_OK),
-                    reply.get(Proto.ERROR), reply.get(Proto.INJECT_ERROR), reply.get(Proto.ERROR_DETAIL))
-                if (result == BackgroundGateState.Update.Invalid) gate.failed(probe, R.string.background_no_response, peer)
+    private fun connectSelected(selection: PrivilegedKeepState.Ticket, mayStart: () -> Boolean): PrivilegedChannel? {
+        val peer = activeChannel(mayStart, explicit = true, transportReserved = true)
+        if (peer?.alive() == true || selection.mode != "root" || !mayStart()) return peer
+        // Reached only from the user's explicit setBackgroundMode: a dead root peer restarts here.
+        root.start(mayStart)?.let { fresh ->
+            val changed = synchronized(this) {
+                synchronized(keepGuard) { mayStart() && replaceChannel(fresh) }
             }
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        } catch (_: Exception) {
-            gate.failed(probe, R.string.background_no_response, peer)
-        } finally {
-            val released = try { io.release { OwnerScopeProtocol.release(it, io.owner) } } catch (_: Exception) { false }
-            if (!released) discardPeer(peer)
-            notifyChanged()
+            if (changed) onPreviewChanged()
         }
+        return activeChannel(mayStart, explicit = true, transportReserved = true)
     }
+
+    /** One real round trip on [peer]: the service is there and answers. */
+    private fun answers(peer: PrivilegedChannel): Boolean = try {
+        peer.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) }).getBoolean(Proto.OK)
+    } catch (_: InterruptedException) { Thread.currentThread().interrupt(); false }
+    catch (_: Exception) { false }
 
     // ---- explicit channel keep consent and event-driven recovery ------------
 
@@ -994,7 +956,7 @@ class BackgroundControl private constructor(context: Context) {
         // either lands first (selectionChanged) or resets this consent, never leaves the old mode kept.
         val ticket = synchronized(keepGuard) {
             if (selected != mode || selected !in PrivilegedKeepState.MODES) null
-            else gate.changeIntent { keep.configure(if (enabled) selected else "off") }
+            else keep.configure(if (enabled) selected else "off")
         } ?: return null to "selectionChanged"
         cancelUnwantedPending()
         if (!enabled) { updateKeepListeners(); PrivilegedKeepJob.cancel(app) }
@@ -1013,7 +975,7 @@ class BackgroundControl private constructor(context: Context) {
 
     /** Called immediately on mode/off intents, before any queued or blocked transport operation. */
     internal fun clearKeep(): PrivilegedKeepState.Ticket {
-        val ticket = synchronized(keepGuard) { gate.changeIntent { keep.configure("off") } }
+        val ticket = synchronized(keepGuard) { keep.configure("off") }
         cancelUnwantedPending()
         updateKeepListeners()
         PrivilegedKeepJob.cancel(app)
@@ -1126,7 +1088,7 @@ class BackgroundControl private constructor(context: Context) {
                 synchronized(keepGuard) {
                     if (selectionChange == null && allowed() && connected != null) {
                         previewChanged = replaceChannel(connected)
-                        gate.connected(observed, connected)
+                        gate.connected(observed)
                     }
                 }
             }

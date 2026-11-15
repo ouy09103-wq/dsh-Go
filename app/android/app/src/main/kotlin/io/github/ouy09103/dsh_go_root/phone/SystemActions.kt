@@ -24,7 +24,6 @@ import android.provider.CalendarContract
 import android.provider.Settings
 import io.github.ouy09103.dsh_go_root.MainActivity
 import io.github.ouy09103.dsh_go_root.R
-import io.github.ouy09103.dsh_go_root.phone.background.Reasons
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
@@ -92,11 +91,16 @@ class SystemActions(private val app: Context) : SystemApi {
     private class NativeLaunch(
         override val target: SystemTarget,
         val intent: Intent,
-        val filter: Intent,
-        val flags: Int,
-        val handler: SystemHandler?,
         val noticeWhat: String,
-    ) : SystemLaunch
+    ) : SystemLaunch {
+        @Suppress("DEPRECATION")
+        override val packageName: String?
+            get() {
+                val request = if (intent.action == Intent.ACTION_CHOOSER)
+                    checkNotNull(intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)) else intent
+                return request.component?.packageName ?: request.`package`
+            }
+    }
 
     private fun handler(info: ActivityInfo?): SystemHandler? {
         if (info == null || !info.exported) return null
@@ -119,50 +123,49 @@ class SystemActions(private val app: Context) : SystemApi {
         return out
     }
 
-    /** Retain the original query Intent for PM checks; only the prepared Intent is submitted. */
+    /** PM facts classify the target; missing identity does not make the original Intent invalid. */
     private fun prepare(intent: Intent, noticeWhat: String, flags: Int = PackageManager.MATCH_DEFAULT_ONLY,
-                        allowChoice: Boolean = true, forceChoice: Boolean = false): Either<String, SystemLaunch> = try {
-        val filter = Intent(intent)
-        val candidates = candidates(filter, flags)
-        if (candidates == null) unavailable()
-        else if (forceChoice) {
-            if (!SystemHandlers.valid(candidates, filter.`package`)) unavailable() else Either.Right(NativeLaunch(SystemTarget.UserChoice,
+                        allowChoice: Boolean = true, forceChoice: Boolean = false): Either<String, SystemLaunch> {
+        if (forceChoice) {
+            return Either.Right(NativeLaunch(SystemTarget.UserChoice,
                 Intent.createChooser(intent, AppStrings.get(app, R.string.phone_share_chooser))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), filter, flags, null, noticeWhat))
-        } else {
-            val info = pm.resolveActivity(filter, flags)?.activityInfo
-            when (val resolution = SystemHandlers.resolve(candidates, handler(info), intent.`package`, allowChoice)) {
-                null -> unavailable()
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), noticeWhat))
+        }
+        val unknown = NativeLaunch(SystemTarget.Unknown,
+            Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), noticeWhat)
+        return try {
+            val candidates = candidates(intent, flags)
+            val info = pm.resolveActivity(intent, flags)?.activityInfo
+            when (val resolution = candidates?.let { SystemHandlers.resolve(it, handler(info), intent.`package`, allowChoice) }) {
+                null -> Either.Right(unknown)
                 is SystemResolution.Known -> {
                     val h = resolution.handler
                     val label = info!!.loadLabel(pm).toString().trim().ifEmpty { h.packageName }
                     val target = SystemTarget.Known(AppEntry(label, PhoneAppIdentity(h.packageName, h.uid)))
                     intent.component = ComponentName(h.packageName, h.component)
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    Either.Right(NativeLaunch(target, intent, filter, flags, h, noticeWhat))
+                    Either.Right(NativeLaunch(target, intent, noticeWhat))
                 }
                 SystemResolution.Choice -> Either.Right(NativeLaunch(SystemTarget.UserChoice,
                     Intent.createChooser(intent, AppStrings.get(app, R.string.phone_system_choose_handler))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), filter, flags, null, noticeWhat))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), noticeWhat))
             }
-        }
-    } catch (_: Exception) { unavailable() }
+        } catch (_: Exception) { Either.Right(unknown) }
+    }
 
-    private fun unavailable(): Either.Left<String> = Either.Left(Reasons.of("targetIdentityUnavailable"))
+    private fun prepareFailed(): Either.Left<String> = Either.Left(
+        "systemIntentUnavailable: " + AppStrings.get(app, R.string.phone_system_intent_unavailable))
 
     override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = try {
         val intent = pm.getLaunchIntentForPackage(app.packageName)
-        if (intent == null) unavailable() else {
+        if (intent == null) prepareFailed() else {
             // Launcher Intents need not match CATEGORY_DEFAULT. Keep the PM's exact launcher.
+            intent.setPackage(app.packageName)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-            val plan = prepare(intent, AppStrings.get(this.app, R.string.phone_notice_open_app, app.label),
+            prepare(intent, AppStrings.get(this.app, R.string.phone_notice_open_app, app.label),
                 flags = 0, allowChoice = false)
-            when (plan) {
-                is Either.Left -> plan
-                is Either.Right -> if ((plan.value.target as SystemTarget.Known).app.packageName == app.packageName) plan else unavailable()
-            }
         }
-    } catch (_: Exception) { unavailable() }
+    } catch (_: Exception) { prepareFailed() }
 
     override fun prepareUrl(url: String): Either<String, SystemLaunch> {
         return prepare(Intent(Intent.ACTION_VIEW, Uri.parse(url))
@@ -211,7 +214,7 @@ class SystemActions(private val app: Context) : SystemApi {
             is IntentSpec.Navigate -> navigate(spec)
             is IntentSpec.Settings -> settings(spec, selectedApp)
         }
-    } catch (_: Exception) { unavailable() }
+    } catch (_: Exception) { prepareFailed() }
 
     /** Fallback is preparation only, before any safety decision or platform start. */
     private fun navigate(spec: IntentSpec.Navigate): Either<String, SystemLaunch> {
@@ -246,11 +249,11 @@ class SystemActions(private val app: Context) : SystemApi {
             "storage" -> Settings.ACTION_INTERNAL_STORAGE_SETTINGS
             "nfc" -> Settings.ACTION_NFC_SETTINGS
             "app_notifications" -> Settings.ACTION_APP_NOTIFICATION_SETTINGS
-            else -> return unavailable()
+            else -> return prepareFailed()
         }
         var intent = Intent(action)
         if (spec.page == "app_notifications") {
-            if (selectedApp == null) return unavailable()
+            if (selectedApp == null) return prepareFailed()
             intent.putExtra(Settings.EXTRA_APP_PACKAGE, selectedApp.packageName)
         }
         if (pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) == null) {
@@ -261,16 +264,8 @@ class SystemActions(private val app: Context) : SystemApi {
     }
 
     override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult {
-        val native = plan as? NativeLaunch ?: return SysResult(false, Reasons.of("targetIdentityUnavailable"))
-        val unchanged = try {
-            val candidates = candidates(native.filter, native.flags)
-            val h = native.handler
-            candidates != null && SystemHandlers.valid(candidates, native.filter.`package`) &&
-                (h == null || (h in candidates &&
-                    handler(pm.getActivityInfo(ComponentName(h.packageName, h.component), 0)) == h))
-        } catch (_: Exception) { false }
-        if (!unchanged) return SysResult(false, Reasons.of("targetIdentityChanged"))
-        // PM checks do not hold a task lock. Stop can revoke up to the existing commit point.
+        val native = plan as NativeLaunch
+        // Core checks the current prepared target before dispatch. Stop can still revoke this start.
         if (!dispatch.commitStart()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
         try {
             app.startActivity(native.intent)

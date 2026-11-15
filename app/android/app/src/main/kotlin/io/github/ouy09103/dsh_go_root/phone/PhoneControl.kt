@@ -767,9 +767,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     }
 
-    /** Reads the existing immutable gate snapshot without refreshing phone state. */
-    fun backgroundProbeDiagnostics(): Map<String, Any?> = background.inputProbeDiagnostics()
-
     fun setSkillSavePrompt(enabled: Boolean): Boolean {
         prefs.edit().putBoolean(K_SKILL_PROMPT, enabled).apply()
         emitStatus()

@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking, one owner per task (the bridge serialises calls on one worker
 // thread); a UiAutomation control-tree read rendered to the screen text format, so text-only
 // models can use 不打扰模式 too; IME policy HIDE; JPEG capture with bounded first-frame readiness; display
@@ -31,7 +33,6 @@ import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
 import android.os.Trace
-import android.os.UserHandle
 import io.github.ouy09103.dsh_go_root.phone.PhoneAppIdentity
 import android.text.InputType
 import android.util.SparseArray
@@ -104,7 +105,6 @@ class PrivilegedDisplayCore internal constructor(
     private var strictOwner = hosted != null
     private var targetSequence: SelfCheckTargetSequence? = hosted?.target?.let { SelfCheckTargetSequence(it.owner, it.run, it.c2) }
     private var targetSnapshot: TargetSnapshot? = null
-    private val targetIdentity = TargetIdentity()
     private var targetMain: SelfCheckMainSamples? = if (hosted?.target?.c2 == true) SelfCheckMainSamples(::readMainVector, ::readGlobalFocus) else null
     private var lastC2Release: SelfCheckTargetCompletion? = null
     private var selfCheckOwner = hosted?.probe == true
@@ -145,7 +145,8 @@ class PrivilegedDisplayCore internal constructor(
     private fun releaseTasksGone(displayId: Int): Boolean =
         probeDisplay || selfCheckOwner || rootTaskInfos(displayId).isEmpty()
 
-    private class Fault(val code: String) : Exception()
+    /** [shown] is the package now on top, for `foregroundChanged` only. */
+    private class Fault(val code: String, val shown: String? = null) : Exception()
 
     /** The single entry point for both transports. Always returns a response Bundle. */
     fun handle(request: Bundle): Bundle {
@@ -156,9 +157,6 @@ class PrivilegedDisplayCore internal constructor(
         try {
             if (!BackgroundAfterVisual.validRequest(op, request.containsKey(Proto.AFTER_LOCAL_VISUAL),
                     request.get(Proto.AFTER_LOCAL_VISUAL))) throw Fault("invalidArguments")
-            if ((request.containsKey(Proto.TARGET_IDENTITY_VERSION) || request.containsKey(Proto.TARGET_UID)) &&
-                op !in setOf(Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL,
-                    Proto.OP_KEY, Proto.OP_TEXT, Proto.OP_COORDINATE, Proto.OP_RELEASE, Proto.OP_REPLAY_NAVIGATION)) throw Fault("invalidArguments")
             if (op == Proto.OP_PROBE) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
@@ -211,11 +209,6 @@ class PrivilegedDisplayCore internal constructor(
                 response.putBoolean(Proto.OK, true)
                 return response
             }
-            if (op == Proto.OP_GATE) {
-                lock.withLock { gateProbe(response) }
-                if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
-                return response
-            }
             if (op == Proto.OP_GRANT_SECURE_SETTINGS) {
                 lock.withLock {
                     requireTreeReady()
@@ -232,11 +225,7 @@ class PrivilegedDisplayCore internal constructor(
                 catch (e: Throwable) {
                     coordinateObservation = null
                     visualObservation = null
-                    if (request.get(Proto.OWNER) == owner &&
-                        (op == Proto.OP_CREATE || op == Proto.OP_LAUNCH || e is TargetIdentity.Failure)) {
-                        targetIdentity.invalidate()
-                        preview.invalidate()
-                    }
+                    if (request.get(Proto.OWNER) == owner && (op == Proto.OP_CREATE || op == Proto.OP_LAUNCH)) preview.invalidate()
                     throw e
                 }
             }
@@ -246,6 +235,7 @@ class PrivilegedDisplayCore internal constructor(
             if (response.containsKey(Proto.COORDINATE_SCOPE_VERSION)) response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
             response.putBoolean(Proto.OK, false)
             response.putString(Proto.ERROR, failureCode(e))
+            (e as? Fault)?.shown?.let { response.putString(Proto.FG_PKG, it) }
             val detail = if (targetReply) null else if (selfCheckReply) (e as? InputProbe.Failure)?.observation?.encode() else failureDetail(e)
             detail?.let { response.putString(Proto.ERROR_DETAIL, it) }
         }
@@ -254,7 +244,6 @@ class PrivilegedDisplayCore internal constructor(
 
     private fun failureCode(e: Throwable): String = when (e) {
         is Fault -> e.code
-        is TargetIdentity.Failure -> e.code
         is InputProbe.Failure -> e.code
         is InterruptedException -> "cancelled"
         is SecurityException -> "systemOperationDenied"
@@ -263,7 +252,7 @@ class PrivilegedDisplayCore internal constructor(
 
     private fun failureDetail(e: Throwable): String? =
         if (e is InputProbe.Failure) e.observation?.encode()
-        else if (e is Fault || e is TargetIdentity.Failure || e is InterruptedException || e is SecurityException) null
+        else if (e is Fault || e is InterruptedException || e is SecurityException) null
         else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
@@ -328,16 +317,11 @@ class PrivilegedDisplayCore internal constructor(
         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
         val pkg = request.getString(Proto.PKG).orEmpty()
         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
-        if (request.containsKey(Proto.BACKGROUND_COORDINATES) && op != Proto.OP_COORDINATE &&
-            (op != Proto.OP_OBSERVE || request.get(Proto.BACKGROUND_COORDINATES) !is Int ||
-                request.getInt(Proto.BACKGROUND_COORDINATES) != 1 || request.get(Proto.WANT_IMAGE) != true)) throw Fault("invalidArguments")
         val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
         if (!opening) requireDisplay() else owner = ownerId
-        // Binding and all target changes share the resource owner lock. RELEASE never enters this gate.
-        val expected = targetIdentity.request(pkg, request.containsKey(Proto.TARGET_IDENTITY_VERSION),
-            request.get(Proto.TARGET_IDENTITY_VERSION), request.containsKey(Proto.TARGET_UID),
-            request.get(Proto.TARGET_UID), opening)
-        // Resolve the exact intent before VD/reader allocation, not again after approving its identity.
+        // The app the App addressed: what it opened, or what its last read showed on top.
+        val expected = TargetIdentity.requested(pkg, request.get(Proto.TARGET_UID))
+        // Resolve the exact intent before VD/reader allocation.
         val launch = if (opening) resolveLaunch(pkg, expected) else null
 
         if (op != Proto.OP_COORDINATE) coordinateObservation = null
@@ -348,28 +332,23 @@ class PrivilegedDisplayCore internal constructor(
         val previousVisual = if (localVisual && (op == Proto.OP_TAP || op == Proto.OP_SCROLL)) visualObservation else null
         visualObservation = null // Consume before any dispatch, including failed or non-opt-in operations.
         if (op == Proto.OP_REPLAY_NAVIGATION) {
-            navigation(request, response, expected ?: throw Fault("targetIdentityUnavailable"))
+            navigation(request, response, expected ?: throw Fault("invalidArguments"))
             return // navigation completes its own final actual-target gate before publishing proof.
         }
         when (op) {
             Proto.OP_CREATE, Proto.OP_LAUNCH -> {
+                // A task keeps the screen it opened first; its driver always asks for the same viewport.
                 if (display == null) createDisplay(request)
-                else requestedViewport(request)?.let {
-                    if (width != it.width || height != it.height) throw Fault("viewportConflict")
-                }
                 response.putInt(Proto.DISPLAY_ID, displayId())
-                launchPackage(pkg, checkNotNull(launch), expected)
-                targetIdentity.opened(expected)
+                launchPackage(pkg, checkNotNull(launch))
                 sleepChecked(300)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, localVisual = localVisual)
+                observe(openedPackage(request, pkg), request.getBoolean(Proto.WANT_IMAGE), response, localVisual = localVisual)
             }
-            Proto.OP_OBSERVE -> {
-                if (expected == null) requireForeground(pkg)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual, coordinates = request.containsKey(Proto.BACKGROUND_COORDINATES))
-            }
-            Proto.OP_COORDINATE -> coordinate(pkg, request, response)
+            // A read never refuses over which app is on top: it reports what is there.
+            Proto.OP_OBSERVE -> observe(openedPackage(request, pkg), request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual, coordinates = request.containsKey(Proto.BACKGROUND_COORDINATES))
+            Proto.OP_COORDINATE -> coordinate(pkg, expected?.uid, request, response)
             Proto.OP_TAP -> {
-                requireForeground(pkg)
+                requireShown(pkg, expected?.uid)
                 tap(pkg, request)
                 sleepChecked(250)
                 observeAfterAction(pkg, request, response, localVisual = localVisual)
@@ -377,7 +356,7 @@ class PrivilegedDisplayCore internal constructor(
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_SCROLL -> {
-                requireForeground(pkg)
+                requireShown(pkg, expected?.uid)
                 scroll(pkg, request)
                 sleepChecked(250)
                 observeAfterAction(pkg, request, response, localVisual = localVisual)
@@ -385,35 +364,28 @@ class PrivilegedDisplayCore internal constructor(
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_KEY -> {
-                requireForeground(pkg)
+                requireShown(pkg, expected?.uid)
                 globalKey(request.getString(Proto.DIR))
                 sleepChecked(250)
                 observeAfterAction(pkg, request, response)
             }
             Proto.OP_TEXT -> {
-                requireForeground(pkg)
+                requireShown(pkg, expected?.uid)
                 typeText(pkg, request, response)
                 sleepChecked(200)
                 observeAfterAction(pkg, request, response)
             }
             else -> throw Fault("invalidArguments")
         }
-        if (expected == null && response.containsKey(Proto.COORDINATE_SCOPE_VERSION))
-            response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
-        if (expected != null) {
-            val actual = if (op == Proto.OP_LAUNCH) {
-                val actualDisplay = display?.display ?: throw Fault("displayMissing")
-                val actualId = actualDisplay.displayId
-                if (actualId <= Display.DEFAULT_DISPLAY) throw Fault("displayTargetChanged")
-                val target = requireActualTarget(expected, actualId)
-                if (!actualDisplay.isValid || actualDisplay.displayId != actualId) throw Fault("displayTargetChanged")
-                response.putInt(Proto.DISPLAY_ID, actualId)
+        // Every reply names the app now on top (none when the screen is empty). A read already did.
+        if (!response.containsKey(Proto.TARGET_IDENTITY_VERSION)) putShown(response, openedPackage(request, pkg), shownApp())
+        if (op == Proto.OP_LAUNCH && expected != null) {
+            val shown = TargetIdentity.shown(response.get(Proto.PKG), response.get(Proto.TARGET_UID))
+            val actualDisplay = display?.display
+            if (shown == expected && actualDisplay != null && actualDisplay.isValid && actualDisplay.displayId > Display.DEFAULT_DISPLAY) {
+                response.putInt(Proto.DISPLAY_ID, actualDisplay.displayId)
                 response.putInt(Proto.BACKGROUND_OPEN_EVIDENCE, 1)
-                target
-            } else requireActualTarget(expected)
-            response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
-            response.putInt(Proto.TARGET_UID, actual.uid)
-            response.putString(Proto.PKG, actual.packageName)
+            }
         }
     }
 
@@ -752,39 +724,6 @@ class PrivilegedDisplayCore internal constructor(
         // No close here: RELEASE owns the same UI job, VD, readers and ATMS confirmation.
     }
 
-    /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
-    private fun gateProbe(response: Bundle) {
-        requireTreeReady()
-        // A settings probe must not replace or release an active task's display.
-        if (owner != null || display != null) throw Fault("probeBusy")
-        try {
-            owner = "__gate__"
-            createDisplay(Bundle().apply { putInt(Proto.SHORT_SIDE, 360); putInt(Proto.ASPECT_W, 9); putInt(Proto.ASPECT_H, 20) }, probe = true)
-            response.putInt(Proto.DISPLAY_ID, displayId())
-            var probeDetail: String? = null
-            val injection = runCatching {
-                val window = BackgroundInputProbe(privileged, checkNotNull(display).display)
-                selfCheckWindow = window
-                try {
-                    window.verify { target, time ->
-                        sendMotion(MotionEvent.ACTION_DOWN, target.x, target.y, time, waitForFinish = false)
-                        sendMotion(MotionEvent.ACTION_UP, target.x, target.y, time, waitForFinish = false)
-                    }
-                } finally {
-                    // Cleanup failure must replace a delivery failure, not be hidden by use().
-                    try { window.close(); selfCheckWindow = null } finally { probeDetail = window.failureDetail }
-                }
-            }
-            response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
-            injection.exceptionOrNull()?.let {
-                response.putString(Proto.INJECT_ERROR, failureCode(it))
-                (probeDetail ?: failureDetail(it))?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
-            }
-        } finally {
-            releaseAll()
-        }
-    }
-
     // ---- display lifecycle -------------------------------------------------
 
     private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
@@ -807,10 +746,9 @@ class PrivilegedDisplayCore internal constructor(
             else intArrayOf(preset.width, preset.height)
         val w = size[0]; val h = size[1]
         if (reader != null || pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
-        readerAllocationUncertain = true
+        // A throwing newInstance returns no reader: nothing is left to close.
         val ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         pendingReader = ir
-        readerAllocationUncertain = false
         try {
             // Every flag must resolve; never silently make a focus-stealing display on an old ROM.
             // SECURE is deliberately not requested, so protected content stays protected.
@@ -832,52 +770,98 @@ class PrivilegedDisplayCore internal constructor(
             // Keep the virtual display's keyboard off the main screen: IME policy HIDE.
             runCatching { setImePolicyHide(vd.display.displayId) }
         } catch (e: Throwable) {
-            // Retain real handles for legacy callers too: whole-peer retirement must not
-            // mistake a swallowed release failure for an empty peer.
+            // Undo this attempt (nothing was launched on it) so it does not hold back the next
+            // open. Only a handle that would not close stays, for the owner's release to settle.
+            if (runCatching { display?.release(); (reader ?: pendingReader)?.close() }.isSuccess) {
+                display = null; reader = null; pendingReader = null
+                releasingDisplayId = null; displayCreationAttempted = false
+            }
             if (e is Fault) throw e else throw Fault("displayUnsupported")
         }
     }
 
     private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
         val pm = privileged.packageManager
-        val intent = try { pm.getLaunchIntentForPackage(pkg) } catch (_: Exception) {
-            throw TargetIdentity.Failure("targetIdentityUnavailable")
-        } ?: throw Fault("notLaunchable")
-        if (expected != null) {
-            val actual = try { pm.resolveActivity(intent, 0)?.activityInfo } catch (_: Exception) { null }
-                ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
-            if (!TargetIdentity.matches(expected, actual.packageName, actual.applicationInfo.uid))
-                throw TargetIdentity.Failure("targetIdentityChanged")
-        }
+        val intent = runCatching { pm.getLaunchIntentForPackage(pkg) }.getOrNull() ?: throw Fault("notLaunchable")
+        // Another install of the same package (another user's copy, a reinstall) is a different app.
+        // An unreadable resolution is not evidence of that: the launch goes ahead.
+        val actual = if (expected == null) null else runCatching { pm.resolveActivity(intent, 0)?.activityInfo }.getOrNull()
+        if (actual != null && !TargetIdentity.matches(checkNotNull(expected), actual.packageName, actual.applicationInfo.uid))
+            throw Fault("targetIdentityChanged")
         return intent
     }
 
-    private fun requirePackageIdentity(expected: PhoneAppIdentity) {
-        val actual = try { privileged.packageManager.getApplicationInfo(expected.packageName, 0) }
-            catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
-        if (!TargetIdentity.matches(expected, actual.packageName, actual.uid))
-            throw TargetIdentity.Failure("targetIdentityChanged")
+    /** The owned display's top task, from one running-task read; null with no display or no task. */
+    private fun foregroundTask(): ActivityManager.RunningTaskInfo? {
+        val id = display?.display?.displayId ?: return null
+        val field = taskDisplayIdField ?: return null
+        @Suppress("DEPRECATION")
+        return activities.getRunningTasks(50).firstOrNull { runCatching { field.getInt(it) }.getOrDefault(-1) == id }
     }
 
-    private fun requireActualTarget(expected: PhoneAppIdentity, onDisplayId: Int? = display?.display?.displayId): PhoneAppIdentity {
-        requirePackageIdentity(expected)
-        val task = foregroundTask(onDisplayId) ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
-        val info = try { task.javaClass.getField("topActivityInfo").get(task) as? android.content.pm.ActivityInfo }
-            catch (_: Exception) { null } ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
-        val user = try { task.javaClass.getField("userId").getInt(task) }
-            catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
-        val expectedUser = try {
-            UserHandle::class.java.getMethod("getUserId", Int::class.javaPrimitiveType).invoke(null, expected.uid) as Int
-        } catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
-        if (task.topActivity?.packageName != expected.packageName ||
-            !TargetIdentity.matchesTask(expected, info.packageName, info.applicationInfo.uid, user, expectedUser))
-            throw TargetIdentity.Failure("targetIdentityChanged")
-        return PhoneAppIdentity(info.packageName, info.applicationInfo.uid)
+    private fun foregroundPackage(): String? = foregroundTask()?.topActivity?.packageName
+
+    private fun taskUid(task: ActivityManager.RunningTaskInfo): Int? = runCatching {
+        (task.javaClass.getField("topActivityInfo").get(task) as android.content.pm.ActivityInfo).applicationInfo.uid
+    }.getOrNull()
+
+    /** An app on top of the owned display; [uid] is null when neither source could be read. */
+    private class Shown(val packageName: String, val uid: Int?) {
+        val identity: PhoneAppIdentity? get() = uid?.let { PhoneAppIdentity(packageName, it) }
     }
 
-    private fun launchPackage(pkg: String, intent: Intent, expected: PhoneAppIdentity?) {
+    /**
+     * The app on top of the owned display, or null when it shows none. The uid comes from the
+     * task's own activity info, else the package's; an unreadable uid never turns into a refusal.
+     */
+    private fun shownApp(): Shown? {
+        val task = foregroundTask() ?: return null
+        val pkg = task.topActivity?.packageName ?: return null
+        return Shown(pkg, taskUid(task) ?: runCatching { privileged.packageManager.getApplicationInfo(pkg, 0).uid }.getOrNull())
+    }
+
+    /** (displayId, packages of that task) rows of one running-task read. */
+    private fun taskRows(): List<Pair<Int, Set<String>>>? {
+        val field = taskDisplayIdField ?: return null
+        @Suppress("DEPRECATION")
+        return activities.getRunningTasks(50).map { task ->
+            runCatching { field.getInt(task) }.getOrDefault(-1) to
+                setOfNotNull(task.baseActivity?.packageName, task.topActivity?.packageName)
+        }
+    }
+
+    /** The app the task opened, for the reply's note; the addressed app when the request names none. */
+    private fun openedPackage(request: Bundle, pkg: String): String =
+        request.getString(Proto.OPENED_PKG)?.takeIf { PACKAGE.matches(it) } ?: pkg
+
+    /** Names the app on top in [response]; when it is not [requested] (the opened app), also says where that one is. */
+    private fun putShown(response: Bundle, requested: String, shown: Shown?) {
+        response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+        if (shown != null) {
+            response.putString(Proto.PKG, shown.packageName)
+            shown.uid?.let { response.putInt(Proto.TARGET_UID, it) }
+        }
+        if (shown?.packageName == requested) return
+        val id = display?.display?.displayId ?: return
+        val rows = taskRows() ?: return
+        response.putString(Proto.SHOWN_NOTE, TargetIdentity.placement(requested, id, rows).wire)
+    }
+
+    /**
+     * An action goes only to the app the App last saw on top. Another app (or none) there means
+     * the model has not seen it yet: refused this once, naming what is there; a fresh read continues.
+     * A uid that cannot be read is not compared.
+     */
+    private fun requireShown(pkg: String, uid: Int?) {
+        val task = foregroundTask()
+        val shownPackage = task?.topActivity?.packageName
+        val shownUid = if (uid == null || task == null) null else taskUid(task)
+        if (task == null || !TargetIdentity.sameApp(shownPackage, shownUid, PhoneAppIdentity(pkg, uid ?: 0)))
+            throw Fault("foregroundChanged", shownPackage)
+    }
+
+    private fun launchPackage(pkg: String, intent: Intent) {
         val display = this.display ?: throw Fault("displayMissing")
-        if (expected != null) requirePackageIdentity(expected)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = display.display.displayId }
         // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
@@ -892,34 +876,19 @@ class PrivilegedDisplayCore internal constructor(
         } catch (_: SecurityException) { throw Fault("launchDenied") }
         catch (_: PendingIntent.CanceledException) { throw Fault("launchCancelled") }
         finally { pending?.let { runCatching { it.cancel() } } }
-        // Poll for the target becoming foreground on the owned display.
+        // Wait for the target on the owned display. Any app it brought up there instead is reported
+        // by the read that follows; only a screen still empty, or a target that went to another
+        // display, means the open did not happen here.
         val deadline = SystemClock.uptimeMillis() + 4000
-        while (true) {
-            if (foregroundPackage() == pkg) {
-                if (expected != null) requireActualTarget(expected)
-                break
+        while (foregroundPackage() != pkg) {
+            if (SystemClock.uptimeMillis() >= deadline) {
+                if (foregroundTask() != null) return
+                val placement = taskRows()?.let { TargetIdentity.placement(pkg, display.display.displayId, it) }
+                throw Fault(if (placement == TargetIdentity.Placement.OTHER_DISPLAY) "targetLeftDisplay" else "launchUnconfirmed")
             }
-            if (SystemClock.uptimeMillis() >= deadline) throw Fault("displayTargetChanged")
             sleepChecked(120)
         }
     }
-
-    private fun requireForeground(pkg: String) {
-        if (targetIdentity.verified) {
-            val expected = targetIdentity.current ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
-            if (expected.packageName != pkg) throw TargetIdentity.Failure("targetIdentityChanged")
-            requireActualTarget(expected)
-        } else if (foregroundPackage() != pkg) throw Fault("displayTargetChanged")
-    }
-
-    private fun foregroundTask(onDisplayId: Int? = display?.display?.displayId): ActivityManager.RunningTaskInfo? {
-        val id = onDisplayId ?: return null
-        val field = taskDisplayIdField ?: return null
-        @Suppress("DEPRECATION")
-        return activities.getRunningTasks(50).firstOrNull { runCatching { field.getInt(it) }.getOrDefault(-1) == id }
-    }
-
-    private fun foregroundPackage(): String? = foregroundTask()?.topActivity?.packageName
 
     /** Legacy success shape stays unchanged; failed physical cleanup retains its original handles. */
     private fun releaseAll() = lock.withLock {
@@ -976,7 +945,6 @@ class PrivilegedDisplayCore internal constructor(
 
     private fun clearResourceState() {
         display = null; owner = null; strictOwner = false; selfCheckOwner = false
-        targetIdentity.clear()
         targetSequence = null; targetSnapshot = null; targetMain = null
         releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false; probeDisplay = false
     }
@@ -1006,17 +974,12 @@ class PrivilegedDisplayCore internal constructor(
                                    localVisual: Boolean = false,
                                    coordinatePost: BackgroundCoordinateObservation? = null) {
         if (!request.containsKey(Proto.AFTER_LOCAL_VISUAL)) {
-            observe(pkg, false, response, localVisual = localVisual, coordinatePost = coordinatePost)
+            observe(openedPackage(request, pkg), false, response, localVisual = localVisual, coordinatePost = coordinatePost)
             return
         }
         val after = Bundle()
         try {
-            observe(pkg, true, after, localVisual = localVisual, coordinates = true, coordinatePost = coordinatePost)
-            val expected = targetIdentity.current ?: throw Fault("targetIdentityUnavailable")
-            val actual = requireActualTarget(expected)
-            after.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
-            after.putInt(Proto.TARGET_UID, actual.uid)
-            after.putString(Proto.PKG, actual.packageName)
+            observe(openedPackage(request, pkg), true, after, localVisual = localVisual, coordinates = true, coordinatePost = coordinatePost)
             after.putBoolean(Proto.OK, after.containsKey(Proto.COUNT) && !after.getBoolean(Proto.FRAME_NOT_READY))
         } catch (error: Exception) {
             coordinateObservation = null
@@ -1033,17 +996,25 @@ class PrivilegedDisplayCore internal constructor(
         response.putBundle(Proto.AFTER_VISUAL, after)
     }
 
-    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false,
+    private fun observe(requested: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false,
                         localVisual: Boolean = false, coordinates: Boolean = false,
                         coordinatePost: BackgroundCoordinateObservation? = null) {
         response.putInt(Proto.COORDINATE_SCOPE_VERSION, 1)
         response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
         coordinateObservation = null
-        if (targetIdentity.verified) requireForeground(pkg)
         visualObservation = null
         if (coordinatePost != null) response.putString(Proto.VISUAL_CHANGE, "unavailable")
         val id = displayId()
         response.putInt(Proto.DISPLAY_ID, id)
+        // Whatever app is on top is what gets read; the reply names it, and where [requested] went.
+        val shown = shownApp()
+        putShown(response, requested, shown)
+        if (shown == null) {
+            response.putBoolean(Proto.SECURE, false); response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0)
+            return
+        }
+        val pkg = shown.packageName
+        val scopeNow = coordinateScope(shown.identity)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
         val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture(localVisual || coordinates || coordinatePost != null) } }
@@ -1092,7 +1063,7 @@ class PrivilegedDisplayCore internal constructor(
             }
         }
         if (coordinates && wantImage && response.containsKey("imageBytes")) {
-            val candidate = BackgroundCoordinateObservation.create(UUID.randomUUID().toString(), coordinateScope(),
+            val candidate = BackgroundCoordinateObservation.create(UUID.randomUUID().toString(), scopeNow,
                 tree?.visualWindow, tree?.coordinateContext(), shot?.local, tree?.complete == true,
                 tree?.hasSecrets != false, tree?.hasSensitive != false, SystemClock.uptimeMillis())
             if (candidate != null) {
@@ -1101,7 +1072,7 @@ class PrivilegedDisplayCore internal constructor(
             }
         }
         if (coordinatePost != null) {
-            response.putString(Proto.VISUAL_CHANGE, coordinatePost.change(coordinateScope(), tree?.visualWindow,
+            response.putString(Proto.VISUAL_CHANGE, coordinatePost.change(scopeNow, tree?.visualWindow,
                 shot?.local, tree != null && tree.complete && !tree.hasSecrets && !tree.hasSensitive, SystemClock.uptimeMillis()))
         }
         if (localVisual && tree != null) {
@@ -1735,11 +1706,10 @@ class PrivilegedDisplayCore internal constructor(
         return e
     }
 
-    private fun coordinateScope(): BackgroundCoordinateObservation.Scope? {
+    private fun coordinateScope(shown: PhoneAppIdentity?): BackgroundCoordinateObservation.Scope? {
         val vd = display ?: return null
         val ownerId = owner ?: return null
-        val target = targetIdentity.current ?: return null
-        return BackgroundCoordinateObservation.Scope(vd, ownerId, target)
+        return BackgroundCoordinateObservation.Scope(vd, ownerId, shown ?: return null)
     }
 
     private fun coordinateReceipt(observation: BackgroundCoordinateObservation, response: Bundle) {
@@ -1752,7 +1722,7 @@ class PrivilegedDisplayCore internal constructor(
         response.putInt(Proto.TARGET_UID, observation.scope.target.uid)
     }
 
-    private fun coordinate(pkg: String, request: Bundle, response: Bundle) {
+    private fun coordinate(pkg: String, uid: Int?, request: Bundle, response: Bundle) {
         val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
         val observed = coordinateObservation ?: throw Fault("staleSnapshot")
         if (action.nonce != observed.nonce) throw Fault("staleSnapshot")
@@ -1761,14 +1731,15 @@ class PrivilegedDisplayCore internal constructor(
         response.putString(Proto.VISUAL_CHANGE, "unavailable")
         val geometry = ImageGeometry(0, 0, 1f, 1f, width, height)
         if (!action.fits(width, height) || !observed.image.isFresh(SystemClock.uptimeMillis())) throw Fault("staleSnapshot")
-        requireForeground(pkg)
+        requireShown(pkg, uid)
         val tree = readTree(displayId(), pkg, scanOtherWindows = true, inspectVisual = true, coordinates = true)
-        val scope = coordinateScope() ?: throw Fault("targetIdentityUnavailable")
+        // The scope is the app the observation was taken from; another app on top fails its match below.
+        val scope = coordinateScope(shownApp()?.identity) ?: throw Fault("foregroundChanged", foregroundPackage())
         if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
             !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
             throw Fault("targetChanged")
         // The complete tree transaction has already unregistered. Recheck the real target before dispatch.
-        requireForeground(pkg)
+        requireShown(pkg, null)
         if (!observed.image.isFresh(SystemClock.uptimeMillis())) throw Fault("staleSnapshot")
         coordinateObservation = null
         response.putBoolean(Proto.ACTION_ATTEMPTED, true)
@@ -1822,9 +1793,10 @@ class PrivilegedDisplayCore internal constructor(
     private fun navigationIdentity(expected: PhoneAppIdentity, app: BackgroundNavigationProtocol.Installation): Map<String, String> {
         if (Thread.currentThread().isInterrupted) throw InterruptedException()
         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
-        requireActualTarget(expected)
+        requireShown(expected.packageName, expected.uid)
+        // A recorded route replays only on the exact install it was recorded on.
         val installed = io.github.ouy09103.dsh_go_root.phone.a11y.MarkorNavigation.installed(privileged)
-            ?: throw Fault("targetIdentityUnavailable")
+            ?: throw Fault("targetIdentityChanged")
         val actual = installed.first
         if (expected.packageName != BackgroundNavigationProtocol.PACKAGE || actual.uid != expected.uid ||
             actual.version != app.version || actual.updated != app.updated || actual.signers != app.signers)
@@ -1896,7 +1868,7 @@ class PrivilegedDisplayCore internal constructor(
         val cx = (e.bounds.left + e.bounds.right) / 2
         val cy = (e.bounds.top + e.bounds.bottom) / 2
         val long = request.getBoolean(Proto.LONG)
-        if (targetIdentity.verified) requireForeground(pkg)
+        requireShown(pkg, null)
         injectTap(cx, cy, long)
     }
 
@@ -1933,7 +1905,7 @@ class PrivilegedDisplayCore internal constructor(
             if (maxOf(kotlin.math.abs(lastX - p[0]), kotlin.math.abs(lastY - p[1])) <= slop)
                 throw Fault("inputRejected")
         }
-        if (targetIdentity.verified) requireForeground(pkg)
+        requireShown(pkg, null)
         injectSwipe(p[0], p[1], p[2], p[3], duration)
     }
 
@@ -1964,13 +1936,13 @@ class PrivilegedDisplayCore internal constructor(
                 if (isSecret(node) && !request.getBoolean(Proto.ALLOW_SECRET, false)) throw Fault("textRequiresManual")
                 if (!node.isEditable || node.actionList.none { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT })
                     throw Fault("textUnsupported")
-                if (targetIdentity.verified) requireForeground(pkg)
+                requireShown(pkg, null)
                 val submit = request.getBoolean(Proto.SUBMIT)
                 if (submit) {
                     if (!node.isFocused && !node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) throw Fault("textFocusMissing")
                     if (!node.refresh() || !node.isFocused) throw Fault("textTargetChanged")
                 }
-                if (targetIdentity.verified) requireForeground(pkg)
+                requireShown(pkg, null)
                 // type(id, text) replaces the entire value, regardless of the old selection.
                 val accepted = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
@@ -1989,7 +1961,7 @@ class PrivilegedDisplayCore internal constructor(
                 response.putString(Proto.READBACK, BackgroundTree.cap(text))
                 if (submit) {
                     if (!node.isFocused) throw Fault("textTargetChanged")
-                    if (targetIdentity.verified) requireForeground(pkg)
+                    requireShown(pkg, null)
                     globalKey("enter")
                 }
             } finally { node.recycle() }
