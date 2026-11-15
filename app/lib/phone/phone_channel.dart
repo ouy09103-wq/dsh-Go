@@ -281,6 +281,7 @@ class PhoneBackgroundStatus {
     this.viewport,
     this.previewVersion,
     this.previewEnabled = false,
+    this.selfCheckWarning,
     this.parallelism,
   });
 
@@ -296,6 +297,7 @@ class PhoneBackgroundStatus {
     viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
+    selfCheckWarning: _text(m['selfCheckWarning']),
     parallelism: BackgroundParallelism.parse(m['parallelism']),
   );
 
@@ -316,6 +318,8 @@ class PhoneBackgroundStatus {
   final PhoneBackgroundViewport? viewport;
   final int? previewVersion;
   final bool previewEnabled;
+  /// The settings self-check did not pass. Only a note: the channel stays ready and usable.
+  final String? selfCheckWarning;
   final BackgroundParallelism? parallelism;
 
   PhonePrivilegedMode get effectiveMode =>
@@ -1426,6 +1430,12 @@ class PhoneChannel {
     }
   }
 
+
+  /// 设置 › Root 权限的开关：只影响之后的 `shell` 调用，不重启引擎。
+  Future<bool> setRootShell(bool on) => _bool('setRootShell', {'on': on});
+
+  /// 设置 › Root 权限：严格模式，开着时逐条判定 root 命令。
+  Future<bool> setRootShellStrict(bool on) => _bool('setRootShellStrict', {'on': on});
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 
