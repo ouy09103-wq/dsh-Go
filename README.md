@@ -348,6 +348,7 @@ DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh --dry-run -f all
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：DSH Go 运行和连接的就是它。
 - [DSH-TUI](https://github.com/ccch1mneyyy/dsh-TUI)：吉祥物 Deepy 小鲸鱼和鲸娘来自这里。
+- [ghjicb/dsh-Go](https://github.com/ghjicb/dsh-Go)：root 开关胶囊与 root 级 shell 工具的思路来自这里，感谢 ghjicb 的探索。
 
 Phase 相关代码经作者授权按 MIT 许可使用。DeepSeek Harness、PiPilot、DS Bot、DSH Remote 及其他第三方组件、素材保留各自的许可证和署名。具体来源和条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -358,4 +359,3 @@ DSH Go 的名称、标识、Deepy 小鲸鱼和鲸娘等形象不在 AGPL 授权�
 <br>
 
 <p align="center"><sub>DSH Go 是社区开发的非官方客户端，与 DeepSeek 没有关联，也不代表 DeepSeek。DeepSeek 名称与标识归其所有者所有。</sub></p>
-<感谢（https://github.com/ghjicb/dsh-Goroot）开关胶囊。

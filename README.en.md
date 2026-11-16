@@ -349,6 +349,7 @@ This project is licensed under [AGPL-3.0](LICENSE). `sdk/` and `examples/` remai
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): the agent DSH Go runs and connects to.
 - [DSH-TUI](https://github.com/ccch1mneyyy/dsh-TUI): home of the mascots, Deepy and Whale girl.
+- [ghjicb/dsh-Go](https://github.com/ghjicb/dsh-Go): the root toggle pill and the root-level shell tool started here; thanks to ghjicb for the exploration.
 
 Code derived from Phase is used under the MIT License with the author's permission. DeepSeek Harness, PiPilot, DS Bot, DSH Remote and other third-party components and assets retain their own licenses and attribution. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for sources and terms.
 
