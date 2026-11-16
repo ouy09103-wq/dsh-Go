@@ -21,7 +21,7 @@
 library;
 
 /// GitHub repository the releases live in.
-const updateRepo = 'ccch1mneyyy/dsh-go';
+const updateRepo = 'ouy09103-wq/dsh-Go';
 
 /// `releases/latest` of the REST API: tag, notes, assets with sizes and
 /// SHA-256 digests. Unauthenticated: 60 requests per hour per IP.
@@ -42,10 +42,12 @@ Uri githubReleaseAsset(String tag, String name) =>
 /// `/beta/`; public files come from [updateDownloadOrigin].
 const updateMirrorOrigin = 'https://go.dshtui.com';
 
-/// Our public copy of the release files (an R2 bucket): `/update.json`, the
-/// latest public manifest with absolute asset URLs, and
-/// `/download/<version>/<file>` for every file of every release.
-const updateDownloadOrigin = 'https://dl.dshtui.com';
+/// Our public copy of the release files. **Empty in this fork**: upstream's
+/// copy (`dl.dshtui.com`) serves upstream's APKs, whose package name is not
+/// this build's, so an install from it is refused as a conflict. This fork
+/// publishes its releases on its own GitHub repository only, so the checker
+/// starts at GitHub (`updateRepo`) and the accelerators.
+const updateDownloadOrigin = '';
 
 /// The beta channel: `<origin>/beta/update.json` and `<origin>/beta/<version>/<file>`,
 /// both behind `Authorization: Bearer <token>`. The token is compiled into beta

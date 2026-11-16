@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support.dart';
 
 const _name = 'dsh-go-1.2.0-arm64.apk';
-const _url = 'https://github.com/ccch1mneyyy/dsh-go/releases/download/v1.2.0/$_name';
+const _url = 'https://github.com/ouy09103-wq/dsh-Go/releases/download/v1.2.0/$_name';
 final _bytes = utf8.encode('PK a cached update, checked by the real file hasher');
 final _wrong = utf8.encode('PK another cached file');
 

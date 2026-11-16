@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/quick_panel_state.dart';
 import '../session/conversation_panel.dart';
+import '../session/root_switch_pill.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'drawer/drawer_destination.dart';
@@ -93,6 +94,9 @@ class QuickPanel extends ConsumerWidget {
                   ],
                 ),
               ),
+              // 没打开会话时也有 root 开关：原来只有会话里的快捷入口面板有，
+              // 不聊天就找不到它，只能翻进设置。
+              const RootSwitchPill(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 13),
                 child: Text(

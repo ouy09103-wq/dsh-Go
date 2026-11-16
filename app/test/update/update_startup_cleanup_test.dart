@@ -12,8 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support.dart';
 
 const _name = 'dsh-go-1.2.0-arm64.apk';
-const _manifest = 'https://github.com/ccch1mneyyy/dsh-go/releases/latest/download/update.json';
-const _asset = 'https://github.com/ccch1mneyyy/dsh-go/releases/download/v1.2.0/$_name';
+const _manifest = 'https://github.com/ouy09103-wq/dsh-Go/releases/latest/download/update.json';
+const _asset = 'https://github.com/ouy09103-wq/dsh-Go/releases/download/v1.2.0/$_name';
 final _bytes = utf8.encode('PK fixed startup-cleanup regression payload');
 
 Map<String, Object?> _release({String version = '1.2.0'}) => {

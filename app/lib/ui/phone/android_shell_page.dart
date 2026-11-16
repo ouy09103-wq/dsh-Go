@@ -230,10 +230,13 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
   }
 
   /// 打开前问一句（关掉不需要）；确认只是拦一下误触，不保护什么。
+  ///
+  /// [on] is the value the switch is moving to, not the current one: confirming on
+  /// `!on` asked before turning *off* and silently turned root on.
   Future<void> _toggleRootShell(bool on) async {
     if (_rootSwitchBusy) return;
     final l10n = context.l10n;
-    if (!on) {
+    if (on) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
@@ -249,7 +252,7 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
     }
     setState(() => _rootSwitchBusy = true);
     try {
-      final ok = await ref.read(phoneProvider.notifier).setRootShell(!on);
+      final ok = await ref.read(phoneProvider.notifier).setRootShell(on);
       if (!mounted) return;
       if (!ok) _rootLog(l10n.androidShellRootChanged);
       await _refresh();
@@ -526,9 +529,11 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
               trailing: Switch(
                 key: const ValueKey('android-shell-root-switch'),
                 value: rootEnabled,
-                onChanged: _rootSwitchBusy || !_status.supported || !phone.enabled
-                    ? null
-                    : (value) => unawaited(_toggleRootShell(value)),
+                // The root switch only writes the phone-control grant: neither the
+                // Android Shell channel being unavailable nor the master switch being
+                // off should leave a switch that cannot be moved. The grant stays
+                // stored, and the page already says when phone control is off.
+                onChanged: _rootSwitchBusy ? null : (value) => unawaited(_toggleRootShell(value)),
               ),
             ),
             ListPageRow(
@@ -580,7 +585,11 @@ class _AndroidShellPageState extends ConsumerState<AndroidShellPage> {
               titleMaxLines: 2,
               subtitle: !_rootRead
                   ? l10n.androidShellRootReading
-                  : rootStatus == null || !rootStatus.hasSu
+                  // 原生通道不在（MissingPluginException）不等于这台手机没有 su：
+                  // 说成「未检测到 su」会让人去 root 管理器里白找。
+                  : rootStatus == null
+                  ? l10n.phoneNotReadyYet
+                  : !rootStatus.hasSu
                   ? l10n.androidShellRootNoSu
                   : '${rootStatus.manager.isEmpty ? 'su' : rootStatus.manager} · ${rootStatus.abi} · '
                         'Android ${rootStatus.sdk} · ${l10n.androidShellRootLinux}: '
