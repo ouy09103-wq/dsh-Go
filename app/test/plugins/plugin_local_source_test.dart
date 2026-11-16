@@ -55,7 +55,8 @@ void main() {
     final staged = File('${root.path}/${package.guestPath.replaceFirst(RegExp(r'^/+'), '')}');
     expect(staged.existsSync(), isTrue);
     final entries = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(staged.readAsBytesSync()));
-    expect(entries.files.map((f) => f.name), containsAll(['package.json', 'lib/index.js']));
+    // 每条都带 package/ 前缀：pnpm 只认这一层，少了它子目录会被拍平。
+    expect(entries.files.map((f) => f.name), containsAll(['package/package.json', 'package/lib/index.js']));
   });
 
   test('a .zip with one wrapping folder is flattened to the package root', () async {
@@ -67,8 +68,8 @@ void main() {
     expect(package.name, 'dsh-go-local-demo');
     final staged = File('${root.path}/${package.guestPath.replaceFirst(RegExp(r'^/+'), '')}');
     final entries = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(staged.readAsBytesSync()));
-    // package.json has to sit at the root, or pnpm finds no package at all.
-    expect(entries.files.map((f) => f.name), containsAll(['package.json', 'lib/index.js']));
+    // package.json has to sit under package/, or pnpm finds no package at all.
+    expect(entries.files.map((f) => f.name), containsAll(['package/package.json', 'package/lib/index.js']));
   });
 
   test('packing metadata never reaches the installable package', () async {
@@ -86,7 +87,7 @@ void main() {
         .decodeBytes(GZipDecoder().decodeBytes(staged.readAsBytesSync()))
         .files
         .map((f) => f.name);
-    expect(names, containsAll(['package.json', 'lib/index.js']));
+    expect(names, containsAll(['package/package.json', 'package/lib/index.js']));
     expect(names.any((n) => n.contains('__MACOSX')), isFalse);
     expect(names.any((n) => n.startsWith('./')), isFalse);
   });
