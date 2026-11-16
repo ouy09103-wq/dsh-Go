@@ -18,7 +18,7 @@ on:
       version:
         description: 版本名（如 1.0.16-root.1）
         required: false
-        default: 1.1.0-root.9
+        default: 1.1.0-root.10
       draft:
         description: 发布为 draft release
         type: boolean
@@ -34,7 +34,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: 3.47.7
-  VERSION: ${{ github.event.inputs.version || '1.1.0-root.9' }}
+  VERSION: ${{ github.event.inputs.version || '1.1.0-root.10' }}
   # 云端跑：走 google()/mavenCentral() 官方源。国内镜像在 Actions 上会 502。
   DSH_MAVEN_MIRRORS: '0'
 
@@ -120,7 +120,7 @@ jobs:
         run: |
           # 同一份说明既进 update.json（App 内更新能看到改了什么），也进 Release 正文。
           # 版本号用 python 替换：sed 里 $ 和 {} 是正则元字符，直替换会走样。
-          python3 -c 'import pathlib,sys; t=pathlib.Path("docs/release-notes-root.md").read_text(encoding="utf-8"); pathlib.Path(sys.argv[2]).write_text(t.replace("${{ env.VERSION }}", sys.argv[1]), encoding="utf-8")' "$VERSION" "$RUNNER_TEMP/notes.md"
+          python3 -c 'import pathlib,sys; t=pathlib.Path("docs/release-notes-root.md").read_text(encoding="utf-8"); pathlib.Path(sys.argv[2]).write_text(t.replace("@VERSION@", sys.argv[1]), encoding="utf-8")' "$VERSION" "$RUNNER_TEMP/notes.md"
           python3 tooling/release_assets.py --version "$VERSION" --delta-from 0 --out dist \
             --notes "$RUNNER_TEMP/notes.md"
           ls -lh dist

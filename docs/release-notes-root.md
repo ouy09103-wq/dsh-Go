@@ -1,4 +1,4 @@
-DSH Go **Root** ${{ env.VERSION }} —— 个人 fork，含 root `shell` 工具。
+DSH Go **Root** @VERSION@ —— 个人 fork，含 root `shell` 工具。
 
 - 已同步上游 ccch1mneyyy/dsh-Go main（至 dd0a8d5），运行时 1.0.15
 - 不含内置 frida（代码、模块、打包步骤都已移除）
