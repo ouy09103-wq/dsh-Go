@@ -358,3 +358,4 @@ DSH Go 的名称、标识、Deepy 小鲸鱼和鲸娘等形象不在 AGPL 授权�
 <br>
 
 <p align="center"><sub>DSH Go 是社区开发的非官方客户端，与 DeepSeek 没有关联，也不代表 DeepSeek。DeepSeek 名称与标识归其所有者所有。</sub></p>
+<感谢https://github.com/ghjicb/dsh-Goroot开关胶囊。
