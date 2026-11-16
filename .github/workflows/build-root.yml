@@ -18,7 +18,7 @@ on:
       version:
         description: 版本名（如 1.0.16-root.1）
         required: false
-        default: 1.1.0-root.8
+        default: 1.1.0-root.9
       draft:
         description: 发布为 draft release
         type: boolean
@@ -34,7 +34,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: 3.47.7
-  VERSION: ${{ github.event.inputs.version || '1.1.0-root.8' }}
+  VERSION: ${{ github.event.inputs.version || '1.1.0-root.9' }}
   # 云端跑：走 google()/mavenCentral() 官方源。国内镜像在 Actions 上会 502。
   DSH_MAVEN_MIRRORS: '0'
 
@@ -118,7 +118,11 @@ jobs:
 
       - name: Release assets
         run: |
-          python3 tooling/release_assets.py --version "$VERSION" --delta-from 0 --out dist
+          # 同一份说明既进 update.json（App 内更新能看到改了什么），也进 Release 正文。
+          # 版本号用 python 替换：sed 里 $ 和 {} 是正则元字符，直替换会走样。
+          python3 -c 'import pathlib,sys; t=pathlib.Path("docs/release-notes-root.md").read_text(encoding="utf-8"); pathlib.Path(sys.argv[2]).write_text(t.replace("${{ env.VERSION }}", sys.argv[1]), encoding="utf-8")' "$VERSION" "$RUNNER_TEMP/notes.md"
+          python3 tooling/release_assets.py --version "$VERSION" --delta-from 0 --out dist \
+            --notes "$RUNNER_TEMP/notes.md"
           ls -lh dist
 
       - name: Upload artifact
@@ -137,32 +141,4 @@ jobs:
           draft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
           prerelease: false
           files: dist/*
-          body: |
-            DSH Go **Root** ${{ env.VERSION }} —— 个人 fork，含 root `shell` 工具。
-
-            - 已同步上游 ccch1mneyyy/dsh-Go main（至 dd0a8d5），运行时 1.0.15
-            - 不含内置 frida（代码、模块、打包步骤都已移除）
-            - 包名 `io.github.ouy09103.dsh_go_root`，应用名「DSH Go Root」，**可与原版同时安装**
-            - arm64 · Android 8.0（API 26）以上
-            - 没有配置签名 secrets 时是 debug 签名
-
-            **这一版修的三件事**
-
-            - **root 开关胶囊回来了。** 右划快捷入口面板底部那一条又在：开着时整条是警示色，
-              点一下开关，不用为开一次翻进设置。它和设置里的开关是同一个值。
-            - **Android Shell 有了 root 通道。** 连接方式现在有三条：Shizuku、自连 ADB、
-              **Root**。选 Root 就走 `su` 以 uid 0 执行；`su` 返回应用身份时按失败报告，
-              不会假装是 root。每条命令仍然单独原生确认。
-            - **「Root 权限」并进 Android Shell 页，只剩一个开关。** 设置里不再单列一页，
-              原来的入口现在直接打开 Android Shell。总开关、su 能力清单、root 控制台都在页里。
-            - **命令拦截档位跟 DSHA 对齐。** 严格（逐条按手机操控规则判定）／放宽（默认，
-              任意命令但拦不可逆操作）／完全放宽（不看命令内容）。三个档位都会拦格式化、
-              刷机、清数据这类不可逆操作。
-
-            **另外**
-
-            - **插件可以本地安装了。** 插件页右上角多一个按钮，直接选手机里的插件包
-              （`.tgz` / `.tar.gz` / `.zip`）装上，不走市场、不联网、不经过上传。包里必须有
-              `package.json`；顶层多套一层目录（GitHub 源码包那种）会自动铺平。
-
-            ⚠️ 打开「启用 root」后，模型能以 root 身份执行任意命令。先备份，别装在主力机上。
+          body_path: ${{ runner.temp }}/notes.md
