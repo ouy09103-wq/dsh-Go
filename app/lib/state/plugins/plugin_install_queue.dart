@@ -355,7 +355,12 @@ class PluginInstallsController extends Notifier<Map<String, PluginInstallJob>> {
         result = await _recover(client, requestId, name);
       }
       if (result.succeeded) {
-        return finish((j) => j.copyWith(phase: PluginInstallPhase.succeeded, result: result));
+        // 装完必须确认这个 bundle 真的被组合进来了：主机有时只把包写进
+        // dependencies、没有写进 dsh.profile.bundles，于是引擎根本不载入它，
+        // 模型也就看不到插件提供的工具。这里补一次「选中」；已经选中时
+        // 主机返回没有变化，代价可以忽略。
+        final activated = await _ensureBundleSelected(client, result.bundle ?? name, result);
+        return finish((j) => j.copyWith(phase: PluginInstallPhase.succeeded, result: activated));
       }
       final failure = describeOperationFailure(result, isLocal: host.isLocal, published: job.request.published);
       return finish(
@@ -375,6 +380,35 @@ class PluginInstallsController extends Notifier<Map<String, PluginInstallJob>> {
     }
   }
 
+  /// Makes sure [name] is a selected bundle after an install.
+  ///
+  /// An install can end as applied while the package is merely a dependency: the
+  /// profile then never loads it and the plugin's tools never reach the model.
+  /// Asking the Host to select it is authoritative, and a bundle that is already
+  /// selected answers with no change, so this runs after every install.
+  /// A failure here is not an install failure: the files are on disk and the
+  /// plugins page still offers the switch.
+  Future<PluginOperationResult> _ensureBundleSelected(
+    DshClient client,
+    String name,
+    PluginOperationResult installed,
+  ) async {
+    try {
+      PluginBundle? bundle;
+      for (final candidate in await client.listBundles()) {
+        if (candidate.name == name) {
+          bundle = candidate;
+          break;
+        }
+      }
+      if (bundle == null || bundle.enabled || bundle.readOnlyReason != null) return installed;
+      final selected = await client.setBundleEnabled(name, true);
+      return selected.succeeded ? selected : installed;
+    } on Object {
+      return installed;
+    }
+  }
+
   /// The install response was lost (timeout, dropped tunnel): ask the Host
   /// for the running install's result, then fall back to the bundle list.
   Future<PluginOperationResult> _recover(DshClient client, String requestId, String name) async {
@@ -391,8 +425,12 @@ class PluginInstallsController extends Notifier<Map<String, PluginInstallJob>> {
     }
     try {
       final bundles = await client.listBundles();
-      if (bundles.any((b) => b.name == name && b.installed)) {
-        return PluginOperationResult(application: PluginApplication.applied, target: name, bundle: name);
+      // 只有真的被组合进来的插件才算装成功：包在 dependencies 里、却没被
+      // 选进 bundles 时，引擎不会载入它，报成功等于让用户以为装好了。
+      for (final bundle in bundles) {
+        if (bundle.name == name && bundle.installed && bundle.enabled) {
+          return PluginOperationResult(application: PluginApplication.applied, target: name, bundle: name);
+        }
       }
     } on DshException {
       // fall through
