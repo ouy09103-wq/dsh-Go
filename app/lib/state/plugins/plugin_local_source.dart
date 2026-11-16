@@ -63,6 +63,9 @@ class LocalPluginException implements Exception {
 /// 上限在这里是为了不让一次误选把引擎的缓存撑满。
 const localPluginMaxBytes = 64 * 1024 * 1024;
 
+/// npm 包 tar 的顶层目录名。重打包时统一带上它，pnpm 才不会把子目录拍平。
+const _packageRoot = 'package/';
+
 /// 本地插件包在 rootfs 里的落脚处：DSH 自己的 Home 下面，重启不丢，
 /// 也不和插件的安装目录混在一起。
 const _localPluginStageDir = '${GuestFs.dshHome}/dsh-app/local-plugins';
@@ -88,11 +91,15 @@ Future<LocalPluginPackage> stageLocalPluginPackage({
 
   // 重新打成一个规范 tar.gz：引擎只认 .tgz / .tar.gz，而用户给的可能是 .zip，
   // 也可能顶层还套着一层目录（GitHub 的源码包就是这样）。重打包时把它们都抹平，
-  // 让 package.json 一定在包根上。
+  // 让 package.json 一定在 `package/` 这一层下面。
   final archive = Archive();
   for (final entry in files.entries) {
     final data = entry.value;
-    archive.addFile(ArchiveFile(entry.key, data.length, data));
+    // 每条都得带上 `package/` 这一层：npm 包的 tar 顶层就是 `package/`，
+    // pnpm 解包也只认这一层。少了它，子目录会被拍平到包根——
+    // 插件里 `./prompts/x.md` 这种相对读法当场 ENOENT，整条 import 崩掉。
+    final path = entry.key.startsWith(_packageRoot) ? entry.key : '$_packageRoot${entry.key}';
+    archive.addFile(ArchiveFile(path, data.length, data));
   }
   final tar = TarEncoder().encodeBytes(archive);
   final gzipped = GZipEncoder().encode(tar);
