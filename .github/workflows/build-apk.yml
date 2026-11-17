@@ -46,8 +46,7 @@ jobs:
 
       - name: Free disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
-            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h /
 
       - uses: actions/setup-java@v4
@@ -85,6 +84,18 @@ jobs:
         with:
           path: runtime/.cache
           key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}-${{ github.run_id }}
+
+      - name: Install the NDK libtawcroot needs
+        run: |
+          set -x
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"
+          # The Flutter action installs cmdline-tools; sdkmanager accepts the licences we already have.
+          sm="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$sm" ] || sm=$(command -v sdkmanager)
+          yes | "$sm" --install "ndk;28.2.13676358" >/dev/null || true
+          ls -d "$SDK/ndk/28.2.13676358" || { echo "NDK 28.2.13676358 missing" >&2; exit 1; }
+          cat "$SDK/ndk/28.2.13676358/source.properties"
 
       - name: Pub get
         working-directory: app
