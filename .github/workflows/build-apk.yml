@@ -19,10 +19,10 @@ on:
         required: false
         default: ''
       draft:
-        description: 发布为 draft release
+        description: 发布为 draft release（默认 false：直接正式发布）
         type: boolean
         required: false
-        default: true
+        default: false
   push:
     tags: ['v*']
 
@@ -159,7 +159,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.name }}
           name: DSH Go ${{ steps.version.outputs.name }}
-          draft: ${{ github.event.inputs.draft == 'true' || github.event_name == 'workflow_dispatch' }}
+          draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' }}
           prerelease: false
           files: dist/*
           body: |
