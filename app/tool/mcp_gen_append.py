@@ -168,6 +168,7 @@ def strip_existing(path: Path, is_abstract: bool) -> None:
     if is_abstract:
         pat = re.compile(r"  /// No description provided for @(?:mcp\w+|searchKwMcp)\.(?:[\s\S]*?)(?=\n  /// No description provided for @|\n\}\n|\nclass )")
         text = pat.sub("", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
     else:
         pat = re.compile(r"  @override\n  String (?:get )?(?:mcp\w+|searchKwMcp)(?:[^{;]*;\n|[\s\S]*?\n  })\n")
         text = pat.sub("", text)
