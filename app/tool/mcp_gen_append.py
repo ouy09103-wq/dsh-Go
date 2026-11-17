@@ -161,10 +161,25 @@ def plural_impl(key: str, msg: str, ph: dict, locale: str) -> str:
     return f"  @override\n  String get {key} => {interpolation(msg, ph)};\n\n"
 
 
+
+def strip_existing(path: Path, is_abstract: bool) -> None:
+    """Remove mcp/searchKwMcp entries already in the file (idempotency for re-runs)."""
+    text = path.read_text()
+    if is_abstract:
+        pat = re.compile(r"  /// No description provided for @(?:mcp\w+|searchKwMcp)\.(?:[\s\S]*?)(?=\n  /// No description provided for @|\n\}\n|\nclass )")
+        text = pat.sub("", text)
+    else:
+        pat = re.compile(r"  @override\n  String (?:get )?(?:mcp\w+|searchKwMcp)[\s\S]*?;\n")
+        text = pat.sub("", text)
+    path.write_text(text)
+
 def main() -> None:
     base = GEN / "app_localizations.dart"
     zh_f = GEN / "app_localizations_zh.dart"
     en_f = GEN / "app_localizations_en.dart"
+    strip_existing(base, True)
+    strip_existing(zh_f, False)
+    strip_existing(en_f, False)
 
     abstract = "\n".join(abstract_entry(k) for k in keys)
     zh_impl = "\n".join(impl_entry(k, "zh", "zh") for k in keys)
@@ -177,21 +192,93 @@ def main() -> None:
 
 
 def insert_before_abstract(path: Path, block: str) -> None:
+    # gen-l10n emits keys in template-ARB order, interspersed with the other keys.
+    # My keys form two runs in the ARB: mcp* before `mediaGenerateTile`, and
+    # searchKwMcp before `searchKwGeneral`. Insert each run before its successor's
+    # entry so a regenerated file matches byte-for-byte.
     text = path.read_text()
-    anchor = "class _L10nDelegate extends LocalizationsDelegate<L10n> {"
-    at = text.index(anchor)
-    # the abstract class closes right before the delegate; put the methods inside it
-    close = text.rindex("}\n", 0, at)
-    path.write_text(text[:close] + "\n" + block + "\n" + text[close:])
+    zh_all = [k for k in zh if not k.startswith("@")]
+    runs: list[tuple[list[str], str | None]] = []
+    cur: list[str] = []
+    for k in zh_all:
+        if (k.startswith("mcp") or k == "searchKwMcp") and k in set(keys):
+            cur.append(k)
+        else:
+            if cur:
+                runs.append((cur, k))
+                cur = []
+    if cur:
+        runs.append((cur, None))
+
+    blocks_by_key = {}
+    # split the pre-rendered block back into per-key chunks on the doc marker
+    chunks = re.split(r"(?=  /// No description provided for @)", block)
+    for c in chunks:
+        m = re.search(r"String (?:get )?(\w+)", c)
+        if m:
+            blocks_by_key[m.group(1)] = c
+
+    for run, successor in runs:
+        run_block = "".join(blocks_by_key[k] for k in run)
+        if successor is None:
+            # last run: goes before the class close (rare; not hit today)
+            anchor = "class _L10nDelegate extends LocalizationsDelegate<L10n> {"
+            at = text.index(anchor)
+            close = text.rindex("}\n", 0, at)
+            text = text[:close] + "\n" + run_block + "\n" + text[close:]
+            continue
+        if successor == "searchKwGeneral":
+            # search part: find the existing searchKwWebSearchKey/searchKwWebSearch getter
+            m = re.search(r"  String get searchKwWebSearch;[^\n]*\n", text)
+            if not m:
+                raise AssertionError("anchor searchKwWebSearch not found")
+            text = text[: m.end()] + run_block + text[m.end() :]
+        else:
+            # engine part: insert before `mediaGenerateTile`'s doc comment
+            m = re.search(r"  /// No description provided for @mediaGenerateTile\.", text)
+            if not m:
+                raise AssertionError("anchor mediaGenerateTile not found")
+            text = text[: m.start()] + run_block + text[m.start() :]
+    path.write_text(text)
 
 
 def append_impl(path: Path, block: str) -> None:
+    # Same interleaving as the abstract class: insert each run before its
+    # successor's implementation. Impl entries end with a closing brace line.
     text = path.read_text()
-    assert text.rstrip().endswith("}"), path
-    trimmed = text.rstrip()
-    # drop the final closing brace, append methods, re-close
-    trimmed = trimmed[: trimmed.rindex("}")].rstrip()
-    path.write_text(trimmed + "\n\n" + block + "}\n")
+    zh_all = [k for k in zh if not k.startswith("@")]
+    runs: list[tuple[list[str], str | None]] = []
+    cur: list[str] = []
+    for k in zh_all:
+        if (k.startswith("mcp") or k == "searchKwMcp") and k in set(keys):
+            cur.append(k)
+        else:
+            if cur:
+                runs.append((cur, k))
+                cur = []
+    if cur:
+        runs.append((cur, None))
+
+    chunks = re.split(r"(?=  @override\n)", block)
+    blocks_by_key = {}
+    for c in chunks:
+        m = re.search(r"String (?:get )?(\w+)", c)
+        if m:
+            blocks_by_key[m.group(1)] = c
+
+    for run, successor in runs:
+        run_block = "".join(blocks_by_key[k] for k in run)
+        if successor == "searchKwGeneral":
+            m = re.search(r"  String get searchKwWebSearch =>[^;]*;\n", text)
+            if not m:
+                raise AssertionError("anchor searchKwWebSearch impl not found")
+            text = text[: m.end()] + run_block + text[m.end() :]
+        else:
+            m = re.search(r"  String get mediaGenerateTile =>[^;]*;\n", text)
+            if not m:
+                raise AssertionError("anchor mediaGenerateTile impl not found")
+            text = text[: m.end()] + run_block + text[m.end() :]
+    path.write_text(text)
 
 
 if __name__ == "__main__":

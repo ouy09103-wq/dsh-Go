@@ -80,8 +80,9 @@ class McpGuestTest {
             assertTrue(McpGuest.writeFiles(root, servers))
             assertEquals(McpGuest.patchYaml(servers), file.readText())
             assertFalse(root.resolve("opt/dsh-app").listFiles()!!.any { it.name.endsWith(".tmp") })
-            // switching to nothing removes the overlay so a later start doesn't mount it
-            assertTrue(McpGuest.writeFiles(root, listOf(servers[1])))
+            // switching to nothing removes the overlay so a later start doesn't mount it;
+            // writeFiles reports false because nothing is enabled
+            assertFalse(McpGuest.writeFiles(root, listOf(servers[1])))
             assertFalse(McpGuest.file(root).isFile)
         } finally {
             root.deleteRecursively()
