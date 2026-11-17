@@ -73,6 +73,7 @@ enum SettingsPageId {
   phoneDnd,
   phoneUnlocks,
   webSearch,
+  mcp,
   media,
   plugins,
   appearance,
@@ -385,6 +386,14 @@ final _pages = <SettingsPageMeta>[
     keywords: (l) => l.searchKwWebSearch,
     freq: Freq.medium,
     links: const ['web-search'],
+  ),
+  SettingsPageMeta(
+    SettingsPageId.mcp,
+    title: (l) => l.mcpTitle,
+    group: _abilities,
+    keywords: (l) => l.searchKwMcp,
+    links: const ['mcp'],
+    condition: SpotCondition.localHost,
   ),
   SettingsPageMeta(
     SettingsPageId.media,

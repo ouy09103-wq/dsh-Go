@@ -9559,6 +9559,102 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get mcpTitle => 'MCP 对接';
+
+  @override
+  String get mcpSubtitle => '让模型连接外部 MCP 服务器（工具以 mcp__名称__工具 出现）';
+
+  @override
+  String get mcpEnabled => '启用外部 MCP';
+
+  @override
+  String get mcpEnabledHint => '下次启动引擎时生效；安全模式下不加载';
+
+  @override
+  String mcpServerCount(int count) {
+    if (count == 0) {
+      return '未配置服务器';
+    }
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count 个服务器');
+    return '$_temp0';
+  }
+
+  @override
+  String get mcpAddServer => '添加服务器';
+
+  @override
+  String get mcpServerName => '名称';
+
+  @override
+  String get mcpServerNameHint => '工具前缀，仅限字母、数字、下划线和连字符，最长 32 个字符';
+
+  @override
+  String get mcpServerUrl => '服务地址';
+
+  @override
+  String get mcpServerUrlHint => 'MCP 端点 URL（Streamable HTTP / SSE）';
+
+  @override
+  String get mcpServerToken => '访问令牌';
+
+  @override
+  String get mcpServerTokenHint => '以 Authorization: Bearer 头发送；留空表示不携带';
+
+  @override
+  String get mcpServerEnabled => '启用此服务器';
+
+  @override
+  String get mcpServerDelete => '删除';
+
+  @override
+  String get mcpServerDeleteConfirmTitle => '删除 MCP 服务器？';
+
+  @override
+  String mcpServerDeleteConfirmBody(String name) {
+    return '「$name」将从列表中移除；下次启动引擎后生效。';
+  }
+
+  @override
+  String get mcpSave => '保存';
+
+  @override
+  String get mcpSaved => '已保存，下次启动引擎时生效';
+
+  @override
+  String mcpSaveFailed(String reason) {
+    return '保存失败：$reason';
+  }
+
+  @override
+  String get mcpActiveBadge => '已挂载';
+
+  @override
+  String get mcpNextStartBadge => '待启动生效';
+
+  @override
+  String get mcpNameInvalid => '名称只能包含字母、数字、下划线和连字符，最长 32 个字符';
+
+  @override
+  String get mcpUrlInvalid => '请填写以 http:// 或 https:// 开头的服务地址';
+
+  @override
+  String get mcpNameDuplicate => '名称已被其他服务器使用';
+
+  @override
+  String mcpTooManyServers(int count) {
+    return '最多配置 $count 个服务器';
+  }
+
+  @override
+  String get mcpStopFirst => '引擎运行中：修改已保存，重启引擎后生效';
+
+  @override
+  String get mcpTokenMasked => '令牌已保存';
+
+  @override
+  String get mcpDocsHint => '服务器需支持 Streamable HTTP 或 SSE 传输；stdio 服务器请自行用 HTTP 桥接（如 mcp-proxy）转发';
+
+  @override
   String get mediaGenerateTile => '生成';
 
   @override
@@ -16319,6 +16415,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwWebSearch => '搜索,上网,联网,API Key';
+  @override
+  String get searchKwMcp => 'MCP,外部工具,mcp 服务器,工具接入';
+
 
   @override
   String get searchKwGeneral => '通用,网页版设置';

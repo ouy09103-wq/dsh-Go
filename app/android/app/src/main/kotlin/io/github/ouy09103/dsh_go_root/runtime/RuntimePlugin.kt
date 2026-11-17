@@ -203,6 +203,16 @@ class RuntimePlugin :
                     result.error("launch_method_unavailable", error.message, null)
                 }
             }
+            "setMcpServers" -> {
+                try {
+                    controller.setMcpServers(call.argument<String>("json") ?: "[]")
+                    result.success(null)
+                } catch (error: IllegalStateException) {
+                    result.error("mcp_servers_invalid", error.message, null)
+                } catch (error: IllegalArgumentException) {
+                    result.error("mcp_servers_invalid", error.message, null)
+                }
+            }
             "failureLog" -> result.success(controller.failureLog())
             "batteryExempt" -> {
                 val pm = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager

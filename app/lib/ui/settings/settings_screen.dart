@@ -30,6 +30,7 @@ import '../engine/engine_screen.dart';
 import '../engine/engine_status.dart';
 import '../engine_settings/engine_settings_hub.dart';
 import '../engine_settings/web_search_page.dart';
+import 'mcp_settings_page.dart';
 import 'media_settings_page.dart';
 import '../features/feature_catalog.dart' show communityPage;
 import '../features/feature_format.dart' show permissionName;
@@ -113,6 +114,8 @@ class SettingsScreen extends ConsumerWidget {
         ? l10n.pluginsTurnedOn
         : l10n.hubValueOneStep;
     final plugins = ref.watch(installedPluginsProvider.select((s) => s.value?.length));
+    int mcpCount(WidgetRef ref) =>
+        ref.watch(localRuntimeProvider.select((s) => s.status.mcpServers)).where((s) => s.enabled).length;
     // Read only once the host's settings are at hand: the hub asks for nothing.
     final search = ref.exists(engineSettingsProvider) ? ref.watch(engineSettingsProvider).value : null;
     final newApi = search == null
@@ -180,6 +183,16 @@ class SettingsScreen extends ConsumerWidget {
               spot: SettingsIndex.entry(SettingsPageId.webSearch),
               value: text(newApi == null ? null : (newApi ? l10n.engineSearchNewApiBadge : l10n.commonDefault)),
               onTap: () => _push(context, const WebSearchSettingsPage()),
+            ),
+            SettingsTile(
+              icon: AppIcons.plugin,
+              tint: SettingsHues.abilities,
+              spot: SettingsIndex.entry(SettingsPageId.mcp),
+              value: text(() {
+                final n = mcpCount(ref);
+                return n == 0 ? null : l10n.mcpServerCount(n);
+              }()),
+              onTap: () => _push(context, const McpSettingsPage()),
             ),
             SettingsTile(
               icon: AppIcons.generateMedia,

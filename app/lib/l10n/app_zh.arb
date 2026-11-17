@@ -5840,6 +5840,62 @@
       }
     }
   },
+  "mcpTitle": "MCP 对接",
+  "mcpSubtitle": "让模型连接外部 MCP 服务器（工具以 mcp__名称__工具 出现）",
+  "mcpEnabled": "启用外部 MCP",
+  "mcpEnabledHint": "下次启动引擎时生效；安全模式下不加载",
+  "mcpServerCount": "{count, plural, =0{未配置服务器} other{{count} 个服务器}}",
+  "@mcpServerCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpAddServer": "添加服务器",
+  "mcpServerName": "名称",
+  "mcpServerNameHint": "工具前缀，仅限字母、数字、下划线和连字符，最长 32 个字符",
+  "mcpServerUrl": "服务地址",
+  "mcpServerUrlHint": "MCP 端点 URL（Streamable HTTP / SSE）",
+  "mcpServerToken": "访问令牌",
+  "mcpServerTokenHint": "以 Authorization: Bearer 头发送；留空表示不携带",
+  "mcpServerEnabled": "启用此服务器",
+  "mcpServerDelete": "删除",
+  "mcpServerDeleteConfirmTitle": "删除 MCP 服务器？",
+  "mcpServerDeleteConfirmBody": "「{name}」将从列表中移除；下次启动引擎后生效。",
+  "@mcpServerDeleteConfirmBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpSave": "保存",
+  "mcpSaved": "已保存，下次启动引擎时生效",
+  "mcpSaveFailed": "保存失败：{reason}",
+  "@mcpSaveFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpActiveBadge": "已挂载",
+  "mcpNextStartBadge": "待启动生效",
+  "mcpNameInvalid": "名称只能包含字母、数字、下划线和连字符，最长 32 个字符",
+  "mcpUrlInvalid": "请填写以 http:// 或 https:// 开头的服务地址",
+  "mcpNameDuplicate": "名称已被其他服务器使用",
+  "mcpTooManyServers": "最多配置 {count} 个服务器",
+  "@mcpTooManyServers": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpStopFirst": "引擎运行中：修改已保存，重启引擎后生效",
+  "mcpTokenMasked": "令牌已保存",
+  "mcpDocsHint": "服务器需支持 Streamable HTTP 或 SSE 传输；stdio 服务器请自行用 HTTP 桥接（如 mcp-proxy）转发",
   "mediaGenerateTile": "生成",
   "mediaAiGenerated": "AI 生成",
   "mediaCostEstimate": "约 {amount}",
@@ -9972,6 +10028,7 @@
   "searchKwAgentLoop": "循环,并行,工具调用",
   "searchKwShell": "命令,超时,输出,终端,Shell",
   "searchKwWebSearch": "搜索,上网,联网,API Key",
+  "searchKwMcp": "MCP,外部工具,mcp 服务器,工具接入",
   "searchKwGeneral": "通用,网页版设置",
   "searchKwPluginInventory": "插件清单,已装插件",
   "searchKwPlugins": "扩展,市场,安装插件,插件市场",

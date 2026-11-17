@@ -10088,6 +10088,102 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get mcpTitle => 'MCP bridge';
+
+  @override
+  String get mcpSubtitle => 'Let the model reach external MCP servers (tools appear as mcp__name__tool)';
+
+  @override
+  String get mcpEnabled => 'Enable external MCP';
+
+  @override
+  String get mcpEnabledHint => 'Takes effect on the next engine start; never loaded in safe mode';
+
+  @override
+  String mcpServerCount(int count) {
+    if (count == 0) {
+      return 'No servers configured';
+    }
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count servers');
+    return '$_temp0';
+  }
+
+  @override
+  String get mcpAddServer => 'Add server';
+
+  @override
+  String get mcpServerName => 'Name';
+
+  @override
+  String get mcpServerNameHint => 'Tool prefix: letters, digits, underscores and hyphens only, up to 32 characters';
+
+  @override
+  String get mcpServerUrl => 'Server URL';
+
+  @override
+  String get mcpServerUrlHint => 'MCP endpoint URL (Streamable HTTP / SSE)';
+
+  @override
+  String get mcpServerToken => 'Access token';
+
+  @override
+  String get mcpServerTokenHint => 'Sent as the Authorization: Bearer header; leave empty for none';
+
+  @override
+  String get mcpServerEnabled => 'Enable this server';
+
+  @override
+  String get mcpServerDelete => 'Delete';
+
+  @override
+  String get mcpServerDeleteConfirmTitle => 'Delete MCP server?';
+
+  @override
+  String mcpServerDeleteConfirmBody(String name) {
+    return '「$name」 will be removed from the list; takes effect on the next engine start.';
+  }
+
+  @override
+  String get mcpSave => 'Save';
+
+  @override
+  String get mcpSaved => 'Saved; takes effect on the next engine start';
+
+  @override
+  String mcpSaveFailed(String reason) {
+    return 'Save failed: $reason';
+  }
+
+  @override
+  String get mcpActiveBadge => 'Mounted';
+
+  @override
+  String get mcpNextStartBadge => 'Pending start';
+
+  @override
+  String get mcpNameInvalid => 'The name may only contain letters, digits, underscores and hyphens, up to 32 characters';
+
+  @override
+  String get mcpUrlInvalid => 'Enter a server URL starting with http:// or https://';
+
+  @override
+  String get mcpNameDuplicate => 'This name is already used by another server';
+
+  @override
+  String mcpTooManyServers(int count) {
+    return 'At most $count servers';
+  }
+
+  @override
+  String get mcpStopFirst => 'Engine running: changes are saved and apply after the next engine restart';
+
+  @override
+  String get mcpTokenMasked => 'Token saved';
+
+  @override
+  String get mcpDocsHint => 'The server must support Streamable HTTP or SSE; bridge stdio servers yourself over HTTP (e.g. mcp-proxy)';
+
+  @override
   String get mediaGenerateTile => 'Create';
 
   @override
@@ -17186,6 +17282,9 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwWebSearch => 'search,internet,browse,api key';
+  @override
+  String get searchKwMcp => 'mcp,external tools,mcp servers,tool integration';
+
 
   @override
   String get searchKwGeneral => 'general,web settings';

@@ -19,13 +19,13 @@ final _zh = lookupL10n(AppLocale.zhCN);
 final _en = lookupL10n(AppLocale.en);
 
 void main() {
-  test('it sits in 能力, after 联网搜索, and opens from dshgo://open/media', () {
+  test('it sits in 能力, after MCP 对接, and opens from dshgo://open/media', () {
     final page = SettingsIndex.page(SettingsPageId.media);
     expect(page.title(_zh), '图像与视频');
     expect(page.group!(_zh), '能力');
     expect(SettingsIndex.pageForLink('media')?.id, SettingsPageId.media);
     final hub = SettingsIndex.on(SettingsPageId.hub).where((s) => s.group?.call(_zh) == '能力').map((s) => s.id).toList();
-    expect(hub.indexOf('page:media'), hub.indexOf('page:webSearch') + 1);
+    expect(hub.indexOf('page:media'), hub.indexOf('page:mcp') + 1);
   });
 
   for (final word in ['生图', '画图', '文生图', '视频生成', 'AI 绘画', 'image generation']) {
