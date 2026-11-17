@@ -17690,6 +17690,24 @@ abstract class L10n {
   /// **'{count, plural, =0{未配置服务器} other{{count} 个服务器}}'**
   String mcpServerCount(int count);
 
+  /// No description provided for @mcpEmptyTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有配置服务器'**
+  String get mcpEmptyTitle;
+
+  /// No description provided for @mcpEmptyMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加后，模型就能调用这台服务器上的工具'**
+  String get mcpEmptyMessage;
+
+  /// No description provided for @mcpRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新列表'**
+  String get mcpRefresh;
+
   /// No description provided for @mcpAddServer.
   ///
   /// In zh, this message translates to:

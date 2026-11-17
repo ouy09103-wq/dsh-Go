@@ -178,6 +178,22 @@ class McpServerConfig {
     token: token ?? this.token,
     enabled: enabled ?? this.enabled,
   );
+
+  /// Value equality: the settings page finds "the one I edited" after the list
+  /// has been reloaded from the native side, where identity no longer matches.
+  @override
+  bool operator ==(Object other) =>
+      other is McpServerConfig &&
+      other.name == name &&
+      other.url == url &&
+      other.token == token &&
+      other.enabled == enabled;
+
+  @override
+  int get hashCode => Object.hash(name, url, token, enabled);
+
+  @override
+  String toString() => 'McpServerConfig($name, $url)';
 }
 
 /// Decodes the native-serialized server list; malformed entries are dropped, not fatal.

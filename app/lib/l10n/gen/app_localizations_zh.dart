@@ -9580,6 +9580,15 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get mcpEmptyTitle => '还没有配置服务器';
+
+  @override
+  String get mcpEmptyMessage => '添加后，模型就能调用这台服务器上的工具';
+
+  @override
+  String get mcpRefresh => '刷新列表';
+
+  @override
   String get mcpAddServer => '添加服务器';
 
   @override

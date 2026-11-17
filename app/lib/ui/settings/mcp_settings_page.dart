@@ -5,35 +5,59 @@
 // The token is stored by the app and written into the guest overlay file at
 // every start; it is shown masked after being saved.
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../runtime/runtime_bridge.dart';
 import '../../runtime/runtime_state.dart';
+import '../common/empty_view.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 
-/// MCP server list for the settings page, seeded from native status.
+/// MCP server list for the settings page.
+///
+/// The status event only carries a snapshot, so this notifier keeps the list the
+/// person just saved instead of letting a later, older snapshot wipe it: [build]
+/// seeds from status, [save] writes through, and [reload] asks the native side
+/// again (the page's refresh button, and once when a first snapshot came back
+/// empty because the page opened before the engine had reported anything).
 final mcpServersProvider =
     NotifierProvider<McpServersNotifier, List<McpServerConfig>>(McpServersNotifier.new);
 
 class McpServersNotifier extends Notifier<List<McpServerConfig>> {
+  /// What this session last got from the native side; survives a snapshot that
+  /// predates it, so the list never flickers back to empty on its own.
+  List<McpServerConfig>? _known;
+
   @override
   List<McpServerConfig> build() {
-    final status = ref.watch(localRuntimeProvider).status;
-    return status.mcpServers;
+    final live = ref.watch(localRuntimeProvider).status.mcpServers;
+    if (live.isNotEmpty) _known = live;
+    return _known ?? live;
+  }
+
+  /// Reads the saved list straight from the native side.
+  Future<List<McpServerConfig>> reload() async {
+    try {
+      final status = await ref.read(runtimeBridgeProvider).status();
+      final list = status.mcpServers;
+      _known = list;
+      if (ref.mounted) state = list;
+      return list;
+    } catch (_) {
+      return _known ?? state;
+    }
   }
 
   Future<bool> save(List<McpServerConfig> servers) async {
     try {
       await ref.read(runtimeBridgeProvider).setMcpServers(servers);
+      _known = servers;
       state = servers;
       return true;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
@@ -47,6 +71,23 @@ class McpSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
+  /// False until the first list has come back, so an empty page doesn't read as
+  /// "nothing here" while the native side is still being asked.
+  bool loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The saved list lives in native prefs; the status snapshot may not have it
+    // yet when this page is the first thing opened, so ask once directly.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  Future<void> _reload() async {
+    await ref.read(mcpServersProvider.notifier).reload();
+    if (mounted) setState(() => loaded = true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -54,9 +95,18 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
     final runtime = ref.watch(localRuntimeProvider);
     final running = runtime.status.phase == RuntimePhase.running;
     final mountedNow = runtime.status.mcpActive;
+    // A list that arrived from a status event counts as loaded too.
+    final ready = loaded || servers.isNotEmpty;
     return AppPage.list(
       title: l10n.mcpTitle,
       subtitle: Text(l10n.mcpSubtitle),
+      actions: [
+        GlassIconButton(
+          icon: AppIcons.refresh,
+          tooltip: l10n.mcpRefresh,
+          onPressed: _reload,
+        ),
+      ],
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -65,9 +115,19 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
               _Badge(label: l10n.mcpActiveBadge, tone: Colors.green)
             else if (running && servers.any((s) => s.enabled))
               _Badge(label: l10n.mcpNextStartBadge, tone: null),
+            const Spacer(),
+            if (ready) Text(l10n.mcpServerCount(servers.length), style: Theme.of(context).textTheme.bodySmall),
           ]),
         ),
         const SizedBox(height: 8),
+        if (ready && servers.isEmpty)
+          EmptyView(
+            icon: AppIcons.plugin,
+            title: l10n.mcpEmptyTitle,
+            message: l10n.mcpEmptyMessage,
+            actionLabel: l10n.mcpAddServer,
+            onAction: () => _editServer(context, null, servers),
+          ),
         for (final (i, server) in servers.indexed)
           _ServerCard(
             key: ValueKey(server.name + i.toString()),
@@ -78,7 +138,7 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
               list[i] = next;
               final ok = await ref.read(mcpServersProvider.notifier).save(list);
               if (mounted && ok) _toast(l10n.mcpSaved);
-              if (mounted && !ok) _toast(l10n.mcpSaveFailed('engine rejected the list'));
+              if (mounted && !ok) _toast(l10n.mcpSaveFailed(l10n.commonFailedTryAgain));
             },
             onEdit: () => _editServer(context, server, servers),
             onDelete: () async {
@@ -96,7 +156,8 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
               if (confirmed != true) return;
               final list = [...servers]..removeAt(i);
               final ok = await ref.read(mcpServersProvider.notifier).save(list);
-              if (mounted && ok) _toast(l10n.mcpSaved);
+              if (!mounted) return;
+              _toast(ok ? l10n.mcpSaved : l10n.mcpSaveFailed(l10n.commonFailedTryAgain));
             },
           ),
         Padding(
@@ -134,7 +195,10 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
       builder: (_) => _ServerSheet(existing: existing, servers: servers),
     );
     if (saved != true || !mounted) return;
-    _toast(l10n.mcpSaved);
+    // The sheet wrote through the bridge; read it back so the cards show what
+    // the native side actually kept (a renamed entry included).
+    await _reload();
+    if (mounted) _toast(l10n.mcpSaved);
   }
 }
 
@@ -275,16 +339,23 @@ class _ServerSheetState extends ConsumerState<_ServerSheet> {
     }
     final next = McpServerConfig(name: name, url: url, token: _token.text, enabled: _enabled);
     final list = [...widget.servers];
-    if (widget.existing == null) {
+    final existing = widget.existing;
+    if (existing == null) {
       list.add(next);
     } else {
-      final i = list.indexWhere((s) => s.name == widget.existing!.name);
-      if (i >= 0) list[i] = next;
+      // Renaming is allowed, so find the old entry by its own name; a list that
+      // changed underneath still gets the edit instead of dropping it.
+      final i = list.indexWhere((s) => s == existing);
+      if (i >= 0) {
+        list[i] = next;
+      } else {
+        list.add(next);
+      }
     }
     final ok = await ref.read(mcpServersProvider.notifier).save(list);
     if (!mounted) return;
     if (!ok) {
-      setState(() => _error = l10n.mcpSaveFailed(l10n.mcpNameInvalid));
+      setState(() => _error = l10n.mcpSaveFailed(l10n.commonFailedTryAgain));
       return;
     }
     Navigator.of(context).pop(true);

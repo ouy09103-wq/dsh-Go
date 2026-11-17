@@ -153,6 +153,10 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "tawcEngineEnabled" to tawcEngine().enabled,
         "tawcEngineAvailable" to (tawcEngineUnavailable() == null),
         "tawcEngineActive" to (process?.executionMode == "tawcroot"),
+        // External MCP (see McpGuest): the saved server list the settings page draws,
+        // and whether this run actually mounted the overlay.
+        "mcpServers" to McpGuest.serializeServers(McpGuest.parseServers(prefs.getString(K_MCP_SERVERS, null))).trim(),
+        "mcpActive" to (process?.mcpMounted == true),
         "currentExecutionMode" to process?.executionMode,
         "launchSelectedMode" to lastLaunch?.selectedMode,
         "launchSpawned" to (lastLaunch?.spawned == true),

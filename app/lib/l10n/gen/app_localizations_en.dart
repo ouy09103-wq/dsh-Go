@@ -10109,6 +10109,15 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get mcpEmptyTitle => 'No servers configured yet';
+
+  @override
+  String get mcpEmptyMessage => 'Add one and the model can call the tools on it';
+
+  @override
+  String get mcpRefresh => 'Refresh list';
+
+  @override
   String get mcpAddServer => 'Add server';
 
   @override

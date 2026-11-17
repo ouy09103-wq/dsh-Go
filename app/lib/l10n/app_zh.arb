@@ -5852,6 +5852,9 @@
       }
     }
   },
+  "mcpEmptyTitle": "还没有配置服务器",
+  "mcpEmptyMessage": "添加后，模型就能调用这台服务器上的工具",
+  "mcpRefresh": "刷新列表",
   "mcpAddServer": "添加服务器",
   "mcpServerName": "名称",
   "mcpServerNameHint": "工具前缀，仅限字母、数字、下划线和连字符，最长 32 个字符",
