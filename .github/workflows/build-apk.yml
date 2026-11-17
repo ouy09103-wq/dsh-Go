@@ -87,15 +87,20 @@ jobs:
 
       - name: Install the NDK libtawcroot needs
         run: |
-          set -x
+          set -eux
+          NDK_VER=28.2.13676358
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          echo "SDK=$SDK"
-          # The Flutter action installs cmdline-tools; sdkmanager accepts the licences we already have.
-          sm="$SDK/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$sm" ] || sm=$(command -v sdkmanager)
-          yes | "$sm" --install "ndk;28.2.13676358" >/dev/null || true
-          ls -d "$SDK/ndk/28.2.13676358" || { echo "NDK 28.2.13676358 missing" >&2; exit 1; }
-          cat "$SDK/ndk/28.2.13676358/source.properties"
+          # sdkmanager leaves a stub now and then; the official zip is reliable and fast.
+          rm -rf "$SDK/ndk/$NDK_VER"
+          mkdir -p "$SDK/ndk"
+          curl -fsSL --retry 3 -o /tmp/ndk.zip \
+            "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip"
+          unzip -q /tmp/ndk.zip -d /tmp/ndkx
+          mv /tmp/ndkx/android-ndk-r28c "$SDK/ndk/$NDK_VER"
+          rm -rf /tmp/ndk.zip /tmp/ndkx
+          cat "$SDK/ndk/$NDK_VER/source.properties"
+          grep -qx "Pkg.Revision = $NDK_VER" "$SDK/ndk/$NDK_VER/source.properties"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/$NDK_VER" >> "$GITHUB_ENV"
 
       - name: Pub get
         working-directory: app
