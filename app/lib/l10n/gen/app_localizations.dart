@@ -31633,6 +31633,7 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'搜索,上网,联网,API Key'**
   String get searchKwWebSearch;
+
   /// No description provided for @searchKwMcp.
   ///
   /// In zh, this message translates to:
@@ -50119,35 +50120,6 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'操作未完成，请查看本机引擎状态和日志。已切换的模式可在本页确认。'**
   String get workspaceRecoveryFailed;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 }
 

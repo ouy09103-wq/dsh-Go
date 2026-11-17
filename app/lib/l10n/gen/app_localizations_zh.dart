@@ -17288,6 +17288,7 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwWebSearch => '搜索,上网,联网,API Key';
+
   @override
   String get searchKwMcp => 'MCP,外部工具,mcp 服务器,工具接入';
 
@@ -27466,62 +27467,6 @@ class L10nZh extends L10n {
 
   @override
   String get workspaceRecoveryFailed => '操作未完成，请查看本机引擎状态和日志。已切换的模式可在本页确认。';
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 }
