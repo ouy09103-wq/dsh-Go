@@ -10890,8 +10890,7 @@ class L10nEn extends L10n {
   String get mcpTitle => 'MCP bridge';
 
   @override
-  String get mcpSubtitle =>
-      'Let the model reach external MCP servers (tools appear as mcp__name__tool)';
+  String get mcpSubtitle => 'Let the model reach external MCP servers (tools appear as mcp__name__tool)';
 
   @override
   String get mcpEnabled => 'Enable external MCP';
