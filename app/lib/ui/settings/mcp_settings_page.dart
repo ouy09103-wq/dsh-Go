@@ -14,6 +14,7 @@ import '../../l10n/l10n.dart';
 import '../../runtime/runtime_bridge.dart';
 import '../../runtime/runtime_state.dart';
 import '../shell/page_frame.dart';
+import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 
 /// MCP server list for the settings page, seeded from native status.
@@ -106,7 +107,7 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
               onPressed: servers.length >= mcpGuestMaxServers
                   ? null
                   : () => _editServer(context, null, servers),
-              icon: const Icon(Icons.add),
+              icon: const Icon(AppIcons.add),
               label: Text(l10n.mcpAddServer),
             ),
             const SizedBox(height: 8),
@@ -191,7 +192,7 @@ class _ServerCard extends StatelessWidget {
             ),
             IconButton(
               onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(AppIcons.delete),
               tooltip: l10n.mcpServerDelete,
             ),
           ]),
