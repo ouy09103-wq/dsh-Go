@@ -83,7 +83,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xz-utils
-          bash tooling/fetch-runtime.sh arm64-v8a 1.0.15
+          bash tooling/fetch-runtime.sh arm64-v8a 1.1.0
           ls -la runtime/out/arm64-v8a/assets/runtime
           head -c 400 runtime/out/arm64-v8a/assets/runtime/manifest.json; echo
 
