@@ -28,6 +28,7 @@
   "searchKwAgentLoop": "循环,并行,工具调用",
   "searchKwShell": "命令,超时,输出,终端,Shell",
   "searchKwWebSearch": "搜索,上网,联网,API Key",
+  "searchKwMcp": "MCP,外部工具,mcp 服务器,工具接入",
   "searchKwGeneral": "通用,网页版设置",
   "searchKwPluginInventory": "插件清单,已装插件",
   "searchKwPlugins": "扩展,市场,安装插件,插件市场",

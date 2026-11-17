@@ -28,6 +28,7 @@
   "searchKwAgentLoop": "loop,parallel,tool calls",
   "searchKwShell": "commands,timeout,output,terminal,shell,bash",
   "searchKwWebSearch": "search,internet,browse,api key",
+  "searchKwMcp": "mcp,external tools,mcp servers,tool integration",
   "searchKwGeneral": "general,web settings",
   "searchKwPluginInventory": "inventory,installed plugins,bundles",
   "searchKwPlugins": "extensions,market,install,marketplace",

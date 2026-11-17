@@ -153,6 +153,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "tawcEngineEnabled" to tawcEngine().enabled,
         "tawcEngineAvailable" to (tawcEngineUnavailable() == null),
         "tawcEngineActive" to (process?.executionMode == "tawcroot"),
+        "mcpServers" to McpGuest.serializeServers(McpGuest.parseServers(prefs.getString(K_MCP_SERVERS, null))).trim(),
+        "mcpActive" to (process?.mcpMounted == true),
         "currentExecutionMode" to process?.executionMode,
         "launchSelectedMode" to lastLaunch?.selectedMode,
         "launchSpawned" to (lastLaunch?.spawned == true),
@@ -202,6 +204,19 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         val edit = prefs.edit().putBoolean(K_TAWC_ENGINE, enabled).remove(K_TAWC_FAILED)
         if (enabled) edit.putBoolean(K_DIRECT_ENGINE, false)
         edit.apply()
+        emitStatus()
+    }
+
+    /**
+     * Saves the external MCP server list (see [McpGuest]); takes effect on the next start.
+     * Unlike the launch-method switches this may change while the engine runs — the overlay
+     * is rewritten at every start, so a running process simply keeps its mounted servers.
+     */
+    @Synchronized fun setMcpServers(json: String) {
+        val servers = McpGuest.parseServers(json)
+        check(servers.size <= McpGuest.MAX_SERVERS) { "at most ${McpGuest.MAX_SERVERS} MCP servers" }
+        for (s in servers) check(McpGuest.validName(s.name)) { "MCP server name '${s.name}' must match [A-Za-z0-9_-]{1,32}" }
+        prefs.edit().putString(K_MCP_SERVERS, McpGuest.serializeServers(servers)).apply()
         emitStatus()
     }
 
@@ -528,6 +543,12 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 if (!safe && !speechOverlay) {
                     log("[dsh-app] voice input overlay not written; the voice model keeps DSH's defaults", "system")
                 }
+                // External MCP bridge: write the overlay from the saved server list; off in safe mode.
+                val mcpServers = McpGuest.parseServers(prefs.getString(K_MCP_SERVERS, null))
+                val mcpOverlay = !safe && McpGuest.writeFiles(installer.rootfs, mcpServers)
+                if (!safe && mcpServers.any { it.enabled } && !mcpOverlay) {
+                    log("[dsh-app] external MCP overlay not written; external MCP servers stay off this launch", "system")
+                }
                 if (pendingPhoneStorage && !storage) log("[dsh-app] phone storage requested but permission not granted", "system")
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
@@ -578,7 +599,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 timeline.spawned()
                 val direct = directEngine()
                 val tawc = tawcEngine()
-                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay,
+                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay, mcpOverlay,
                     tawcEngine = tawc.saved == true, tawcFailed = tawc.failed) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
                     if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone && PhoneControl.switchedOn(app), pendingVisualReplies, actualDirect)
@@ -1186,6 +1207,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         private const val K_TAWC_ENGINE = "tawcEngine"
         /** Runtime version tawcroot failed to start DSH with. */
         private const val K_TAWC_FAILED = "tawcEngineFailedRuntime"
+        /** Saved external MCP server list (see [McpGuest]). */
+        private const val K_MCP_SERVERS = "mcpServers"
         private const val MAIN_FAILURE_LOG = "failure-normal.log"
         private const val LATEST_FAILURE_LOG = "failure-latest.log"
 

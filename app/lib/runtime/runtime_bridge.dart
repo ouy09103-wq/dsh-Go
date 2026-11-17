@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
@@ -170,6 +171,68 @@ class RuntimeBackgroundTask {
   };
 }
 
+/// One external MCP server, as entered in the MCP settings page; native `McpGuest`
+/// turns the saved list into a `--patch` overlay of `dsh-mcp-client` instances.
+class McpServerConfig {
+  const McpServerConfig({
+    required this.name,
+    required this.url,
+    this.token = '',
+    this.enabled = true,
+  });
+
+  /// Model-facing namespace (`mcp__<name>__<tool>`); must match `[A-Za-z0-9_-]{1,32}`.
+  final String name;
+
+  /// MCP endpoint URL (Streamable HTTP / SSE).
+  final String url;
+
+  /// Bearer token sent as `Authorization: Bearer <token>`; empty means none.
+  final String token;
+
+  /// Unsaved servers keep their entry but stay off the next launch.
+  final bool enabled;
+
+  static bool validName(String name) => RegExp(r'^[A-Za-z0-9_-]{1,32}$').hasMatch(name);
+
+  static List<McpServerConfig> listFrom(String? json) {
+    if (json == null || json.isEmpty) return const [];
+    return parseMcpServersJson(json);
+  }
+
+  Map<String, Object?> toMap() => {'name': name, 'url': url, 'token': token, 'enabled': enabled};
+
+  McpServerConfig copyWith({String? name, String? url, String? token, bool? enabled}) => McpServerConfig(
+    name: name ?? this.name,
+    url: url ?? this.url,
+    token: token ?? this.token,
+    enabled: enabled ?? this.enabled,
+  );
+}
+
+/// Decodes the native-serialized server list; malformed entries are dropped, not fatal.
+List<McpServerConfig> parseMcpServersJson(String json) {
+  try {
+    final decoded = jsonDecode(json);
+    if (decoded is! List) return const [];
+    return [
+      for (final raw in decoded)
+        if (raw is Map && raw['name'] is String)
+          McpServerConfig(
+            name: (raw['name'] as String).trim(),
+            url: (raw['url'] as String?)?.trim() ?? '',
+            token: raw['token'] as String? ?? '',
+            enabled: raw['enabled'] != false,
+          ),
+    ];
+  } on FormatException {
+    return const [];
+  }
+}
+
+String serializeMcpServersJson(List<McpServerConfig> servers) =>
+    jsonEncode([for (final s in servers) s.toMap()]);
+
 class RuntimeStatus {
   const RuntimeStatus({
     required this.phase,
@@ -200,6 +263,8 @@ class RuntimeStatus {
     this.tawcEngineEnabled = false,
     this.tawcEngineAvailable = false,
     this.tawcEngineActive = false,
+    this.mcpServers = const [],
+    this.mcpActive = false,
     this.currentExecutionMode,
     this.launchSelectedMode,
     this.launchSpawned = false,
@@ -278,6 +343,12 @@ class RuntimeStatus {
   final bool tawcEngineEnabled;
   final bool tawcEngineAvailable;
   final bool tawcEngineActive;
+
+  /// External MCP servers (see native `McpGuest`), saved as a JSON list; applied on the next start.
+  final List<McpServerConfig> mcpServers;
+
+  /// The running process mounted the external MCP overlay.
+  final bool mcpActive;
 
   /// Native process observation, never inferred from the saved direct preference.
   final String? currentExecutionMode;
@@ -364,6 +435,8 @@ class RuntimeStatus {
     tawcEngineEnabled: map['tawcEngineEnabled'] == true,
     tawcEngineAvailable: map['tawcEngineAvailable'] == true,
     tawcEngineActive: map['tawcEngineActive'] == true,
+    mcpServers: McpServerConfig.listFrom(map['mcpServers'] as String?),
+    mcpActive: map['mcpActive'] == true,
     currentExecutionMode: map['currentExecutionMode'] as String?,
     launchSelectedMode: map['launchSelectedMode'] as String?,
     launchSpawned: map['launchSpawned'] == true,
@@ -690,6 +763,11 @@ class RuntimeBridge {
   /// Takes effect on the next start; native code rejects changes while active.
   Future<void> setDirectEngine(bool enabled) => _methods.invokeMethod<void>('setDirectEngine', {'enabled': enabled});
   Future<void> setTawcEngine(bool enabled) => _methods.invokeMethod<void>('setTawcEngine', {'enabled': enabled});
+
+  /// Saves the external MCP server list; takes effect on the next start. Native validates
+  /// names and the count, and reports `mcp_servers_invalid` on bad input.
+  Future<void> setMcpServers(List<McpServerConfig> servers) =>
+      _methods.invokeMethod<void>('setMcpServers', {'json': serializeMcpServersJson(servers)});
 
   /// Output around the last failure, tokens masked.
   Future<List<String>> failureLog() async => (await _methods.invokeListMethod<String>('failureLog')) ?? const [];

@@ -28,6 +28,7 @@ import '../../remote/remote_screen.dart';
 import '../../share_hosted/hosted_links_page.dart';
 import '../about_page.dart';
 import '../appearance/appearance_page.dart';
+import '../mcp_settings_page.dart';
 import '../background_guide_page.dart';
 import '../diagnostics_page.dart';
 import '../interface_page.dart';
@@ -77,6 +78,7 @@ Widget settingsPage(SettingsPageId id, {String? sessionId}) => switch (id) {
   SettingsPageId.agentLoop => const AgentLoopSettingsPage(),
   SettingsPageId.shell => const ShellSettingsPage(),
   SettingsPageId.webSearch => const WebSearchSettingsPage(),
+  SettingsPageId.mcp => const McpSettingsPage(),
   SettingsPageId.media => const MediaSettingsPage(),
   SettingsPageId.pluginInventory => const PluginInventoryPage(),
   SettingsPageId.plugins => const PluginsScreen(),

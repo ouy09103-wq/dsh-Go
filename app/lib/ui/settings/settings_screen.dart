@@ -32,6 +32,7 @@ import '../engine/engine_screen.dart';
 import '../engine/engine_status.dart';
 import '../engine_settings/engine_settings_hub.dart';
 import '../engine_settings/web_search_page.dart';
+import 'mcp_settings_page.dart';
 import 'media_settings_page.dart';
 import '../features/feature_catalog.dart' show communityPage;
 import '../features/feature_format.dart' show permissionName;
@@ -123,6 +124,8 @@ class SettingsScreen extends ConsumerWidget {
     final newApi = search == null
         ? null
         : search.valueOf(const FieldRef(WebSearchSettingsPage.webNs, ['searchProvider'])) == 'deepseek-search-api';
+    int mcpCount(WidgetRef ref) =>
+        ref.watch(localRuntimeProvider.select((s) => s.status.mcpServers)).where((s) => s.enabled).length;
     // 通用. HarmonyOS has no battery exemption to report.
     final exempt = android ? ref.watch(batteryExemptProvider).value : null;
     // 主机.
@@ -196,6 +199,16 @@ class SettingsScreen extends ConsumerWidget {
               spot: SettingsIndex.entry(SettingsPageId.webSearch),
               value: text(newApi == null ? null : (newApi ? l10n.engineSearchNewApiBadge : l10n.commonDefault)),
               onTap: () => _push(context, const WebSearchSettingsPage()),
+            ),
+            SettingsTile(
+              icon: AppIcons.plugin,
+              tint: SettingsHues.abilities,
+              spot: SettingsIndex.entry(SettingsPageId.mcp),
+              value: text(() {
+                final n = mcpCount(ref);
+                return n == 0 ? null : l10n.mcpServerCount(n);
+              }()),
+              onTap: () => _push(context, const McpSettingsPage()),
             ),
             SettingsTile(
               icon: AppIcons.generateMedia,
