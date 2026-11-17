@@ -1,0 +1,154 @@
+# 构建并发布 DSH Go（arm64）APK。
+#
+# 触发：手动 dispatch（可指定版本名与是否 draft），或推 v* 标签。
+#
+# 流程：CI 上构建 arm64 运行时产物（runtime/out/arm64-v8a）→ 官方
+# tooling/build-apk.sh 打 release APK → tooling/release_assets.py 出
+# update.json / SHA256SUMS → 建 GitHub Release 并上传。
+#
+# 签名：配置了 keystore secrets 用 release 签名，否则 debug 签名（可自装试用）。
+# 签名 secrets（可选）：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+# ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD。
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本名（如 1.1.0）
+        required: false
+        default: ''
+      draft:
+        description: 发布为 draft release
+        type: boolean
+        required: false
+        default: true
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  NODE_VERSION: 24.22.1
+
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # 运行时下载有缓存（脚本内部按哈希校验下载物）。
+      - name: Restore the runtime download cache
+        uses: actions/cache/restore@v4
+        with:
+          path: runtime/.cache
+          key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}
+          restore-keys: runtime-downloads-v1-
+
+      - name: Build the arm64 runtime
+        run: runtime/build-runtime.sh arm64-v8a
+
+      - name: Check the runtime bundle
+        run: python3 -I tooling/check_runtime_bundle.py arm64
+
+      - name: Save the runtime download cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: runtime/.cache
+          key: runtime-downloads-v1-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}-${{ github.run_id }}
+
+      - name: Pub get
+        working-directory: app
+        run: |
+          flutter config --no-analytics
+          flutter pub get --enforce-lockfile
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "no release keystore configured; the APK is debug-signed"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > app/android/key.properties
+
+      - name: Resolve the version name
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "name=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "name=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' app/pubspec.yaml)" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
+      - name: Build APK
+        run: bash tooling/build-apk.sh -f arm64 --build-name "${{ steps.version.outputs.name }}"
+
+      - name: Release assets
+        run: |
+          python3 tooling/release_assets.py --version "${{ steps.version.outputs.name }}" --delta-from 0 --out dist
+          ls -lh dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-arm64-${{ steps.version.outputs.name }}
+          path: dist/
+          retention-days: 30
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          name: DSH Go ${{ steps.version.outputs.name }}
+          draft: ${{ github.event.inputs.draft == 'true' || github.event_name == 'workflow_dispatch' }}
+          prerelease: false
+          files: dist/*
+          body: |
+            DSH Go ${{ steps.version.outputs.name }}
+
+            - arm64 · Android 8.0（API 26）以上
+            - 设置 › 能力 › MCP 对接：配置外部 MCP 服务器（地址 + 访问令牌）
+            - 未配置签名 secrets 时为 debug 签名
