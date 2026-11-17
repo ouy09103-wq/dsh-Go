@@ -19154,12 +19154,39 @@ abstract class L10n {
   /// **'{count} 个插件'**
   String marketCombinedCount(int count);
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   /// No description provided for @mcpTitle.
   ///
   /// In zh, this message translates to:
   /// **'MCP 对接'**
   String get mcpTitle;
-
 
   /// No description provided for @mcpSubtitle.
   ///
@@ -19167,13 +19194,11 @@ abstract class L10n {
   /// **'让模型连接外部 MCP 服务器（工具以 mcp__名称__工具 出现）'**
   String get mcpSubtitle;
 
-
   /// No description provided for @mcpEnabled.
   ///
   /// In zh, this message translates to:
   /// **'启用外部 MCP'**
   String get mcpEnabled;
-
 
   /// No description provided for @mcpEnabledHint.
   ///
@@ -19181,13 +19206,11 @@ abstract class L10n {
   /// **'下次启动引擎时生效；安全模式下不加载'**
   String get mcpEnabledHint;
 
-
   /// No description provided for @mcpServerCount.
   ///
   /// In zh, this message translates to:
   /// **'{count, plural, =0{未配置服务器} other{{count} 个服务器}}'**
   String mcpServerCount(int count);
-
 
   /// No description provided for @mcpAddServer.
   ///
@@ -19195,13 +19218,11 @@ abstract class L10n {
   /// **'添加服务器'**
   String get mcpAddServer;
 
-
   /// No description provided for @mcpServerName.
   ///
   /// In zh, this message translates to:
   /// **'名称'**
   String get mcpServerName;
-
 
   /// No description provided for @mcpServerNameHint.
   ///
@@ -19209,13 +19230,11 @@ abstract class L10n {
   /// **'工具前缀，仅限字母、数字、下划线和连字符，最长 32 个字符'**
   String get mcpServerNameHint;
 
-
   /// No description provided for @mcpServerUrl.
   ///
   /// In zh, this message translates to:
   /// **'服务地址'**
   String get mcpServerUrl;
-
 
   /// No description provided for @mcpServerUrlHint.
   ///
@@ -19223,13 +19242,11 @@ abstract class L10n {
   /// **'MCP 端点 URL（Streamable HTTP / SSE）'**
   String get mcpServerUrlHint;
 
-
   /// No description provided for @mcpServerToken.
   ///
   /// In zh, this message translates to:
   /// **'访问令牌'**
   String get mcpServerToken;
-
 
   /// No description provided for @mcpServerTokenHint.
   ///
@@ -19237,13 +19254,11 @@ abstract class L10n {
   /// **'以 Authorization: Bearer 头发送；留空表示不携带'**
   String get mcpServerTokenHint;
 
-
   /// No description provided for @mcpServerEnabled.
   ///
   /// In zh, this message translates to:
   /// **'启用此服务器'**
   String get mcpServerEnabled;
-
 
   /// No description provided for @mcpServerDelete.
   ///
@@ -19251,13 +19266,11 @@ abstract class L10n {
   /// **'删除'**
   String get mcpServerDelete;
 
-
   /// No description provided for @mcpServerDeleteConfirmTitle.
   ///
   /// In zh, this message translates to:
   /// **'删除 MCP 服务器？'**
   String get mcpServerDeleteConfirmTitle;
-
 
   /// No description provided for @mcpServerDeleteConfirmBody.
   ///
@@ -19265,13 +19278,11 @@ abstract class L10n {
   /// **'「{name}」将从列表中移除；下次启动引擎后生效。'**
   String mcpServerDeleteConfirmBody(String name);
 
-
   /// No description provided for @mcpSave.
   ///
   /// In zh, this message translates to:
   /// **'保存'**
   String get mcpSave;
-
 
   /// No description provided for @mcpSaved.
   ///
@@ -19279,13 +19290,11 @@ abstract class L10n {
   /// **'已保存，下次启动引擎时生效'**
   String get mcpSaved;
 
-
   /// No description provided for @mcpSaveFailed.
   ///
   /// In zh, this message translates to:
   /// **'保存失败：{reason}'**
   String mcpSaveFailed(String reason);
-
 
   /// No description provided for @mcpActiveBadge.
   ///
@@ -19293,13 +19302,11 @@ abstract class L10n {
   /// **'已挂载'**
   String get mcpActiveBadge;
 
-
   /// No description provided for @mcpNextStartBadge.
   ///
   /// In zh, this message translates to:
   /// **'待启动生效'**
   String get mcpNextStartBadge;
-
 
   /// No description provided for @mcpNameInvalid.
   ///
@@ -19307,13 +19314,11 @@ abstract class L10n {
   /// **'名称只能包含字母、数字、下划线和连字符，最长 32 个字符'**
   String get mcpNameInvalid;
 
-
   /// No description provided for @mcpUrlInvalid.
   ///
   /// In zh, this message translates to:
   /// **'请填写以 http:// 或 https:// 开头的服务地址'**
   String get mcpUrlInvalid;
-
 
   /// No description provided for @mcpNameDuplicate.
   ///
@@ -19321,13 +19326,11 @@ abstract class L10n {
   /// **'名称已被其他服务器使用'**
   String get mcpNameDuplicate;
 
-
   /// No description provided for @mcpTooManyServers.
   ///
   /// In zh, this message translates to:
   /// **'最多配置 {count} 个服务器'**
   String mcpTooManyServers(int count);
-
 
   /// No description provided for @mcpStopFirst.
   ///
@@ -19335,20 +19338,17 @@ abstract class L10n {
   /// **'引擎运行中：修改已保存，重启引擎后生效'**
   String get mcpStopFirst;
 
-
   /// No description provided for @mcpTokenMasked.
   ///
   /// In zh, this message translates to:
   /// **'令牌已保存'**
   String get mcpTokenMasked;
 
-
   /// No description provided for @mcpDocsHint.
   ///
   /// In zh, this message translates to:
   /// **'服务器需支持 Streamable HTTP 或 SSE 传输；stdio 服务器请自行用 HTTP 桥接（如 mcp-proxy）转发'**
   String get mcpDocsHint;
-
 
   /// No description provided for @mediaGenerateTile.
   ///

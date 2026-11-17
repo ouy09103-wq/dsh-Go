@@ -169,7 +169,7 @@ def strip_existing(path: Path, is_abstract: bool) -> None:
         pat = re.compile(r"  /// No description provided for @(?:mcp\w+|searchKwMcp)\.(?:[\s\S]*?)(?=\n  /// No description provided for @|\n\}\n|\nclass )")
         text = pat.sub("", text)
     else:
-        pat = re.compile(r"  @override\n  String (?:get )?(?:mcp\w+|searchKwMcp)[\s\S]*?;\n")
+        pat = re.compile(r"  @override\n  String (?:get )?(?:mcp\w+|searchKwMcp)(?:[^{;]*;\n|[\s\S]*?\n  })\n")
         text = pat.sub("", text)
     path.write_text(text)
 
@@ -220,6 +220,7 @@ def insert_before_abstract(path: Path, block: str) -> None:
 
     for run, successor in runs:
         run_block = "".join(blocks_by_key[k] for k in run)
+        run_block = re.sub(r"\n{3,}", "\n\n", run_block)
         if successor is None:
             # last run: goes before the class close (rare; not hit today)
             anchor = "class _L10nDelegate extends LocalizationsDelegate<L10n> {"
@@ -268,6 +269,7 @@ def append_impl(path: Path, block: str) -> None:
 
     for run, successor in runs:
         run_block = "".join(blocks_by_key[k] for k in run)
+        run_block = re.sub(r"\n{3,}", "\n\n", run_block)
         if successor == "searchKwGeneral":
             m = re.search(r"  String get searchKwWebSearch =>[^;]*;\n", text)
             if not m:
