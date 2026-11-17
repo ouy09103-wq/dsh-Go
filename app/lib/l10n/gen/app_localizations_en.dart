@@ -18201,7 +18201,6 @@ class L10nEn extends L10n {
   String get searchKwMcp => 'mcp,external tools,mcp servers,tool integration';
 
 
-
   @override
   String get searchKwGeneral => 'general,web settings';
 
@@ -28931,6 +28930,4 @@ class L10nEn extends L10n {
   @override
   String get workspaceRecoveryFailed =>
       'The operation did not finish. Check the local engine status and logs. This page shows whether the index mode changed.';
-
-
 }

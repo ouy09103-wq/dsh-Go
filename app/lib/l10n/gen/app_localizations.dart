@@ -31640,7 +31640,6 @@ abstract class L10n {
   /// **'MCP,外部工具,mcp 服务器,工具接入'**
   String get searchKwMcp;
 
-
   /// No description provided for @searchKwGeneral.
   ///
   /// In zh, this message translates to:
@@ -50120,7 +50119,6 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'操作未完成，请查看本机引擎状态和日志。已切换的模式可在本页确认。'**
   String get workspaceRecoveryFailed;
-
 }
 
 class _L10nDelegate extends LocalizationsDelegate<L10n> {

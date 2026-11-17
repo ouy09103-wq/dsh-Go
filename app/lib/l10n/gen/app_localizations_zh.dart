@@ -17293,7 +17293,6 @@ class L10nZh extends L10n {
   String get searchKwMcp => 'MCP,外部工具,mcp 服务器,工具接入';
 
 
-
   @override
   String get searchKwGeneral => '通用,网页版设置';
 
@@ -27467,6 +27466,4 @@ class L10nZh extends L10n {
 
   @override
   String get workspaceRecoveryFailed => '操作未完成，请查看本机引擎状态和日志。已切换的模式可在本页确认。';
-
-
 }
