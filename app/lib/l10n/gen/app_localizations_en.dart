@@ -10887,12 +10887,11 @@ class L10nEn extends L10n {
   }
 
   @override
-  String get mediaGenerateTile => 'Create';
-  @override
   String get mcpTitle => 'MCP bridge';
 
   @override
-  String get mcpSubtitle => 'Let the model reach external MCP servers (tools appear as mcp__name__tool)';
+  String get mcpSubtitle =>
+      'Let the model reach external MCP servers (tools appear as mcp__name__tool)';
 
   @override
   String get mcpEnabled => 'Enable external MCP';
@@ -10902,10 +10901,12 @@ class L10nEn extends L10n {
 
   @override
   String mcpServerCount(int count) {
-    if (count == 0) {
-      return 'No servers configured';
-    }
-    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count servers');
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count servers',
+      zero: 'No servers configured',
+    );
     return '$_temp0';
   }
 
@@ -10962,7 +10963,8 @@ class L10nEn extends L10n {
   String get mcpNextStartBadge => 'Pending start';
 
   @override
-  String get mcpNameInvalid => 'The name may only contain letters, digits, underscores and hyphens, up to 32 characters';
+  String get mcpNameInvalid =>
+      'The name may only contain letters, digits, underscores and hyphens, up to 32 characters';
 
   @override
   String get mcpUrlInvalid => 'Enter a server URL starting with http:// or https://';
@@ -10982,64 +10984,11 @@ class L10nEn extends L10n {
   String get mcpTokenMasked => 'Token saved';
 
   @override
-  String get mcpDocsHint => 'The server must support Streamable HTTP or SSE; bridge stdio servers yourself over HTTP (e.g. mcp-proxy)';
+  String get mcpDocsHint =>
+      'The server must support Streamable HTTP or SSE; bridge stdio servers yourself over HTTP (e.g. mcp-proxy)';
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  @override
+  String get mediaGenerateTile => 'Create';
 
   @override
   String get mediaAiGenerated => 'AI-generated';
@@ -18199,7 +18148,6 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwMcp => 'mcp,external tools,mcp servers,tool integration';
-
 
   @override
   String get searchKwGeneral => 'general,web settings';

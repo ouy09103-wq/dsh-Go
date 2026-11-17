@@ -10324,8 +10324,6 @@ class L10nZh extends L10n {
   }
 
   @override
-  String get mediaGenerateTile => '生成';
-  @override
   String get mcpTitle => 'MCP 对接';
 
   @override
@@ -10339,10 +10337,7 @@ class L10nZh extends L10n {
 
   @override
   String mcpServerCount(int count) {
-    if (count == 0) {
-      return '未配置服务器';
-    }
-    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count 个服务器');
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count 个服务器', zero: '未配置服务器');
     return '$_temp0';
   }
 
@@ -10421,62 +10416,8 @@ class L10nZh extends L10n {
   @override
   String get mcpDocsHint => '服务器需支持 Streamable HTTP 或 SSE 传输；stdio 服务器请自行用 HTTP 桥接（如 mcp-proxy）转发';
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  @override
+  String get mediaGenerateTile => '生成';
 
   @override
   String get mediaAiGenerated => 'AI 生成';
@@ -17291,7 +17232,6 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwMcp => 'MCP,外部工具,mcp 服务器,工具接入';
-
 
   @override
   String get searchKwGeneral => '通用,网页版设置';
