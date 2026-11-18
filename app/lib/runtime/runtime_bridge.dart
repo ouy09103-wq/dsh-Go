@@ -87,6 +87,7 @@ class RuntimeFailure {
     this.recent = const [],
     this.diagnostics,
     this.upSeconds,
+    this.causeUnknown = false,
   });
 
   static RuntimeFailure? fromMap(Object? raw) {
@@ -110,6 +111,7 @@ class RuntimeFailure {
       recent: strings(raw['recent']),
       diagnostics: raw['diagnostics'] as String?,
       upSeconds: (raw['upSeconds'] as num?)?.toInt(),
+      causeUnknown: raw['causeUnknown'] == true,
     );
   }
 
@@ -135,6 +137,11 @@ class RuntimeFailure {
   /// Guest path of DSH's startup diagnostics file.
   final String? diagnostics;
   final int? upSeconds;
+
+  /// The native side only knows the run didn't end cleanly (HarmonyOS, where
+  /// the engine shares the app's process: the system or the person ending the
+  /// app looks the same as a crash), so nothing may name a cause.
+  final bool causeUnknown;
 
   /// Crash-output suspects first, then recent changes.
   List<String> get culprits => {...suspects, ...recent}.toList();
@@ -219,6 +226,29 @@ List<McpServerConfig> parseMcpServersJson(String json) {
 String serializeMcpServersJson(List<McpServerConfig> servers) =>
     jsonEncode([for (final s in servers) s.toMap()]);
 
+/// HarmonyOS's background grant, as its native side reports it. Android has none.
+class RuntimeBackgroundTask {
+  const RuntimeBackgroundTask({required this.phase, required this.foreground});
+
+  /// The phase of the long-running task: the turn goes on, with no deadline.
+  static const longRunningPhase = 7;
+
+  final int phase;
+
+  /// The app is on screen, so a task ending now is the return, not the system's doing.
+  final bool foreground;
+
+  bool get longRunning => phase == longRunningPhase;
+
+  static RuntimeBackgroundTask? fromMap(Object? raw) => switch (raw) {
+    {'phase': final num phase, 'foreground': final bool foreground} => RuntimeBackgroundTask(
+      phase: phase.toInt(),
+      foreground: foreground,
+    ),
+    _ => null,
+  };
+}
+
 class RuntimeStatus {
   const RuntimeStatus({
     required this.phase,
@@ -256,11 +286,23 @@ class RuntimeStatus {
     this.launchSpawned = false,
     this.launchFailureReason,
     this.tidyingFiles = false,
+    this.resetPending = false,
+    this.backgroundTask,
+    this.longTaskEligible = false,
+    this.continuedRun = false,
   });
 
   const RuntimeStatus.unknown() : this(phase: RuntimePhase.notInstalled);
 
   final RuntimePhase phase;
+
+  /// Null where there's no such grant.
+  final RuntimeBackgroundTask? backgroundTask;
+
+  /// This build may ask HarmonyOS for a long-running task for a turn (debug and
+  /// device builds have the permission, store builds don't). The system can still
+  /// say no, or take it back.
+  final bool longTaskEligible;
   final String? abi;
   final String? bundledVersion;
   final String? installedVersion;
@@ -336,6 +378,13 @@ class RuntimeStatus {
   /// files for more than a moment (once per install, before Direct launch).
   final bool tidyingFiles;
 
+  /// A reset was committed and hasn't finished (HarmonyOS): it finishes as the
+  /// app opens, and nothing starts until it has.
+  final bool resetPending;
+
+  /// iOS: the system is letting the engine keep running while the app is away.
+  final bool continuedRun;
+
   Map<String, Object?> get launchDiagnostics => {
     'directEngineEnabled': directEngineEnabled,
     'directEngineAvailable': directEngineAvailable,
@@ -364,6 +413,8 @@ class RuntimeStatus {
 
   factory RuntimeStatus.fromMap(Map<Object?, Object?> map) => RuntimeStatus(
     phase: RuntimePhase.parse(map['phase']),
+    backgroundTask: RuntimeBackgroundTask.fromMap(map['transientTask']),
+    longTaskEligible: map['longTaskEligible'] == true,
     abi: map['abi'] as String?,
     bundledVersion: map['bundledVersion'] as String?,
     installedVersion: map['installedVersion'] as String?,
@@ -407,6 +458,8 @@ class RuntimeStatus {
     launchSpawned: map['launchSpawned'] == true,
     launchFailureReason: map['launchFailureReason'] as String?,
     tidyingFiles: map['tidyingFiles'] == true,
+    resetPending: map['resetPending'] == true,
+    continuedRun: map['continuedRun'] == true,
   );
 }
 
@@ -693,6 +746,10 @@ class RuntimeBridge {
     return map == null ? const LastKnownGood.none() : LastKnownGood.fromMap({...map, 'available': true});
   }
 
+  /// HarmonyOS: whether this build may schedule system reminders: `granted`,
+  /// `denied` or `unsupported`.
+  Future<String?> reminderAccess() => _methods.invokeMethod<String>('reminderAccess');
+
   Future<List<SafeHazard>> safePreflight() async {
     final list = await _methods.invokeListMethod<Object?>('safePreflight') ?? const [];
     return [
@@ -808,8 +865,18 @@ class RuntimeBridge {
 
   Future<void> stop() => _methods.invokeMethod<void>('stop');
 
+  /// HarmonyOS: closes the app and opens it again, the only way to another engine start.
+  Future<void> reopenApp() => _methods.invokeMethod<void>('reopenApp');
+
+  /// iOS: whether a local turn is running, which is what asks the system to let it go on.
+  Future<void> setTurnRunning(bool running) => _methods.invokeMethod<void>('turnRunning', {'running': running});
+
   /// Deletes the runtime with everything in /root except [keep].
   Future<void> reset({ResetKeep keep = const ResetKeep()}) => _methods.invokeMethod<void>('reset', {'keep': keep.wire});
+
+  /// Explicit HarmonyOS reset intent. Existing uninstall calls keep the old wire.
+  Future<void> resetAndReinstall({ResetKeep keep = const ResetKeep()}) =>
+      _methods.invokeMethod<void>('reset', {'keep': keep.wire, 'reinstall': true});
 
   Future<List<String>> logs({int lines = 500}) async =>
       (await _methods.invokeListMethod<String>('getLogs', {'lines': lines})) ?? const [];
