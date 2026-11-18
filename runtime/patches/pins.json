@@ -62,6 +62,22 @@
         }
       }
     },
+    "deepseek-refusal.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "074ea3696725abfbf1ed9c770130c2d6a1b5cc34f1991c4127e24cbc39a4d6be",
+          "before": "33932219045bc1f31f96c94ce2a18883ad108ecdf0f7f74d7911e8a7d6257917"
+        }
+      }
+    },
+    "deepseek-unnamed-stream-error.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "0ace65d8cf477ebaeaeaaf3af7080ea4695d46f5cc8a34c7f92d5107715e08a9",
+          "before": "074ea3696725abfbf1ed9c770130c2d6a1b5cc34f1991c4127e24cbc39a4d6be"
+        }
+      }
+    },
     "fork-default-effort.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
@@ -683,6 +699,14 @@
         "node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js": {
           "after": "f67cd7cbcf2ac824887396acd68a4f6f159be5f4bd880cd6f0014da3edb6c673",
           "before": "9a37949cc76603ea3a965ce4d0d6ca65885de4a9808345c38748e595ac396378"
+        }
+      }
+    },
+    "web-empty-reply-notice.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js": {
+          "after": "0925ad851ec8ff4ab56d2153e6138018aa70889853a9b8eded4405c35f33d3e4",
+          "before": "b7e645f2461231e8ece31381f026db2df72d058e425eaef19265f215c823d84e"
         }
       }
     },
@@ -2479,7 +2503,10 @@
       "fork-default-effort.diff",
       "config-editor-lock-order.diff",
       "piai-overflow-output-limit.diff",
-      "schedule-authorization-availability.diff"
+      "schedule-authorization-availability.diff",
+      "deepseek-refusal.diff",
+      "deepseek-unnamed-stream-error.diff",
+      "web-empty-reply-notice.diff"
     ],
     "ohos": [
       "cordis-effect-dispose-completion.diff",
@@ -2632,6 +2659,9 @@
       "config-editor-lock-order.diff",
       "piai-overflow-output-limit.diff",
       "schedule-authorization-availability.diff",
+      "deepseek-refusal.diff",
+      "deepseek-unnamed-stream-error.diff",
+      "web-empty-reply-notice.diff",
       "ohos-attachment-publication.diff",
       "ohos-attachment-diagnostic.diff",
       "ohos-hap-native-libraries.diff",
